@@ -1,0 +1,42 @@
+info:
+  name: Iniciar sesión
+  type: http
+  seq: 3
+  tags:
+    - smoke
+
+http:
+  method: POST
+  url: "{{baseUrl}}/_allauth/app/v1/auth/login"
+  auth: none
+  body:
+    type: json
+    data: |-
+      {
+        "email": "{{email}}",
+        "password": "{{password}}"
+      }
+
+runtime:
+  scripts:
+    - type: before-request
+      code: |-
+        bru.setVar("sessionToken", "");
+    - type: after-response
+      code: |-
+        const token = res.body?.meta?.session_token;
+        if (token) bru.setVar("sessionToken", token);
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "200"
+    - expression: res.body.data.user.email
+      operator: isString
+    - expression: res.body.meta.session_token
+      operator: isString
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

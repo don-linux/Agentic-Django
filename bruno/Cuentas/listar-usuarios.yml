@@ -1,0 +1,30 @@
+info:
+  name: Listar usuarios
+  type: http
+  seq: 5
+  tags:
+    - smoke
+
+http:
+  method: GET
+  url: "{{baseUrl}}/api/v1/users/"
+  auth: inherit
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "200"
+    - expression: res.body.count
+      operator: eq
+      value: "1"
+    - expression: res.body.results[0].id
+      operator: isString
+    - expression: res.body.results[0].url
+      operator: isString
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

@@ -1,0 +1,38 @@
+info:
+  name: Restablecer contraseña
+  type: http
+  seq: 14
+
+http:
+  method: POST
+  url: "{{baseUrl}}/_allauth/app/v1/auth/password/request"
+  auth: none
+  body:
+    type: json
+    data: |-
+      {
+        "email": "{{email}}"
+      }
+
+runtime:
+  scripts:
+    - type: after-response
+      code: |-
+        // Con el reset por código, allauth responde 401 con el flujo password_reset_by_code pendiente.
+        const pending = res.body?.data?.flows?.some(
+          (flow) => flow.id === "password_reset_by_code" && flow.is_pending
+        );
+        if (pending) console.log("Revisa Mailpit en " + bru.getEnvVar("mailpitUrl") + " para ver el código");
+        if (res.body?.meta?.session_token) bru.setVar("resetSessionToken", res.body.meta.session_token);
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "401"
+    - expression: res.body.meta.session_token
+      operator: isString
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

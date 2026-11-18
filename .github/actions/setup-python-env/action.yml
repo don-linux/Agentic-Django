@@ -1,0 +1,33 @@
+name: Set up the Python environment
+description: >-
+  Install uv at the one version every workflow uses and, unless told otherwise,
+  the libpq headers and the locked dependencies.
+
+inputs:
+  install-dependencies:
+    description: Install libpq headers (for psycopg[c]) and run uv sync --locked.
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Install libpq headers for psycopg[c]
+      if: inputs.install-dependencies == 'true'
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpq-dev
+
+    # The uv version for CI. Keep it in sync with the uv image in both Dockerfiles
+    # and the uv-pre-commit hook: Dependabot updates none of those three.
+    - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      with:
+        version: "0.13.1"
+        python-version: "3.14"
+        cache-python: true
+        # enable-cache stays at the action default (auto): on for pull requests
+        # and branch pushes, off for tags, releases, pull_request_target and
+        # workflow_run.
+
+    - name: Install locked dependencies
+      if: inputs.install-dependencies == 'true'
+      shell: bash
+      run: uv sync --locked

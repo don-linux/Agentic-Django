@@ -1,0 +1,34 @@
+info:
+  name: Confirmar restablecimiento
+  type: http
+  seq: 15
+
+http:
+  method: POST
+  url: "{{baseUrl}}/_allauth/app/v1/auth/password/reset"
+  auth: none
+  headers:
+    - name: X-Session-Token
+      value: "{{resetSessionToken}}"
+  body:
+    type: json
+    data: |-
+      {
+        "key": "{{?Código de restablecimiento de Mailpit}}",
+        "password": "{{password}}"
+      }
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "401"
+    - expression: res.body.meta.is_authenticated
+      operator: eq
+      value: "false"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

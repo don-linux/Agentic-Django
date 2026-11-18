@@ -1,0 +1,135 @@
+name: "${PROJECT_NAME:-project-name}-dev"
+
+# One image for the web process and the Celery worker.
+x-django-image: &django-image
+  build:
+    context: ../../
+    dockerfile: docker/dev/Dockerfile
+    args:
+      # Your `id -u` and `id -g` (docker/dev/.env); rebuild after changing them.
+      HOST_UID: "${HOST_UID:-1000}"
+      HOST_GID: "${HOST_GID:-1000}"
+  image: "${PROJECT_NAME:-project-name}-dev-django"
+
+services:
+  django:
+    <<: *django-image
+    env_file:
+      - ../../.env
+    environment:
+      POSTGRES_HOST: postgres_db
+      POSTGRES_PORT: 5432
+      DJANGO_MAILER_HOST: mailpit
+      DJANGO_MAILER_PORT: 1025
+      # The scheme stays redis:// (the wire protocol); the server is Valkey.
+      VALKEY_URL: redis://valkey:6379
+    ports:
+      - "127.0.0.1:${DOCKER_DEV_DJANGO_PORT:-8000}:8000"
+    volumes:
+      # :z relabels the checkout so SELinux (Fedora, RHEL) lets the container
+      # read it; elsewhere it does nothing.
+      - ../../:/app:z
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+      valkey:
+        condition: service_healthy
+    # init reaps processes and forwards signals; exec makes the server the
+    # process that receives them.
+    init: true
+    command: sh -c "python manage.py migrate --noinput && exec python manage.py runserver 0.0.0.0:8000"
+
+  # Runs the Celery tasks, as in production. It does not reload code: after
+  # changing a task, docker compose -f docker/dev/compose.yaml restart celery_worker
+  celery_worker:
+    <<: *django-image
+    env_file:
+      - ../../.env
+    environment:
+      POSTGRES_HOST: postgres_db
+      POSTGRES_PORT: 5432
+      DJANGO_MAILER_HOST: mailpit
+      DJANGO_MAILER_PORT: 1025
+      VALKEY_URL: redis://valkey:6379
+      # The celery command has to be told; manage.py picks local by itself. Only here:
+      # check.sh keeps a value already set. See docs/settings.md#settings-module-default.
+      DJANGO_SETTINGS_MODULE: config.settings.local
+    volumes:
+      # :z relabels the checkout so SELinux (Fedora, RHEL) lets the container
+      # read it; elsewhere it does nothing.
+      - ../../:/app:z
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    # Waits until the django service (or the Dev Container's postStartCommand)
+    # has applied every migration, so no task runs on an old schema. It does not
+    # migrate itself: two concurrent migrate runs would race.
+    init: true
+    command:
+      - sh
+      - -c
+      - |
+        until python manage.py migrate --check >/dev/null 2>&1; do
+          echo "celery_worker: waiting for migrations" >&2
+          sleep 5
+        done
+        exec celery --app config worker --loglevel INFO --concurrency 1
+
+  mailpit:
+    # Pinned by tag and digest; Dependabot updates both.
+    image: axllent/mailpit:v1.33.1@sha256:aef2aacc11f075ec0fb6874275ee4a421e688e11a96ebb296134d1735c7761ce
+    ports:
+      - "127.0.0.1:${DOCKER_DEV_MAILPIT_UI_PORT:-8025}:8025"
+      - "127.0.0.1:${DOCKER_DEV_MAILPIT_SMTP_PORT:-1025}:1025"
+
+  postgres_db:
+    # Pinned by tag and digest; Dependabot updates both.
+    image: postgres:18.6-alpine3.24@sha256:9ba53c7d41ea093baf5c1ba635ba5434c4f979880527d49bb7d9237d3193085b
+    # Docker's 64 MB default is too small for parallel queries, as in production.
+    shm_size: 256mb
+    env_file:
+      - ../../.env
+    environment:
+      DJANGO_SECRET_KEY: ""
+    volumes:
+      - postgres_db_data:/var/lib/postgresql
+    ports:
+      - "127.0.0.1:${DOCKER_DEV_POSTGRES_DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB -h 127.0.0.1 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  valkey:
+    # Pinned by tag and digest; Dependabot updates both.
+    image: valkey/valkey:9.1.3-alpine3.24@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b
+    # Throwaway in development: no persistence, and no password because the port is
+    # published on 127.0.0.1 only. Same eviction policy as production, so a key
+    # written without a TTL shows up here first.
+    command:
+      - valkey-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - 128mb
+      - --maxmemory-policy
+      - volatile-lru
+    ports:
+      - "127.0.0.1:${DOCKER_DEV_VALKEY_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  postgres_db_data:

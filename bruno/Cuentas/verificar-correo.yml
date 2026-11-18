@@ -1,0 +1,36 @@
+info:
+  name: Verificar correo
+  type: http
+  seq: 2
+
+http:
+  method: POST
+  url: "{{baseUrl}}/_allauth/app/v1/auth/email/verify"
+  auth: inherit
+  body:
+    type: json
+    data: |-
+      {
+        "key": "{{?Código de verificación de Mailpit}}"
+      }
+
+runtime:
+  scripts:
+    - type: after-response
+      code: |-
+        const token = res.body?.meta?.session_token;
+        if (token) bru.setVar("sessionToken", token);
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "200"
+    - expression: res.body.data.user.email
+      operator: isString
+    - expression: res.body.meta.session_token
+      operator: isString
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

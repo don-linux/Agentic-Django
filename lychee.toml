@@ -1,0 +1,22 @@
+# lychee 0.24.2. CI passes --offline on pull requests; the scheduled workflow
+# runs without that flag to check external URLs.
+verbose = "info"
+no_progress = true
+hidden = true
+include_mail = false
+include_verbatim = false
+include_fragments = "anchor-only"
+
+exclude = [
+  '^https?://localhost(:[0-9]+)?',
+  '^https?://127\.0\.0\.1(:[0-9]+)?',
+  '^https?://(www\.)?example\.com',
+  '^https?://.+\.invalid',
+  '^https://\{',
+  '^https://\$',
+  '^https://\.\.\.',
+]
+
+exclude_path = [
+  '(^|/)graphify-out/',
+]

@@ -1,0 +1,6 @@
+{% extends "account/email/base_message.txt" %}
+{% block content %}{% autoescape off %}Someone tried to create an account with this email address. An account already exists. If it was you, use this link in the app to reset your password:
+
+{{ password_reset_url }}
+
+If it was not you, ignore this email.{% endautoescape %}{% endblock content %}

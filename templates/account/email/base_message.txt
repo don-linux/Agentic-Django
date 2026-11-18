@@ -1,0 +1,6 @@
+{% autoescape off %}{% block content %}{% endblock content %}
+
+-- {# signature delimiter: dash, dash, space #}
+{{ email_signature_name }}
+{{ frontend_url }}
+{% endautoescape %}

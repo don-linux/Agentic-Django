@@ -1,0 +1,29 @@
+info:
+  name: Perfil tras cerrar sesión
+  type: http
+  seq: 17
+  tags:
+    - smoke
+
+http:
+  method: GET
+  url: "{{baseUrl}}/api/v1/users/me/"
+  auth: none
+  headers:
+    - name: X-Session-Token
+      value: "{{loggedOutToken}}"
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "401"
+    - expression: res.body.code
+      operator: eq
+      value: "not_authenticated"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

@@ -1,0 +1,46 @@
+info:
+  name: Crear usuario
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: "{{baseUrl}}/_allauth/app/v1/auth/signup"
+  auth: none
+  body:
+    type: json
+    data: |-
+      {
+        "email": "{{email}}",
+        "password": "{{password}}"
+      }
+
+runtime:
+  scripts:
+    - type: before-request
+      code: |-
+        bru.setVar("sessionToken", "");
+    - type: after-response
+      code: |-
+        const token = res.body?.meta?.session_token;
+        if (token) bru.setVar("sessionToken", token);
+
+        const pending = res.body?.data?.flows?.some(
+          (flow) => flow.id === "verify_email" && flow.is_pending
+        );
+        if (pending) {
+          const mailpitUrl = bru.getEnvVar("mailpitUrl") || "http://localhost:8025";
+          console.log(`Abre ${mailpitUrl} para ver el código de verificación`);
+        }
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "401"
+    - expression: res.body.meta.session_token
+      operator: isString
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

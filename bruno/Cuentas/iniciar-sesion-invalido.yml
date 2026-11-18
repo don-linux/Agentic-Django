@@ -1,0 +1,33 @@
+info:
+  name: Iniciar sesión inválido
+  type: http
+  seq: 12
+  tags:
+    - smoke
+
+http:
+  method: POST
+  url: "{{baseUrl}}/_allauth/app/v1/auth/login"
+  auth: none
+  body:
+    type: json
+    data: |-
+      {
+        "email": "nobody@example.com",
+        "password": "wrong-password-xxx"
+      }
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "400"
+    - expression: res.body.errors[0].code
+      operator: eq
+      value: "email_password_mismatch"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

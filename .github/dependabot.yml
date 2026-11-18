@@ -1,0 +1,84 @@
+# Security updates ignore the weekly schedule and the 7-day cooldown.
+# See docs/ci.md#dependabot.
+
+version: 2
+updates:
+  # Composite actions under .github/actions/ need their own directory entry.
+  - package-ecosystem: 'github-actions'
+    directories:
+      - '/'
+      - '/.github/actions/*'
+    schedule:
+      interval: 'weekly'
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns:
+          - '*'
+
+  - package-ecosystem: 'docker'
+    directories:
+      - '/docker/dev'
+      - '/docker/prod'
+    schedule:
+      interval: 'weekly'
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    # Ignore major/minor Python image jumps; update patch versions only
+    ignore:
+      - dependency-name: 'python'
+        update-types:
+          - 'version-update:semver-major'
+          - 'version-update:semver-minor'
+    groups:
+      docker-python:
+        patterns:
+          - '*'
+
+  - package-ecosystem: 'docker-compose'
+    directories:
+      - '/docker/dev'
+      - '/docker/prod'
+    schedule:
+      interval: 'weekly'
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    # A major PostgreSQL needs a dump and restore; a major Valkey may write data
+    # files the old one refuses, so reverting the tag does not undo it.
+    ignore:
+      - dependency-name: 'postgres'
+        update-types:
+          - 'version-update:semver-major'
+      - dependency-name: 'valkey/valkey'
+        update-types:
+          - 'version-update:semver-major'
+
+  - package-ecosystem: 'uv'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      python:
+        update-types:
+          - 'minor'
+          - 'patch'
+
+  # Hook revisions; the uv and gitleaks hooks are bumped by hand with their other
+  # pins. See docs/ci.md#tool-pins.
+  - package-ecosystem: 'pre-commit'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: '*astral-sh/uv-pre-commit'
+      - dependency-name: '*gitleaks/gitleaks'

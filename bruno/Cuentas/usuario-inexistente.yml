@@ -1,0 +1,26 @@
+info:
+  name: Obtener usuario inexistente
+  type: http
+  seq: 11
+  tags:
+    - smoke
+
+http:
+  method: GET
+  url: "{{baseUrl}}/api/v1/users/00000000-0000-4000-8000-000000000000/"
+  auth: inherit
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "404"
+    - expression: res.body.code
+      operator: eq
+      value: "not_found"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

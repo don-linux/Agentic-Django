@@ -1,0 +1,28 @@
+info:
+  name: Perfil sin sesión
+  type: http
+  seq: 9
+  tags:
+    - smoke
+
+http:
+  method: GET
+  url: "{{baseUrl}}/api/v1/users/me/"
+  auth: none
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "401"
+    - expression: res.body.code
+      operator: eq
+      value: "not_authenticated"
+    - expression: res.body.detail
+      operator: isString
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

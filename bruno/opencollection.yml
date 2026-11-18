@@ -1,0 +1,21 @@
+opencollection: "1.0.0"
+
+info:
+  name: project
+
+request:
+  auth:
+    type: apikey
+    key: X-Session-Token
+    value: "{{sessionToken}}"
+    placement: header
+
+bundled: false
+
+extensions:
+  bruno:
+    ignore:
+      - node_modules
+      - .git
+    presets:
+      defaultEnvironment: local

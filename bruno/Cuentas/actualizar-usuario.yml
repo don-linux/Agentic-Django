@@ -1,0 +1,35 @@
+info:
+  name: Actualizar usuario
+  type: http
+  seq: 7
+  tags:
+    - smoke
+
+http:
+  method: PATCH
+  url: "{{baseUrl}}/api/v1/users/{{userId}}/"
+  auth: inherit
+  body:
+    type: json
+    data: |-
+      {
+        "name": "Bruno Publico"
+      }
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "200"
+    - expression: res.body.name
+      operator: eq
+      value: "Bruno Publico"
+    - expression: res.body.id
+      operator: eq
+      value: "{{userId}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

@@ -1,0 +1,66 @@
+# gitleaks secret scanning: CI (`secrets` job) and the pre-commit hook.
+# Extends the built-in rules. Exceptions are narrow on purpose: they are attached
+# to the generic-api-key rule only (the one that flags placeholders), and each
+# one needs BOTH a path and a line pattern ("AND"). A real token of any other
+# kind, or a secret on another line of the same file, still fails.
+# Global [[allowlists]] are not used: gitleaks ignores `condition` there, so a
+# path entry would silence every rule for the whole file.
+title = "Template gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+    [[rules.allowlists]]
+    description = "Example values in env examples"
+    condition = "AND"
+    regexTarget = "line"
+    paths = ['''(^|/)\.env\.example$''']
+    regexes = ['''change-me''']
+
+    [[rules.allowlists]]
+    description = "Development and test SECRET_KEY defaults"
+    condition = "AND"
+    regexTarget = "line"
+    paths = ['''^config/settings/(local|test)\.py$''']
+    regexes = ['''django-insecure-''']
+
+    [[rules.allowlists]]
+    description = "Throwaway passwords and keys in tests"
+    condition = "AND"
+    regexTarget = "line"
+    paths = ['''^(apps/[^/]+|core)/tests/''', '''^conftest\.py$''']
+    regexes = ['''Wrong-H0rse-Battery''']
+
+    [[rules.allowlists]]
+    description = "Valkey image references: \"valkey\" contains the keyword \"key\", so the tag after the colon reads as a secret"
+    condition = "AND"
+    regexTarget = "line"
+    paths = ['''\.(md|ya?ml)$''']
+    regexes = ['''valkey/valkey:[0-9]''']
+
+    [[rules.allowlists]]
+    description = "Bruno local environment: the example password for local signups"
+    condition = "AND"
+    regexTarget = "line"
+    paths = ['''^bruno/environments/local\.yml$''']
+    regexes = ['''value: My_R@ndom-P@ssw0rd$''']
+
+# A Valkey URL never carries credentials: the password goes in VALKEY_PASSWORD and
+# settings build, in memory, the URLs that need it. The default rules do not flag an
+# inline password in a redis:// URL, so this rule does. Interpolations and
+# placeholders ({...}, ${...}, <...>, **) are not passwords and do not match.
+[[rules]]
+id = "valkey-url-credentials"
+description = "A redis:// or rediss:// URL with an inline password"
+regex = '''rediss?://[^\s:@/]*:[^\s:@/{}$<>*]{3,}@'''
+keywords = ["redis://", "rediss://"]
+
+    [[rules.allowlists]]
+    description = "Throwaway Valkey URLs in tests (localhost or tests-only- marker)"
+    condition = "AND"
+    regexTarget = "line"
+    paths = ['''^(apps/[^/]+|core)/tests/''', '''^conftest\.py$''']
+    regexes = ['''rediss?://.*(?:localhost|127\.0\.0\.1|tests-only-)''']

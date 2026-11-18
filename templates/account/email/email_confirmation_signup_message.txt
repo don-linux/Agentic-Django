@@ -1,0 +1,6 @@
+{% extends "account/email/base_message.txt" %}
+{% block content %}{% autoescape off %}Someone used this email address to create an account. If it was you, enter this code in the app to verify it:
+
+{{ code }}
+
+If it was not you, ignore this email.{% endautoescape %}{% endblock content %}

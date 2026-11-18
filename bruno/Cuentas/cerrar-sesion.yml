@@ -1,0 +1,34 @@
+info:
+  name: Cerrar sesión
+  type: http
+  seq: 16
+  tags:
+    - smoke
+
+http:
+  method: DELETE
+  url: "{{baseUrl}}/_allauth/app/v1/auth/session"
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: before-request
+      code: |-
+        // Sin token, allauth también responde 401: la prueba no probaría nada.
+        if (!bru.getVar("sessionToken")) throw new Error("No hay sesión: ejecuta Iniciar sesión primero.");
+        bru.setVar("loggedOutToken", bru.getVar("sessionToken"));
+    - type: after-response
+      code: |-
+        bru.setVar("sessionToken", "");
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "401"
+    - expression: res.body.meta.is_authenticated
+      operator: isFalsy
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

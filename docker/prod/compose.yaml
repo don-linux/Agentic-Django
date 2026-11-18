@@ -1,0 +1,292 @@
+name: "${PROJECT_NAME:-project-name}-prod"
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+# One image for the web process and the Celery worker. Its name has no release
+# tag, so `run` and `up` find what `build` produced. See docs/deploy.md#image.
+x-django-image: &django-image
+  build:
+    context: ../../
+    dockerfile: docker/prod/Dockerfile
+    args:
+      # APP_RELEASE=$(git rev-parse --short HEAD) docker compose ... up -d --build
+      APP_RELEASE: "${APP_RELEASE:-dev}"
+      APP_NAME: "${PROJECT_NAME:-project-name}"
+      # "s3" for DJANGO_STORAGE_BACKEND=s3 (docs/files.md).
+      UV_EXTRAS: "${DOCKER_PROD_UV_EXTRAS:-}"
+      # The django user's UID and GID: the owner the uploads folder needs.
+      USER_UID: "${DOCKER_PROD_USER_UID:-1000}"
+      USER_GID: "${DOCKER_PROD_USER_GID:-1000}"
+  image: "${PROJECT_NAME:-project-name}-prod-django"
+
+services:
+  django:
+    <<: *django-image
+    env_file:
+      - .env
+    environment:
+      # Wins over env_file: a DJANGO_SETTINGS_MODULE line in .env cannot switch
+      # production to development settings (DEBUG on, no guards).
+      DJANGO_SETTINGS_MODULE: config.settings.production
+      POSTGRES_HOST: postgres_db
+      POSTGRES_PORT: 5432
+      # The scheme stays redis:// (the wire protocol); the server is Valkey. The
+      # password is never part of the URL: django reads VALKEY_PASSWORD from .env.
+      VALKEY_URL: "${VALKEY_URL:-redis://valkey:6379}"
+    volumes:
+      # A host folder outside the checkout. See docs/NEXT-STEPS.md#the-uploads-folder.
+      - type: bind
+        source: ${DOCKER_PROD_DJANGO_UPLOADS_PATH:?Set DOCKER_PROD_DJANGO_UPLOADS_PATH to an absolute host path outside the repo, e.g. /srv/project-name/uploads}
+        target: /app/uploads
+        bind:
+          create_host_path: false
+    ports:
+      - "${DOCKER_PROD_DJANGO_BIND:-127.0.0.1}:${DOCKER_PROD_DJANGO_PORT:-8000}:8000"
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    init: true
+    restart: unless-stopped
+    # No privilege escalation, no capabilities, a read-only root. The /tmp tmpfs
+    # holds spooled uploads: at least client_max_body_size x workers x threads.
+    # See docs/ARCHITECTURE.md#deployment.
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    pids_limit: 512
+    # Above the login-burst peak in docs/deploy.md#capacity (about 1.2 GB with
+    # the Argon2 defaults and 3 workers x 3 threads) plus the /tmp tmpfs.
+    mem_limit: "${DOCKER_PROD_DJANGO_MEM_LIMIT:-1536m}"
+    # Longer than gunicorn's graceful_timeout (25s by default), so in-flight
+    # requests finish before Docker sends SIGKILL.
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "python", "/app/docker/prod/healthcheck.py"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    logging: *logging
+
+  # Runs the Celery tasks (docs/tasks.md). It is on by default: without a worker,
+  # an enqueued task waits in the queue forever, without any error. A project that
+  # has no tasks yet may stop it: docker compose ... up -d --scale celery_worker=0
+  celery_worker:
+    <<: *django-image
+    command: ["sh", "/app/docker/prod/start-worker.sh"]
+    env_file:
+      - .env
+    environment:
+      # Wins over env_file: a DJANGO_SETTINGS_MODULE line in .env cannot switch
+      # production to development settings (DEBUG on, no guards).
+      DJANGO_SETTINGS_MODULE: config.settings.production
+      POSTGRES_HOST: postgres_db
+      POSTGRES_PORT: 5432
+      VALKEY_URL: "${VALKEY_URL:-redis://valkey:6379}"
+      # A report may run one query for minutes; a request may not. Never 0: a
+      # runaway query in a task would keep its connection forever.
+      POSTGRES_STATEMENT_TIMEOUT_MS: "${CELERY_POSTGRES_STATEMENT_TIMEOUT_MS:-300000}"
+      # TERM handled as QUIT: running tasks get CELERY_WORKER_SOFT_SHUTDOWN_TIMEOUT
+      # seconds, then go back to the queue. See docs/tasks.md#the-worker-in-production.
+      REMAP_SIGTERM: SIGQUIT
+    volumes:
+      # Tasks write files (reports, exports) to the same uploads folder.
+      - type: bind
+        source: ${DOCKER_PROD_DJANGO_UPLOADS_PATH:?Set DOCKER_PROD_DJANGO_UPLOADS_PATH to an absolute host path outside the repo, e.g. /srv/project-name/uploads}
+        target: /app/uploads
+        bind:
+          create_host_path: false
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      # django applies the migrations when it starts: no task runs on an old schema.
+      django:
+        condition: service_healthy
+    init: true
+    restart: unless-stopped
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    pids_limit: 256
+    mem_limit: "${DOCKER_PROD_CELERY_WORKER_MEM_LIMIT:-768m}"
+    # Longer than CELERY_WORKER_SOFT_SHUTDOWN_TIMEOUT (20 s), so the worker has
+    # time to return unfinished tasks to the queue before Docker sends SIGKILL.
+    stop_grace_period: "${DOCKER_PROD_CELERY_WORKER_STOP_GRACE_PERIOD:-60s}"
+    healthcheck:
+      # Asks this worker for a reply through the broker, so it covers both. It
+      # starts a Python process each time: keep the interval long.
+      test: ["CMD-SHELL", "celery --app config inspect ping --destination worker@$$HOSTNAME --timeout 10"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 60s
+    logging: *logging
+    # No ports: it only talks to postgres_db and valkey.
+
+  # Sends the periodic tasks of CELERY_BEAT_SCHEDULE to the queue (docs/tasks.md).
+  # Optional: it starts only with `--profile beat`. Run exactly one, and never
+  # scale it: two beats send every periodic task twice.
+  celery_beat:
+    <<: *django-image
+    profiles: ["beat"]
+    # The file that remembers the last run of each entry lives in the /tmp tmpfs
+    # (the root filesystem is read-only), so it starts empty on every restart:
+    # an entry then waits for its next due time.
+    command:
+      - celery
+      - --app
+      - config
+      - --quiet
+      - beat
+      - --loglevel
+      - INFO
+      - --schedule
+      - /tmp/celerybeat-schedule
+    env_file:
+      - .env
+    environment:
+      # Wins over env_file: a DJANGO_SETTINGS_MODULE line in .env cannot switch
+      # production to development settings (DEBUG on, no guards).
+      DJANGO_SETTINGS_MODULE: config.settings.production
+      POSTGRES_HOST: postgres_db
+      POSTGRES_PORT: 5432
+      VALKEY_URL: "${VALKEY_URL:-redis://valkey:6379}"
+    depends_on:
+      valkey:
+        condition: service_healthy
+      django:
+        condition: service_healthy
+    init: true
+    restart: unless-stopped
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    pids_limit: 64
+    mem_limit: 256m
+    logging: *logging
+    # No ports, and no healthcheck: a beat that stops shows as a restarting container.
+
+  postgres_db:
+    # Pinned by tag and digest; Dependabot updates both.
+    image: postgres:18.6-alpine3.24@sha256:9ba53c7d41ea093baf5c1ba635ba5434c4f979880527d49bb7d9237d3193085b
+    security_opt:
+      - "no-new-privileges:true"
+    # Docker's 64 MB default is too small for parallel queries.
+    shm_size: 256mb
+    # pg_stat_statements and the slow-query log, with memory sized from the environment
+    # (docs/NEXT-STEPS.md, "Slow queries"). The image's entrypoint still runs first.
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=top
+      - -c
+      - log_min_duration_statement=${POSTGRES_LOG_MIN_DURATION_MS:-500}
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-128MB}
+      - -c
+      - effective_cache_size=${POSTGRES_EFFECTIVE_CACHE_SIZE:-512MB}
+      - -c
+      - work_mem=${POSTGRES_WORK_MEM:-4MB}
+      - -c
+      - random_page_cost=1.1
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in docker/prod/.env}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in docker/prod/.env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in docker/prod/.env}
+    volumes:
+      - postgres_db_data:/var/lib/postgresql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB -h 127.0.0.1 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging: *logging
+
+  valkey:
+    # Pinned by tag and digest; Dependabot updates both.
+    image: valkey/valkey:9.1.3-alpine3.24@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b
+    # The image drops root only for valkey-server; this command is a shell, so run
+    # as its valkey user (uid 999). See docs/security.md#valkey-access.
+    user: "999:1000"
+    environment:
+      VALKEY_PASSWORD: "${VALKEY_PASSWORD:?Set VALKEY_PASSWORD in docker/prod/.env}"
+      VALKEY_MAXMEMORY: "${VALKEY_MAXMEMORY:-256mb}"
+    # The password goes into a config file on a tmpfs, never the arguments (`ps`).
+    # appendonly and volatile-lru: see docs/ARCHITECTURE.md#deployment.
+    command:
+      - sh
+      - -c
+      - |
+        umask 077
+        # Both values land in valkey.conf: a quote, backslash or line break in
+        # the password would end requirepass "..." and could add directives.
+        nl=$$(printf '\nx'); nl=$${nl%x}
+        cr=$$(printf '\r')
+        case $${VALKEY_PASSWORD} in
+          *'"'* | *'\'* | *"$${nl}"* | *"$${cr}"*)
+            echo "VALKEY_PASSWORD must not contain quotes, backslashes or line breaks" >&2
+            exit 1
+            ;;
+        esac
+        case $${VALKEY_MAXMEMORY} in
+          "" | *[!0-9A-Za-z]*)
+            echo "VALKEY_MAXMEMORY must be a size such as 256mb" >&2
+            exit 1
+            ;;
+        esac
+        printf 'requirepass "%s"\ndir /data\nappendonly yes\nappendfsync everysec\nmaxmemory %s\nmaxmemory-policy volatile-lru\n' \
+          "$${VALKEY_PASSWORD}" "$${VALKEY_MAXMEMORY}" > /run/valkey/valkey.conf
+        exec valkey-server /run/valkey/valkey.conf
+    volumes:
+      - valkey_data:/data
+    tmpfs:
+      - /run/valkey:size=1m,mode=0700,uid=999,gid=1000
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
+    # Valkey writes its data to the volume and its config to the tmpfs above,
+    # and nowhere else.
+    read_only: true
+    # A few threads, one child while it rewrites the append-only file, and the
+    # healthcheck: the measured peak is far below this.
+    pids_limit: 64
+    # About twice maxmemory: rewriting the append-only file forks the process.
+    mem_limit: "${DOCKER_PROD_VALKEY_MEM_LIMIT:-512m}"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "VALKEYCLI_AUTH=\"$$VALKEY_PASSWORD\" valkey-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    logging: *logging
+    # No ports: only the services of this compose project reach it.
+
+volumes:
+  postgres_db_data:
+  valkey_data:

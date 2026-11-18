@@ -1,0 +1,10 @@
+name: seed
+variables:
+  - name: baseUrl
+    value: http://localhost:8000
+  - name: mailpitUrl
+    value: http://localhost:8025
+  - name: email
+    value: user@example.com
+  - name: password
+    value: dev-password-123

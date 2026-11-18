@@ -1,0 +1,455 @@
+openapi: 3.0.3
+info:
+  title: Project API
+  version: 1.0.0
+  description: The Project JSON API. Account endpoints under /_allauth/ belong to
+    django-allauth and keep its own format (docs/api.md).
+paths:
+  /api/v1/users/:
+    get:
+      operationId: users_list
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - users
+      security:
+      - XSessionTokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedUserList'
+          description: ''
+        '406':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The Accept header cannot be satisfied.
+        '401':
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+              description: Authentication scheme advertised by the view (`X-Session-Token`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Not authenticated.
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Permission denied, or CSRF failed on a cookie-authenticated
+            write. Hidden objects are 404, not 403.
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Not found, not visible, or an invalid page number.
+        '429':
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds until the client may retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Throttled.
+  /api/v1/users/{id}/:
+    get:
+      operationId: users_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - users
+      security:
+      - XSessionTokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: ''
+        '406':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The Accept header cannot be satisfied.
+        '401':
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+              description: Authentication scheme advertised by the view (`X-Session-Token`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Not authenticated.
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Permission denied, or CSRF failed on a cookie-authenticated
+            write. Hidden objects are 404, not 403.
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Not found, not visible, or an invalid page number.
+        '429':
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds until the client may retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Throttled.
+    patch:
+      operationId: users_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedUserRequest'
+      security:
+      - XSessionTokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/ValidationError'
+                - $ref: '#/components/schemas/Error'
+          description: Validation error (`fields` present) or parse error (no `fields`).
+        '415':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The request Content-Type is not accepted.
+        '406':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The Accept header cannot be satisfied.
+        '401':
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+              description: Authentication scheme advertised by the view (`X-Session-Token`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Not authenticated.
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Permission denied, or CSRF failed on a cookie-authenticated
+            write. Hidden objects are 404, not 403.
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Not found, not visible, or an invalid page number.
+        '429':
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds until the client may retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Throttled.
+  /api/v1/users/me/:
+    get:
+      operationId: users_me_retrieve
+      tags:
+      - users
+      security:
+      - XSessionTokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: ''
+        '406':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The Accept header cannot be satisfied.
+        '401':
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+              description: Authentication scheme advertised by the view (`X-Session-Token`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Not authenticated.
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Permission denied, or CSRF failed on a cookie-authenticated
+            write. Hidden objects are 404, not 403.
+        '429':
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds until the client may retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Throttled.
+    patch:
+      operationId: users_me_partial_update
+      tags:
+      - users
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedUserRequest'
+      security:
+      - XSessionTokenAuth: []
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/ValidationError'
+                - $ref: '#/components/schemas/Error'
+          description: Validation error (`fields` present) or parse error (no `fields`).
+        '415':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The request Content-Type is not accepted.
+        '406':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: The Accept header cannot be satisfied.
+        '401':
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+              description: Authentication scheme advertised by the view (`X-Session-Token`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Not authenticated.
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Permission denied, or CSRF failed on a cookie-authenticated
+            write. Hidden objects are 404, not 403.
+        '429':
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds until the client may retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+          description: Throttled.
+components:
+  schemas:
+    Error:
+      type: object
+      description: Body of every error response except validation errors (docs/api.md).
+      properties:
+        code:
+          type: string
+          description: Stable snake_case code from docs/api.md.
+        detail:
+          type: string
+          description: English message for humans.
+        extra:
+          type: object
+          additionalProperties: {}
+          description: Structured context for some domain errors.
+      required:
+      - code
+      - detail
+    FieldError:
+      type: object
+      description: One validation error of one field.
+      properties:
+        code:
+          type: string
+        detail:
+          type: string
+      required:
+      - code
+      - detail
+    PaginatedUserList:
+      type: object
+      required:
+      - count
+      - next
+      - previous
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: https://api.example.com/api/v1/users/?page=2
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: https://api.example.com/api/v1/users/?page=1
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+    PatchedUserRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 255
+      additionalProperties: false
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 255
+        url:
+          type: string
+          format: uri
+          readOnly: true
+      required:
+      - id
+      - name
+      - url
+    ValidationError:
+      type: object
+      description: Body of a 400 validation error, with the errors of each field.
+      properties:
+        code:
+          type: string
+          description: Always "validation_error".
+        detail:
+          type: string
+        fields:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              $ref: '#/components/schemas/FieldError'
+          description: Errors per field. Nested serializers nest further, and errors
+            that belong to no single field go under non_field_errors.
+      required:
+      - code
+      - detail
+      - fields
+  securitySchemes:
+    XSessionTokenAuth:
+      type: apiKey
+      in: header
+      name: X-Session-Token
+      description: X-Session-Token authentication
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sessionid
+      description: Staff session for the admin and Swagger only. The cookie name is
+        SESSION_COOKIE_NAME (`sessionid` locally, `__Secure-sessionid` in production).
+        PATCH, POST, PUT and DELETE also require CSRF.
+servers:
+- url: /
+  description: Current host

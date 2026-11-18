@@ -1,0 +1,25 @@
+info:
+  name: Reenviar código
+  type: http
+  seq: 13
+
+http:
+  method: POST
+  url: "{{baseUrl}}/_allauth/app/v1/auth/email/verify/resend"
+  auth: inherit
+
+runtime:
+  scripts:
+    - type: after-response
+      code: |-
+        if (res.status === 200) console.log("Código reenviado: revisa Mailpit en " + bru.getEnvVar("mailpitUrl"));
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "200"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

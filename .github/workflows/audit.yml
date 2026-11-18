@@ -1,0 +1,42 @@
+name: Audit
+
+# Separate from CI so the weekly schedule audits dependencies without
+# re-running lint, tests and the Docker build.
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+  schedule:
+    - cron: "0 13 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  # github.head_ref is only the source branch name; the pull request number, or
+  # github.ref on a push or schedule, is unique.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Only uv is needed here: the export reads uv.lock without installing anything.
+      - uses: ./.github/actions/setup-python-env
+        with:
+          install-dependencies: "false"
+
+      # Hashes let pip-audit skip pip resolution (--disable-pip) and audit
+      # exactly the locked versions, optional extras (s3) included.
+      - name: Export locked dependencies
+        run: uv export --locked --no-emit-project --all-extras --format requirements.txt -o /tmp/requirements.txt
+
+      - name: Audit dependencies for known vulnerabilities
+        run: uvx pip-audit==2.10.1 --strict --disable-pip --progress-spinner off -r /tmp/requirements.txt

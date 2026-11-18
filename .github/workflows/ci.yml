@@ -1,0 +1,467 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+concurrency:
+  # github.head_ref is only the source branch name, so two fork pull requests
+  # from branches with the same name would cancel each other. The pull request
+  # number, or github.ref on a push, is unique.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+# The lint job needs these as well as test: mypy's Django plugin and the
+# OpenAPI check import the test settings. The compose validation unsets them.
+env:
+  DJANGO_SETTINGS_MODULE: config.settings.test
+  POSTGRES_DB: ci
+  POSTGRES_USER: ci
+  POSTGRES_PASSWORD: ci
+  POSTGRES_HOST: localhost
+  POSTGRES_PORT: 5432
+
+jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The gitleaks CLI pinned by version and checksum. gitleaks-action needs a
+      # license for repositories owned by an organization.
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+        run: |
+          set -euo pipefail
+          curl -sSfL -o "$RUNNER_TEMP/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+
+      - name: Scan the git history for secrets
+        run: '"$RUNNER_TEMP/gitleaks" git --redact --verbose --config .gitleaks.toml .'
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-python-env
+
+      - name: Run pre-commit hooks
+        run: uvx pre-commit@4.7.0 run --all-files --show-diff-on-failure
+
+      - name: Lint
+        run: uv run scripts/check.sh lint
+
+  # Markdown style runs in the lint job (the markdownlint-cli2 pre-commit hook).
+  # This job checks internal links and heading anchors only; it needs no Python.
+  links:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # --offline: a third-party outage must not fail a pull request. Bump
+      # lycheeVersion together with the action SHA.
+      - name: Check internal documentation links
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          lycheeVersion: v0.24.2
+          fail: true
+          args: --config lychee.toml --offline --verbose --no-progress './**/*.md'
+
+  # Pull requests only: compares docs/openapi.yaml with the base branch and
+  # fails on a breaking change, such as a removed path, response field or enum
+  # value. .github/oasdiff-levels.txt raises a removed request field to ERR.
+  # The lint job already proves the file matches the code.
+  # See docs/api.md#breaking-changes.
+  api-contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out the base branch schema
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.base_ref }}
+          path: base
+          sparse-checkout: docs/openapi.yaml
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      # The oasdiff CLI pinned by version and checksum, like gitleaks.
+      - name: Install oasdiff
+        env:
+          OASDIFF_VERSION: "1.38.0"
+          OASDIFF_SHA256: "613037fd6a1d3362a1b742d6d86c338c0eb5ab3511f4942ce3948e78720ea2da"
+        run: |
+          set -euo pipefail
+          curl -sSfL -o "$RUNNER_TEMP/oasdiff.tar.gz" \
+            "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
+          echo "${OASDIFF_SHA256}  $RUNNER_TEMP/oasdiff.tar.gz" | sha256sum --check -
+          tar -xzf "$RUNNER_TEMP/oasdiff.tar.gz" -C "$RUNNER_TEMP" oasdiff
+
+      - name: Fail on breaking API changes
+        run: '"$RUNNER_TEMP/oasdiff" breaking base/docs/openapi.yaml docs/openapi.yaml --fail-on ERR --severity-levels .github/oasdiff-levels.txt --format githubactions'
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Only the tests marked "valkey" reach it, on databases 14 and 15
+      # (core/tests/test_valkey_integration.py and
+      # core/tests/drf/test_valkey_integration.py). Every other test is in memory.
+      VALKEY_URL: redis://localhost:6379
+    services:
+      postgres:
+        # Keep in sync with docker/prod/compose.yaml. See docs/ci.md#image-pins.
+        image: postgres:18.6-alpine3.24@sha256:9ba53c7d41ea093baf5c1ba635ba5434c4f979880527d49bb7d9237d3193085b
+        env:
+          POSTGRES_DB: ci
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      valkey:
+        # Keep in sync with docker/prod/compose.yaml. See docs/ci.md#image-pins.
+        image: valkey/valkey:9.1.3-alpine3.24@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping | grep -q PONG"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-python-env
+
+      # The tests marked "valkey" fail, never skip, when the service above is missing.
+      - name: Migrations and tests
+        run: uv run scripts/check.sh test
+
+      # Unapply and reapply each local app's migrations, on this throwaway database.
+      # See docs/ci.md#reversible-migrations.
+      - name: Check migrations are reversible
+        run: uv run scripts/check.sh reversible
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        # Keep in sync with docker/prod/compose.yaml. See docs/ci.md#image-pins.
+        image: postgres:18.6-alpine3.24@sha256:9ba53c7d41ea093baf5c1ba635ba5434c4f979880527d49bb7d9237d3193085b
+        env:
+          POSTGRES_DB: ci
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      valkey:
+        # Keep in sync with docker/prod/compose.yaml. See docs/ci.md#image-pins.
+        image: valkey/valkey:9.1.3-alpine3.24@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b
+        env:
+          # A service cannot override its command; the image appends these flags.
+          # The throwaway password is repeated in the two steps that start django.
+          VALKEY_EXTRA_FLAGS: "--requirepass ci-only-valkey-password-never-a-secret --maxmemory 64mb --maxmemory-policy volatile-lru"
+          VALKEYCLI_AUTH: ci-only-valkey-password-never-a-secret
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping | grep -q PONG"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The production compose file must parse with the example values alone, with
+      # and without beat. See docs/ci.md#docker-compose-validation.
+      - name: Validate the production compose file
+        run: |
+          set -euo pipefail
+          docker compose version
+          cp docker/prod/.env.example docker/prod/.env
+          trap 'rm -f docker/prod/.env' EXIT
+          unset POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD POSTGRES_HOST POSTGRES_PORT DJANGO_SETTINGS_MODULE
+          docker compose -f docker/prod/compose.yaml config --quiet
+          docker compose -f docker/prod/compose.yaml --profile beat config --quiet
+          # The database must get the example's values. The django services read
+          # them through env_file, so only postgres_db shows an interpolation that
+          # came from the shell instead. Only names are printed, never values.
+          docker compose -f docker/prod/compose.yaml config --format json > "$RUNNER_TEMP/prod-compose.json"
+          python3 - "$RUNNER_TEMP/prod-compose.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          lines = Path("docker/prod/.env").read_text().splitlines()
+          example = dict(line.split("=", 1) for line in lines if "=" in line and not line.startswith("#"))
+          rendered = json.loads(Path(sys.argv[1]).read_text())["services"]["postgres_db"]["environment"]
+          for name in ("POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD"):
+              assert rendered[name] == example[name], f"{name} does not come from docker/prod/.env.example"
+          PY
+
+      # Example env files only: no secrets, no registry login, --quiet so values
+      # are not printed. config does not pull images. The copies are trap-cleaned
+      # and are already gitignored.
+      - name: Validate the development compose file
+        run: |
+          set -euo pipefail
+          docker compose version
+          cp .env.example .env
+          cp docker/dev/.env.example docker/dev/.env
+          trap 'rm -f .env docker/dev/.env' EXIT
+          unset POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD POSTGRES_HOST POSTGRES_PORT DJANGO_SETTINGS_MODULE PROJECT_NAME
+          docker compose -f docker/dev/compose.yaml config --quiet
+          docker compose -f docker/dev/compose.yaml -f .devcontainer/compose.yaml config --quiet
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build production image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/prod/Dockerfile
+          load: true
+          tags: django-prod:ci
+          build-args: |
+            APP_RELEASE=${{ github.sha }}
+            APP_NAME=${{ github.event.repository.name }}
+            APP_SOURCE_URL=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=django-prod
+          # A cache write that fails (quota, outage) must not fail the build.
+          cache-to: type=gha,scope=django-prod,mode=max,ignore-error=true
+
+      # OS and Python packages with a fixed HIGH or CRITICAL vulnerability fail the
+      # build; bump the base image digest or the package to fix it.
+      - name: Scan the image for vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: django-prod:ci
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Check production settings
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -e DJANGO_SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(50))')" \
+            -e DJANGO_ADMIN_URL=ci-admin/ \
+            -e DJANGO_ALLOWED_HOSTS=api.ci.invalid \
+            -e DJANGO_MAILER_HOST=smtp.ci.invalid \
+            -e DJANGO_DEFAULT_FROM_EMAIL="CI <noreply@ci.invalid>" \
+            -e FRONTEND_URL=https://app.ci.invalid \
+            -e POSTGRES_DB=ci \
+            -e POSTGRES_USER=ci \
+            -e POSTGRES_PASSWORD=ci \
+            -e VALKEY_URL=redis://127.0.0.1:6379 \
+            -e VALKEY_PASSWORD=ci-only-valkey-password-never-a-secret \
+            django-prod:ci python manage.py check --deploy --fail-level WARNING
+
+      - name: Smoke test production startup and healthcheck
+        run: |
+          set -euo pipefail
+          docker run -d --name django-prod-smoke --network host \
+            -e DJANGO_SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(50))')" \
+            -e DJANGO_ADMIN_URL=ci-admin/ \
+            -e DJANGO_ALLOWED_HOSTS=api.ci.invalid \
+            -e DJANGO_MAILER_HOST=smtp.ci.invalid \
+            -e DJANGO_DEFAULT_FROM_EMAIL="CI <noreply@ci.invalid>" \
+            -e FRONTEND_URL=https://app.ci.invalid \
+            -e POSTGRES_HOST=127.0.0.1 \
+            -e POSTGRES_PORT=5432 \
+            -e POSTGRES_DB=ci \
+            -e POSTGRES_USER=ci \
+            -e POSTGRES_PASSWORD=ci \
+            -e VALKEY_URL=redis://127.0.0.1:6379 \
+            -e VALKEY_PASSWORD=ci-only-valkey-password-never-a-secret \
+            django-prod:ci
+          trap 'docker logs django-prod-smoke; docker rm -f django-prod-smoke' EXIT
+          for _ in $(seq 1 20); do
+            if docker exec django-prod-smoke python /app/docker/prod/healthcheck.py; then
+              docker exec django-prod-smoke sh -c 'test -w "$DJANGO_MEDIA_ROOT"'
+              test "$(docker exec django-prod-smoke printenv APP_RELEASE)" = "$GITHUB_SHA"
+              # Left running: the next step sends it a request.
+              trap - EXIT
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+
+      # A failed login must answer 400 and leave allauth's counters in Valkey: a
+      # fail-open cache would answer 400 too. See docs/ci.md#docker-smoke.
+      - name: Smoke test a rate-limited login against Valkey
+        env:
+          VALKEY_CONTAINER: ${{ job.services.valkey.id }}
+        run: |
+          set -euo pipefail
+          trap 'docker logs django-prod-smoke; docker rm -f django-prod-smoke' EXIT
+          status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --header 'Host: api.ci.invalid' \
+            --header 'X-Forwarded-Proto: https' \
+            --header 'Content-Type: application/json' \
+            --data '{"email": "nobody@ci.invalid", "password": "not-the-password"}' \
+            http://127.0.0.1:8000/_allauth/app/v1/auth/login)"
+          echo "The login answered HTTP $status"
+          test "$status" = 400
+          counters="$(docker exec "$VALKEY_CONTAINER" valkey-cli --scan --pattern '*allauth:rl:*' | wc -l)"
+          echo "allauth rate-limit keys in Valkey: $counters"
+          test "$counters" -ge 1
+          if docker logs django-prod-smoke 2>&1 | grep -F 'Valkey is unreachable'; then
+            exit 1
+          fi
+          trap 'docker rm -f django-prod-smoke' EXIT
+
+      # The same image runs the Celery worker. See docs/ci.md#docker-smoke.
+      - name: Smoke test the Celery worker
+        run: |
+          set -euo pipefail
+          docker run -d --name django-prod-worker --network host \
+            -e DJANGO_SECRET_KEY="$(python3 -c 'import secrets; print(secrets.token_urlsafe(50))')" \
+            -e DJANGO_ADMIN_URL=ci-admin/ \
+            -e DJANGO_ALLOWED_HOSTS=api.ci.invalid \
+            -e DJANGO_MAILER_HOST=smtp.ci.invalid \
+            -e DJANGO_DEFAULT_FROM_EMAIL="CI <noreply@ci.invalid>" \
+            -e FRONTEND_URL=https://app.ci.invalid \
+            -e POSTGRES_HOST=127.0.0.1 \
+            -e POSTGRES_PORT=5432 \
+            -e POSTGRES_DB=ci \
+            -e POSTGRES_USER=ci \
+            -e POSTGRES_PASSWORD=ci \
+            -e VALKEY_URL=redis://127.0.0.1:6379 \
+            -e VALKEY_PASSWORD=ci-only-valkey-password-never-a-secret \
+            django-prod:ci sh /app/docker/prod/start-worker.sh
+          trap 'docker logs django-prod-worker; docker rm -f django-prod-worker' EXIT
+          ready=""
+          for _ in $(seq 1 20); do
+            if docker exec django-prod-worker sh -c \
+              'celery --app config inspect ping --destination "worker@$HOSTNAME" --timeout 5' \
+              > /dev/null 2>&1; then
+              ready=yes
+              break
+            fi
+            sleep 2
+          done
+          test -n "$ready"
+          task_id="$(docker exec django-prod-worker celery --app config call core.ping)"
+          test -n "$task_id"
+          # The line Celery writes when the task ends. No request enqueued it, so
+          # the task id stands in for the request id.
+          line=""
+          for _ in $(seq 1 20); do
+            line="$(docker logs django-prod-worker 2>&1 | grep -F "$task_id" | grep -F succeeded || true)"
+            if [ -n "$line" ]; then
+              break
+            fi
+            sleep 1
+          done
+          echo "The worker logged: $line"
+          echo "$line" | python3 -c 'import json, sys; line = json.loads(sys.stdin.read()); assert (line["task_id"], line["task_name"], line["request_id"]) == (sys.argv[1], "core.ping", sys.argv[1]), line' "$task_id"
+          trap 'docker rm -f django-prod-worker' EXIT
+
+  # The smoke requests of the Bruno collection against runserver, as a person
+  # runs them after seed_dev (docs/development.md#bruno). No request sends email.
+  bruno:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # seed_dev refuses DEBUG=False, so the local settings, with no .env file:
+      # every other value comes from the workflow env above.
+      DJANGO_SETTINGS_MODULE: config.settings.local
+      DJANGO_ENV_FILE: ""
+      VALKEY_URL: redis://localhost:6379
+    services:
+      postgres:
+        # Keep in sync with docker/prod/compose.yaml. See docs/ci.md#image-pins.
+        image: postgres:18.6-alpine3.24@sha256:9ba53c7d41ea093baf5c1ba635ba5434c4f979880527d49bb7d9237d3193085b
+        env:
+          POSTGRES_DB: ci
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      valkey:
+        # Keep in sync with docker/prod/compose.yaml. See docs/ci.md#image-pins.
+        image: valkey/valkey:9.1.3-alpine3.24@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping | grep -q PONG"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-python-env
+
+      - name: Migrate and seed the development users
+        run: |
+          set -euo pipefail
+          uv run python manage.py migrate --noinput
+          uv run python manage.py seed_dev
+
+      # Left running in the background for the next step.
+      - name: Start the development server
+        run: |
+          set -euo pipefail
+          uv run python manage.py runserver 127.0.0.1:8000 --noreload &
+          for _ in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8000/health/; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "runserver did not become ready on :8000" >&2
+          exit 1
+
+      # The seed environment holds the seed_dev user's credentials.
+      - name: Run the Bruno smoke requests
+        working-directory: bruno
+        run: npx --yes @usebruno/cli@4.3.0 run --env seed --tags=smoke

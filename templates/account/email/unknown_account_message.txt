@@ -1,0 +1,6 @@
+{% extends "account/email/base_message.txt" %}
+{% block content %}{% autoescape off %}Someone asked to reset the password for this email address. No account uses it. If it was you, create an account in the app:
+
+{{ signup_url }}
+
+If it was not you, ignore this email.{% endautoescape %}{% endblock content %}

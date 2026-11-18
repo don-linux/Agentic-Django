@@ -1,0 +1,314 @@
+[project]
+name = "project"
+version = "0.0.1"
+description = "Django project template"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+  { name = "Don Linux" },
+]
+requires-python = "==3.14.*"
+classifiers = [
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+  "argon2-cffi==25.1.0",
+  "celery[redis]==5.7.0",
+  "django==6.1.3",
+  "django-allauth[headless,mfa]==65.22.1",
+  "django-axes==9.0.0",
+  "django-cors-headers==4.9.0",
+  "django-environ==0.14.0",
+  "djangorestframework==3.18.3",
+  "drf-spectacular==0.30.0",
+  "drf-spectacular-sidecar==2026.10.1",
+  "gunicorn==27.0.0",
+  "kombu==5.7.0",
+  "psycopg[c]==3.3.8",
+  "redis[hiredis]==8.1.0",
+  "sentry-sdk[django]==2.75.0",
+  "whitenoise==6.12.0",
+]
+
+[project.optional-dependencies]
+# Object storage on S3 or a compatible service: build with DOCKER_PROD_UV_EXTRAS=s3.
+s3 = [
+  "django-storages[s3]==1.14.6",
+]
+
+[dependency-groups]
+dev = [
+  "celery-types==0.26.0",
+  "coverage==7.17.2",
+  "django-extensions==4.1",
+  "django-storages[s3]==1.14.6",
+  "django-stubs[compatible-mypy]==6.1.2",
+  "django-upgrade==1.33.0",
+  "django-zeal==2.3.0",
+  "djangorestframework-stubs==3.18.2",
+  "factory-boy==3.3.3",
+  "import-linter==2.16",
+  "mypy==2.4.1",
+  "pytest==9.2.0",
+  "pytest-django==4.14.0",
+  "pytest-sugar==1.1.1",
+  "pyyaml==6.0.3",
+  "ruff==0.17.4",
+]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 88
+extend-exclude = [
+  ".agents/*",
+  "*/migrations/*.py",
+  "staticfiles/*",
+]
+
+lint.select = [
+  "A",
+  "ASYNC",
+  "B",
+  "BLE",
+  "C4",
+  "C90",
+  "COM",
+  "DJ",
+  "DTZ",
+  "E",
+  "EM",
+  "ERA",
+  "EXE",
+  "F",
+  "FA",
+  "FBT",
+  "FLY",
+  "G",
+  "I",
+  "ICN",
+  "INP",
+  "INT",
+  "ISC",
+  "N",
+  "PD",
+  "PERF",
+  "PGH",
+  "PIE",
+  "PL",
+  "PT",
+  "PTH",
+  "PYI",
+  "Q",
+  "RET",
+  "RSE",
+  "RUF",
+  "S",
+  "SIM",
+  "SLF",
+  "SLOT",
+  "T10",
+  "T20",
+  "TC",
+  "TID",
+  "TRY",
+  "UP",
+  "W",
+  "YTT",
+]
+lint.ignore = [
+  "COM812", # Conflicts with the formatter https://docs.astral.sh/ruff/formatter/#conflicting-lint-rules
+  "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
+]
+lint.isort.force-single-line = true
+
+[tool.ruff.lint.per-file-ignores]
+# pytest asserts; everywhere else an assert is stripped under python -O.
+"conftest.py" = [ "S101" ]
+"**/tests/**" = [ "S101" ]
+
+# Responses are never cached on the server: X-Session-Token is not part of the
+# key. cache_control and never_cache stay allowed. See docs/api.md#caching.
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"django.views.decorators.cache.cache_page".msg = "Cache the query in its selector with core.cache.read_through (AGENTS.md, Caching)."
+"django.middleware.cache".msg = "The per-site cache is banned: it serves one user's response to another (AGENTS.md, Caching)."
+"django.middleware.cache.CacheMiddleware".msg = "The per-site cache is banned: it serves one user's response to another (AGENTS.md, Caching)."
+"django.middleware.cache.UpdateCacheMiddleware".msg = "The per-site cache is banned: it serves one user's response to another (AGENTS.md, Caching)."
+"django.middleware.cache.FetchFromCacheMiddleware".msg = "The per-site cache is banned: it serves one user's response to another (AGENTS.md, Caching)."
+
+[tool.pytest]
+addopts = [
+  "--ds=config.settings.test",
+  "--reuse-db",
+  "--import-mode=importlib",
+  "-ra",
+]
+minversion = "9.0"
+# strict_config, strict_markers, strict_xfail and strict_parametrization_ids.
+# pytest is pinned, so new strictness options only arrive with a reviewed bump.
+strict = true
+testpaths = [ "apps", "core" ]
+python_files = [
+  "tests.py",
+  "test_*.py",
+]
+# strict mode refuses a marker that is not listed here.
+markers = [
+  "http: an HTTP contract test under apps/*/tests/http/ or core/tests/http/ (marked by path in conftest.py)",
+  "drf: a test of DRF or drf-spectacular under apps/*/tests/drf/ or core/tests/drf/ (marked by path in conftest.py)",
+  "valkey: needs a real Valkey at VALKEY_URL (core/tests/test_valkey_integration.py, core/tests/drf/test_valkey_integration.py); deselect with -m \"not valkey\"",
+]
+# Warnings are errors: fix deprecations instead of silencing them. A third-party
+# warning that cannot be fixed gets a narrow "ignore:" entry linking the issue.
+filterwarnings = [ "error" ]
+
+[tool.coverage.run]
+branch = true
+source = [ "apps", "config", "core" ]
+omit = [
+  "*/migrations/*",
+  "*/tests/*",
+  "config/wsgi.py",
+  "manage.py",
+  # Never imported by the test settings; covered by the production image checks
+  # and the subprocess tests in core/tests/production_settings.py.
+  "config/settings/_env_file.py",
+  "config/settings/local.py",
+  "config/settings/production.py",
+]
+
+[tool.coverage.report]
+# Branch coverage floor: it stays at 98. Never lower it, and do not ratchet it
+# toward 100. See docs/development.md#coverage.
+fail_under = 98
+show_missing = true
+skip_covered = true
+exclude_also = [ "if TYPE_CHECKING:", "raise NotImplementedError", "@overload" ]
+
+[tool.mypy]
+python_version = "3.14"
+check_untyped_defs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+no_implicit_reexport = true
+strict_equality = true
+extra_checks = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unused_configs = true
+plugins = [
+  "mypy_django_plugin.main",
+  "mypy_drf_plugin.main",
+]
+
+[[tool.mypy.overrides]]
+# Generated migrations are not type-checked.
+module = "*.migrations.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+# Third-party packages that ship no type information (no stubs, no py.typed).
+module = [ "allauth.*", "environ", "zeal", "zeal.*" ]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# factory-boy re-exports Faker, post_generation, ... without __all__.
+module = [ "factory" ]
+implicit_reexport = true
+
+[[tool.mypy.overrides]]
+# The framework-neutral layers are typed strictly: no Any, no bare generics, no
+# untyped calls. The flags --strict adds on top of [tool.mypy]; explicit Any is
+# refused too. See docs/ARCHITECTURE.md#strict-typing.
+module = [
+  "apps.*.services",
+  "apps.*.selectors",
+  "core.exceptions",
+  "core.errors",
+]
+disallow_any_generics = true
+disallow_any_explicit = true
+disallow_any_decorated = true
+disallow_subclassing_any = true
+disallow_untyped_calls = true
+disallow_untyped_decorators = true
+warn_return_any = true
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+# Tests and fixtures may leave parameters and return types to pytest.
+module = [ "*.tests.*", "conftest" ]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+[tool.django-stubs]
+django_settings_module = "config.settings.test"
+
+# Import contracts, checked by `lint-imports` in scripts/check.sh lint. The API
+# framework stays in the API layer, so it can change without touching the
+# domain. See docs/ARCHITECTURE.md#import-contracts.
+[tool.importlinter]
+root_packages = [ "apps", "config", "core" ]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+id = "api-framework-in-api-layer"
+name = "Only the API layer imports DRF and drf-spectacular"
+type = "protected"
+protected_modules = [ "rest_framework", "drf_spectacular" ]
+allowed_importers = [
+  "apps.*.api",
+  "core.api",
+  "config.api_router",
+  # Tests of DRF itself (docs/development.md#test-layout).
+  "apps.*.tests.drf",
+  "core.tests.drf",
+]
+
+[[tool.importlinter.contracts]]
+id = "domain-without-api"
+name = "Domain code never imports the API layer or config"
+type = "forbidden"
+source_modules = [
+  "apps.*.models",
+  "apps.*.managers",
+  "apps.*.services",
+  "apps.*.selectors",
+  "apps.*.signals",
+  "apps.*.tasks",
+  "core.models",
+  "core.exceptions",
+  "core.errors",
+  "core.cache",
+  "core.tasks",
+]
+forbidden_modules = [ "apps.*.api", "core.api", "config" ]
+
+[[tool.importlinter.contracts]]
+id = "core-without-apps"
+name = "core never imports an app"
+type = "forbidden"
+source_modules = [ "core" ]
+forbidden_modules = [ "apps" ]
+# Tests may build app rows; config (urls, settings) wires apps in on purpose.
+ignore_imports = [ "core.tests.** -> apps.**", "core.tests.** -> config.**" ]
+
+[[tool.importlinter.contracts]]
+id = "app-layers"
+name = "Inside an app, imports only go down the layers"
+type = "layers"
+containers = [ "apps.*" ]
+layers = [
+  "(api)",
+  "(admin) | (management) | (views) | (adapters)",
+  # tasks.py and services.py import each other (docs/tasks.md#writing-a-task).
+  "(services) : (tasks)",
+  "(signals)",
+  "(selectors)",
+  "(models)",
+  "(managers)",
+]
+ignore_imports = [
+  # Under TYPE_CHECKING only: the manager annotates what it returns.
+  "apps.*.managers -> apps.*.models",
+]

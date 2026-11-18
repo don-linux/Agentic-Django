@@ -1,0 +1,32 @@
+info:
+  name: Actualizar perfil
+  type: http
+  seq: 8
+  tags:
+    - smoke
+
+http:
+  method: PATCH
+  url: "{{baseUrl}}/api/v1/users/me/"
+  auth: inherit
+  body:
+    type: json
+    data: |-
+      {
+        "name": "Bruno"
+      }
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "200"
+    - expression: res.body.name
+      operator: eq
+      value: "Bruno"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

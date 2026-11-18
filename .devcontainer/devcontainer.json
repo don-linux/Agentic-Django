@@ -1,0 +1,51 @@
+{
+  "name": "project-name",
+  "dockerComposeFile": [
+    "../docker/dev/compose.yaml",
+    "compose.yaml"
+  ],
+  "service": "django",
+  "workspaceFolder": "/app",
+  "remoteUser": "django",
+  "updateRemoteUserUID": true,
+  "overrideCommand": false,
+  "initializeCommand": "sh -c '[ -f .env ] || cp .env.example .env; [ -f docker/dev/.env ] || cp docker/dev/.env.example docker/dev/.env'",
+  "postStartCommand": "python manage.py migrate --noinput",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/opt/venv/bin/python",
+        "cursorpyright.analysis.typeCheckingMode": "off"
+      },
+      "extensions": [
+        // Theme
+        "github.github-vscode-theme",
+        "miguelsolorio.fluent-icons",
+        "PKief.material-icon-theme",
+        // Python
+        "anysphere.cursorpyright",
+        "ms-python.python",
+        "ms-python.debugpy",
+        "ms-python.vscode-python-envs",
+        "ms-python.mypy-type-checker",
+        "charliermarsh.ruff",
+        // Docker and Dev Containers
+        "ms-azuretools.vscode-docker",
+        "anysphere.remote-containers",
+        "ms-azuretools.vscode-containers",
+        "redhat.vscode-yaml",
+        // GitHub
+        "github.vscode-github-actions",
+        "GitHub.vscode-pull-request-github",
+        // Database
+        "microsoft.cursor-pgsql",
+        "cweijan.vscode-database-client2",
+        // VS Code Tools
+        "coderabbit.coderabbit-vscode",
+        "anysphere.remote-ssh",
+        "aykutsarac.jsoncrack-vscode",
+        "mguellsegarra.highlight-on-copy"
+      ]
+    }
+  }
+}

@@ -1,0 +1,17 @@
+# markdownlint-cli2 v0.24.1 (markdownlint v0.42.1).
+# Docs are long-line prose; .editorconfig only special-cases trailing
+# whitespace in Markdown. MD013 would fail 561 times on a wrap we do not want.
+# MD024 is siblings-only so reused recipe headings in docs/data.md are allowed.
+config:
+  default: true
+  MD013: false
+  MD024:
+    siblings_only: true
+
+globs:
+  - "**/*.md"
+
+ignores:
+  - "graphify-out/**"
+  - "**/node_modules/**"
+  - ".venv/**"

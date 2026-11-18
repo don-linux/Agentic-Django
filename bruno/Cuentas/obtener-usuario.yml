@@ -1,0 +1,26 @@
+info:
+  name: Obtener usuario
+  type: http
+  seq: 6
+  tags:
+    - smoke
+
+http:
+  method: GET
+  url: "{{baseUrl}}/api/v1/users/{{userId}}/"
+  auth: inherit
+
+runtime:
+  assertions:
+    - expression: res.status
+      operator: eq
+      value: "200"
+    - expression: res.body.id
+      operator: eq
+      value: "{{userId}}"
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
