@@ -39,7 +39,7 @@ repos:
         args: [--target-version, "6.1"]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.13.1
+    rev: 0.13.9
     hooks:
       # Check only: run `uv lock` yourself when pyproject.toml changes.
       - id: uv-lock

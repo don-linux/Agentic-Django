@@ -95,7 +95,7 @@ digest() {  # digest <registry: docker.io or ghcr.io> <repository> <tag>
     "https://$host/v2/$2/manifests/$3" | tr -d '\r' | awk 'tolower($1)=="docker-content-digest:"{print $2}'
 }
 digest docker.io library/python 3.14.10-slim    # e.g. the Python base image
-digest ghcr.io astral-sh/uv 0.13.1               # e.g. the uv image
+digest ghcr.io astral-sh/uv 0.13.9               # e.g. the uv image
 ```
 
 - `python`: Dependabot proposes patch releases only. A minor release is a Python upgrade (see "Python minor release" below).

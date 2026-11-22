@@ -3,7 +3,7 @@ FROM python:3.14.10-slim@sha256:9aaa474097d094040649f2162a627c0049b408f52138d980
 
 # Keep uv in sync with .github/actions/setup-python-env: Dependabot does not
 # update images referenced by COPY --from.
-COPY --from=ghcr.io/astral-sh/uv:0.13.1@sha256:4a1f3666816dafadd20ceb71eac9a7d56d7ef30279f7d64048519ab901ada336 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.13.9@sha256:d3b601f0c7b118bc1753febf7c41cc80981df678445e0254284eecf84db79a7d /uv /uvx /bin/
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git build-essential libpq-dev \
