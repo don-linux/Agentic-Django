@@ -9,7 +9,7 @@ How the GitHub Actions workflows check the template. Local commands are in [deve
 - `secrets`: scans the whole Git history with gitleaks ([Secrets](#secrets)).
 - `lint`: pre-commit, then `scripts/check.sh lint`.
 - `links`: internal Markdown links and heading anchors, offline ([Docs lint](#docs-lint)).
-- `api-contract`: pull requests only. oasdiff compares `docs/openapi.yaml` with the base branch's copy and fails on a breaking change ([api.md#breaking-changes](api.md#breaking-changes)).
+- `api-contract`: pull requests only. oasdiff compares `docs/openapi.json` with the base branch's copy and fails on a breaking change ([api.md#breaking-changes](api.md#breaking-changes)). The first pull request still finds `docs/openapi.yaml` on `main` and renames the base's `Error` and `ValidationError` components to Ninja's names, then applies a temporary `--err-ignore` for two classified document-version findings (`next` and `previous`); the next pull request must delete `.github/oasdiff-yaml-baseline-err-ignore.txt` and the ignore branch in `ci.yml`.
 - `test`: `scripts/check.sh test` against PostgreSQL (the tests marked `valkey` also use a Valkey service), then `scripts/check.sh reversible`.
 - `docker`: validates the production and development Compose files with the example values, builds the production image, scans it with Trivy, runs `manage.py check --deploy`, and smoke-tests it against a password-protected Valkey.
 - `bruno`: the Bruno smoke requests against `runserver` ([Bruno smoke](#bruno-smoke)).
@@ -20,7 +20,7 @@ A new push to a pull request cancels the run still in progress for it; pushes to
 
 ### Lint
 
-pre-commit runs every hook, then `scripts/check.sh lint` runs ruff, the `cache.clear()` guard, mypy, the import contracts (`lint-imports`), `django-upgrade --check`, the OpenAPI validation (`spectacular --validate --fail-on-warn`) and a diff against the committed `docs/openapi.yaml`.
+pre-commit runs every hook, then `scripts/check.sh lint` runs ruff, the `cache.clear()` guard, mypy, stubtest on `typings/`, pyright, the import contracts (`lint-imports`), `django-upgrade --check`, the OpenAPI export (`export_openapi_schema`, its stdout redirected to a temporary file) and a diff against the committed `docs/openapi.json`.
 
 ### Secrets
 
@@ -53,7 +53,7 @@ The step unsets the workflow's `POSTGRES_*` and `DJANGO_SETTINGS_MODULE` first: 
 
 ### Docs lint
 
-markdownlint-cli2 runs as a pre-commit hook, so the lint job's pre-commit step checks every Markdown file (`.markdownlint-cli2.yaml`: `MD013` off, `MD024` siblings only). The `links` job runs lychee offline: internal links and heading anchors only (`lychee.toml`), so a third-party outage cannot fail a pull request. `links.yml` checks the external URLs every Monday and on demand (`workflow_dispatch`), with retries, and counts a 429 as reachable; a red run there is a heads-up, not a merge gate. Both pin `lycheeVersion` next to the action SHA; bump them together. Locally, `lychee --offline` does the same. lychee reads only Markdown, so `core/tests/test_docs_anchors.py` checks the `docs/<file>.md#<anchor>` pointers everywhere else (code comments, Compose, scripts, env examples) against the headings.
+markdownlint-cli2 runs as a pre-commit hook, so the lint job's pre-commit step checks every Markdown file (`.markdownlint-cli2.yaml`: `MD013` off, `MD024` siblings only). The `links` job runs lychee offline: internal links and heading anchors only (`lychee.toml`), so a third-party outage cannot fail a pull request. `links.yml` checks the external URLs every Monday and on demand (`workflow_dispatch`), with retries, and counts a 429 as reachable; a red run there is a heads-up, not a merge gate. Both pin `lycheeVersion` next to the action SHA; bump them together. Locally, `lychee --offline` does the same; `lychee.toml` skips `.venv/`, because the glob is expanded without `.gitignore` and would reach the Markdown of every installed package. lychee reads only Markdown, so `core/tests/test_docs_anchors.py` checks the `docs/<file>.md#<anchor>` pointers everywhere else (code comments, Compose, scripts, env examples) against the headings.
 
 ### Bruno smoke
 
@@ -114,7 +114,7 @@ When an advisory does not apply to this project, ignore that one advisory, never
 
 ## Dependabot
 
-Dependabot opens at most 5 pull requests per ecosystem each week, for versions at least 7 days old; security updates ignore both the schedule and the cooldown. Composite actions under `.github/actions/` need their own directory entry. The Python image gets patch updates only. Major PostgreSQL and Valkey upgrades are ignored: a major PostgreSQL needs a dump and restore, and a new Valkey may write data files the old one refuses to load, so changing the tag back does not undo it.
+Dependabot opens at most 5 pull requests per ecosystem each week, for versions at least 7 days old (`cooldown.default-days: 7` in `.github/dependabot.yml`); security updates ignore both the schedule and the cooldown. This 7-day cooldown applies only to Dependabot. Manual upgrades of this template may pin the latest stable release without waiting. Composite actions under `.github/actions/` need their own directory entry. The Python image gets patch updates only. Major PostgreSQL and Valkey upgrades are ignored: a major PostgreSQL needs a dump and restore, and a new Valkey may write data files the old one refuses to load, so changing the tag back does not undo it.
 
 What Dependabot skips (the [tool pins](#tool-pins), the service images in `ci.yml`, Python minor releases, PostgreSQL and Valkey majors, end-of-life dates), and everything after a long pause, is covered by the [maintain-django-template](../.agents/skills/maintain-django-template/SKILL.md) skill: a read-only audit first, then a tiered upgrade plan.
 

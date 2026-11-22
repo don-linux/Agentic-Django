@@ -83,7 +83,7 @@ From `docker/prod/.env.example`, the only production env file. Compose reads it 
 | `DJANGO_CACHE_VERSION` | No | `1` | Raise it to drop every cached entry; never tie it to `APP_RELEASE`. |
 | `VALKEY_CACHE_DB` | No | `0` | Logical database of the cache. |
 | `VALKEY_BROKER_DB` | No | `1` | Logical database of the task broker; must differ from the cache's. |
-| `VALKEY_USERNAME` | No | Empty | ACL user, only for a server that defines one. |
+| `VALKEY_USERNAME` | No | Empty | ACL user, only for a server that defines one. It needs write commands: the readiness probe is an `EXPIRE` ([ARCHITECTURE](../ARCHITECTURE.md#deployment)). |
 
 ### Background tasks
 
@@ -132,8 +132,8 @@ From `docker/prod/.env.example`, the only production env file. Compose reads it 
 | `DJANGO_TRUSTED_PROXY_COUNT` | No | `1` | Reverse proxies that append to `X-Forwarded-For`; sets the client IP for rate limits and throttles. |
 | `ALLAUTH_TRUSTED_PROXY_COUNT` | No | `1` | Older name of `DJANGO_TRUSTED_PROXY_COUNT`, read only when that one is unset. |
 | `DJANGO_API_MAX_PAGE_NUMBER` | No | `1000` | Deepest page a page-number list serves; deeper is a 404. |
-| `DJANGO_THROTTLE_ANON_RATE` | No | `60/min` | DRF limit per anonymous client IP, like `60/min` or `1000/hour`; another format refuses to start. |
-| `DJANGO_THROTTLE_USER_RATE` | No | `600/min` | DRF limit per user, like `60/min` or `1000/hour`; another format refuses to start. |
+| `DJANGO_THROTTLE_ANON_RATE` | No | `60/min` | API limit per anonymous client IP, like `60/min` or `1000/hour`; another format refuses to start. |
+| `DJANGO_THROTTLE_USER_RATE` | No | `600/min` | API limit per authenticated user, like `60/min` or `1000/hour`; another format refuses to start. |
 
 ### Accounts and frontend
 

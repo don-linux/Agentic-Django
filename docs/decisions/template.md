@@ -2,6 +2,7 @@
 
 - Status: Proposed | Accepted | Superseded by NNNN
 - Date: YYYY-MM-DD
+- Supersedes: NNNN, linked to its file (only when this record replaces one)
 
 ## Context
 

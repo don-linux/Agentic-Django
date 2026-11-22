@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# The lint and test gate for local runs and CI: `lint`, `test`, `reversible`, or
-# lint then test with no argument. See docs/development.md#checks.
+# The lint and test gate for local runs and CI: `lint`, `test`, `reversible`,
+# `openapi` (the docs/openapi.json drift check that ends `lint`), or lint then
+# test with no argument. See docs/development.md#checks.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-# The settings CI uses; docs/openapi.yaml is generated with them.
+# The settings CI uses; docs/openapi.json is generated with them.
 export DJANGO_SETTINGS_MODULE="${DJANGO_SETTINGS_MODULE:-config.settings.test}"
 
 run_lint() {
@@ -17,18 +18,32 @@ run_lint() {
     python scripts/forbid_cache_clear.py apps core config
     echo "== mypy"
     mypy .
+    echo "== stubtest"
+    # typings/ must match the installed package (django-environ 0.14.0).
+    MYPYPATH=typings stubtest environ --ignore-missing-stub
+    echo "== pyright"
+    pyright
     echo "== import contracts"
     # [tool.importlinter] in pyproject.toml; docs/ARCHITECTURE.md#import-contracts.
     lint-imports
     echo "== django-upgrade"
     find . \( -path ./.git -o -path ./.venv -o -path './.*_cache' -o -path ./staticfiles -o -path ./media \) -prune \
         -o -name '*.py' -exec django-upgrade --target-version 6.1 --check {} +
+    run_openapi
+}
+
+run_openapi() {
     echo "== OpenAPI schema"
-    local schema="${TMPDIR:-/tmp}/openapi-check.yaml"
-    python manage.py spectacular --file "$schema" --validate --fail-on-warn
-    if ! diff -u docs/openapi.yaml "$schema"; then
-        echo "docs/openapi.yaml is out of date. Regenerate it with:" >&2
-        echo "  python manage.py spectacular --settings config.settings.test --file docs/openapi.yaml --validate --fail-on-warn" >&2
+    # A private directory per run (mktemp -d, in $TMPDIR), removed on exit even
+    # after a failure: parallel runs never share the export, and a file left at
+    # a fixed path is never read or overwritten.
+    OPENAPI_CHECK_DIR="$(mktemp -d)"
+    trap 'rm -rf -- "$OPENAPI_CHECK_DIR"' EXIT
+    local schema="$OPENAPI_CHECK_DIR/openapi.json"
+    python manage.py export_openapi_schema --api config.api.api --indent 2 >"$schema"
+    if ! diff -u docs/openapi.json "$schema"; then
+        echo "docs/openapi.json is out of date. Regenerate it with:" >&2
+        echo "  python manage.py export_openapi_schema --settings config.settings.test --api config.api.api --indent 2 > docs/openapi.json" >&2
         return 1
     fi
 }
@@ -81,12 +96,13 @@ case "${1:-all}" in
     lint) run_lint ;;
     test) run_test ;;
     reversible) run_reversible ;;
+    openapi) run_openapi ;;
     all)
         run_lint
         run_test
         ;;
     *)
-        echo "usage: $0 [lint|test|reversible]" >&2
+        echo "usage: $0 [lint|test|reversible|openapi]" >&2
         exit 2
         ;;
 esac

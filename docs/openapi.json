@@ -1,0 +1,798 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Project API",
+    "version": "1.0.0",
+    "description": "The Project JSON API. Account endpoints under /_allauth/ belong to django-allauth and keep its own format (docs/api.md)."
+  },
+  "paths": {
+    "/api/v1/users/": {
+      "get": {
+        "operationId": "users_list",
+        "summary": "List users",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A page number within the paginated result set.",
+              "title": "Page"
+            },
+            "required": false,
+            "description": "A page number within the paginated result set."
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Number of results to return per page.",
+              "title": "Page Size"
+            },
+            "required": false,
+            "description": "Number of results to return per page."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PagedUserOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Authentication scheme (`X-Session-Token`)."
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied, or CSRF failed on a cookie-authenticated write. Hidden objects are 404, not 403.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          },
+          "406": {
+            "description": "The Accept header cannot be satisfied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Throttled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds until the client may retry."
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, not visible, or an invalid page number.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "users"
+        ],
+        "security": [
+          {
+            "XSessionTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/users/me/": {
+      "get": {
+        "operationId": "users_me_retrieve",
+        "summary": "Retrieve the current user",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Authentication scheme (`X-Session-Token`)."
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied, or CSRF failed on a cookie-authenticated write. Hidden objects are 404, not 403.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          },
+          "406": {
+            "description": "The Accept header cannot be satisfied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Throttled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds until the client may retry."
+              }
+            }
+          }
+        },
+        "tags": [
+          "users"
+        ],
+        "security": [
+          {
+            "XSessionTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "users_me_partial_update",
+        "summary": "Partially update the current user",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Authentication scheme (`X-Session-Token`)."
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied, or CSRF failed on a cookie-authenticated write. Hidden objects are 404, not 403.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          },
+          "406": {
+            "description": "The Accept header cannot be satisfied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Throttled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds until the client may retry."
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (`fields` present) or parse error (no `fields`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ValidationErrorSchema"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorSchema"
+                    }
+                  ],
+                  "title": "Response"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request Content-Type is not accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "users"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/UserUpdateIn"
+                  }
+                ]
+              }
+            }
+          },
+          "required": false
+        },
+        "security": [
+          {
+            "XSessionTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/users/{id}/": {
+      "get": {
+        "operationId": "users_retrieve",
+        "summary": "Retrieve a user",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+              "title": "Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Authentication scheme (`X-Session-Token`)."
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied, or CSRF failed on a cookie-authenticated write. Hidden objects are 404, not 403.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          },
+          "406": {
+            "description": "The Accept header cannot be satisfied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Throttled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds until the client may retry."
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, not visible, or an invalid page number.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "users"
+        ],
+        "security": [
+          {
+            "XSessionTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "users_partial_update",
+        "summary": "Partially update a user",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "schema": {
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+              "title": "Id",
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not authenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Authentication scheme (`X-Session-Token`)."
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied, or CSRF failed on a cookie-authenticated write. Hidden objects are 404, not 403.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          },
+          "406": {
+            "description": "The Accept header cannot be satisfied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Throttled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds until the client may retry."
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, not visible, or an invalid page number.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (`fields` present) or parse error (no `fields`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ValidationErrorSchema"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorSchema"
+                    }
+                  ],
+                  "title": "Response"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The request Content-Type is not accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "users"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/UserUpdateIn"
+                  }
+                ]
+              }
+            }
+          },
+          "required": false
+        },
+        "security": [
+          {
+            "XSessionTokenAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "PageNumberIn": {
+        "properties": {
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A page number within the paginated result set.",
+            "title": "Page"
+          },
+          "page_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Number of results to return per page.",
+            "title": "Page Size"
+          }
+        },
+        "title": "PageNumberIn",
+        "type": "object"
+      },
+      "PagedUserOut": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "next": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "format": "uri",
+            "title": "Next"
+          },
+          "previous": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "format": "uri",
+            "title": "Previous"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/UserOut"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "next",
+          "previous",
+          "results"
+        ],
+        "title": "PagedUserOut",
+        "type": "object"
+      },
+      "UserOut": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "readOnly": true,
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 255,
+            "title": "Name",
+            "type": "string"
+          },
+          "url": {
+            "format": "uri",
+            "readOnly": true,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "url"
+        ],
+        "title": "UserOut",
+        "type": "object"
+      },
+      "ErrorSchema": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "extra": {
+            "additionalProperties": true,
+            "description": "Structured context for some domain errors.",
+            "title": "Extra",
+            "type": "object"
+          }
+        },
+        "required": [
+          "code",
+          "detail"
+        ],
+        "title": "ErrorSchema",
+        "type": "object"
+      },
+      "ValidationErrorSchema": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "fields": {
+            "additionalProperties": true,
+            "title": "Fields",
+            "type": "object"
+          }
+        },
+        "required": [
+          "code",
+          "detail",
+          "fields"
+        ],
+        "title": "ValidationErrorSchema",
+        "type": "object"
+      },
+      "UserUpdateIn": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 255,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "title": "UserUpdateIn",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "XSessionTokenAuth": {
+        "type": "apiKey",
+        "description": "X-Session-Token authentication",
+        "in": "header",
+        "name": "X-Session-Token"
+      },
+      "cookieAuth": {
+        "type": "apiKey",
+        "description": "Staff session for the admin and Swagger only. The cookie name is SESSION_COOKIE_NAME (`sessionid` locally, `__Secure-sessionid` in production). PATCH, POST, PUT and DELETE also require CSRF.",
+        "in": "cookie",
+        "name": "sessionid"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Current host"
+    }
+  ]
+}

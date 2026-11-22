@@ -4,12 +4,10 @@ Test settings: in-memory cache and broker, inline tasks.
 See docs/settings.md#test.
 """
 
-from typing import cast
-
 from .base import *  # noqa: F403
 from .base import INSTALLED_APPS
 from .base import MIDDLEWARE
-from .base import REST_FRAMEWORK
+from .base import NINJA_DEFAULT_THROTTLE_RATES
 from .base import build_headless_frontend_urls
 from .base import env
 
@@ -31,7 +29,7 @@ ACCOUNT_EMAIL_SUBJECT_PREFIX = EMAIL_SUBJECT_PREFIX
 EMAIL_SIGNATURE_NAME = "Project"
 MFA_TOTP_ISSUER = EMAIL_SIGNATURE_NAME
 ACCOUNT_ALLOW_REGISTRATION = True
-REST_FRAMEWORK_MAX_PAGE_NUMBER = 1000
+API_MAX_PAGE_NUMBER = 1000
 SECRET_KEY = env(
     "DJANGO_SECRET_KEY",
     # Development/test only. Production requires DJANGO_SECRET_KEY.
@@ -63,13 +61,10 @@ MAILERS = {"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend
 
 # Throttling stays on: global rates out of reach, scoped rates kept.
 # See docs/api.md#throttling.
-REST_FRAMEWORK = {
-    **REST_FRAMEWORK,
-    "DEFAULT_THROTTLE_RATES": {
-        **cast("dict[str, str]", REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]),
-        "anon": "10000/min",
-        "user": "10000/min",
-    },
+NINJA_DEFAULT_THROTTLE_RATES = {
+    **NINJA_DEFAULT_THROTTLE_RATES,
+    "anon": "10000/min",
+    "user": "10000/min",
 }
 
 MEDIA_URL = "http://media.testserver/"

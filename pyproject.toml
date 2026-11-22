@@ -20,10 +20,13 @@ dependencies = [
   "django-axes==9.0.0",
   "django-cors-headers==4.9.0",
   "django-environ==0.14.0",
-  "djangorestframework==3.18.3",
-  "drf-spectacular==0.30.0",
-  "drf-spectacular-sidecar==2026.10.1",
+  "django-ninja==1.8.0",
+  # Runtime: config/settings/base.py calls django_stubs_ext.monkeypatch(). Same
+  # version as django-stubs in the dev group (django-stubs README, FAQ).
+  "django-stubs-ext==6.1.2",
   "gunicorn==27.0.0",
+  "pydantic==2.14.3",
+  "pyyaml==6.0.3",
   "kombu==5.7.0",
   "psycopg[c]==3.3.8",
   "redis[hiredis]==8.1.0",
@@ -46,15 +49,14 @@ dev = [
   "django-stubs[compatible-mypy]==6.1.2",
   "django-upgrade==1.33.0",
   "django-zeal==2.3.0",
-  "djangorestframework-stubs==3.18.2",
   "factory-boy==3.3.3",
   "import-linter==2.16",
   "mypy==2.4.1",
   "pytest==9.2.0",
   "pytest-django==4.14.0",
   "pytest-sugar==1.1.1",
-  "pyyaml==6.0.3",
-  "ruff==0.17.4",
+  "ruff==0.17.5",
+  "pyright[nodejs]==1.1.414",
 ]
 
 [tool.ruff]
@@ -68,6 +70,7 @@ extend-exclude = [
 
 lint.select = [
   "A",
+  "ANN",
   "ASYNC",
   "B",
   "BLE",
@@ -119,13 +122,27 @@ lint.select = [
 lint.ignore = [
   "COM812", # Conflicts with the formatter https://docs.astral.sh/ruff/formatter/#conflicting-lint-rules
   "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
+  "ANN401", # Any is allowed outside the strict modules; mypy's disallow_any_explicit guards those
 ]
 lint.isort.force-single-line = true
+# Pydantic and Ninja read these annotations at run time: their imports stay
+# outside TYPE_CHECKING (TC001-TC003 would otherwise move them).
+lint.flake8-type-checking.runtime-evaluated-base-classes = [
+  "pydantic.BaseModel",
+  "ninja.Schema",
+  "core.api.schemas.BaseSchema",
+  "core.api.schemas.InputSchema",
+]
 
 [tool.ruff.lint.per-file-ignores]
 # pytest asserts; everywhere else an assert is stripped under python -O.
-"conftest.py" = [ "S101" ]
-"**/tests/**" = [ "S101" ]
+# Tests may leave annotations to pytest, as in [tool.mypy] (ANN).
+"conftest.py" = [ "S101", "ANN" ]
+"**/tests/**" = [ "S101", "ANN" ]
+# Django Ninja evaluates view signatures and schemas at import time, so an import
+# used only in an annotation is still a runtime import in the API layer.
+"apps/*/api/**" = [ "TC001", "TC002", "TC003" ]
+"core/api/**" = [ "TC001", "TC002", "TC003" ]
 
 # Responses are never cached on the server: X-Session-Token is not part of the
 # key. cache_control and never_cache stay allowed. See docs/api.md#caching.
@@ -155,8 +172,8 @@ python_files = [
 # strict mode refuses a marker that is not listed here.
 markers = [
   "http: an HTTP contract test under apps/*/tests/http/ or core/tests/http/ (marked by path in conftest.py)",
-  "drf: a test of DRF or drf-spectacular under apps/*/tests/drf/ or core/tests/drf/ (marked by path in conftest.py)",
-  "valkey: needs a real Valkey at VALKEY_URL (core/tests/test_valkey_integration.py, core/tests/drf/test_valkey_integration.py); deselect with -m \"not valkey\"",
+  "ninja: a test of Django Ninja under apps/*/tests/ninja/ or core/tests/ninja/ (marked by path in conftest.py)",
+  "valkey: needs a real Valkey at VALKEY_URL (core/tests/test_valkey_integration.py, core/tests/ninja/test_valkey_integration.py); deselect with -m \"not valkey\"",
 ]
 # Warnings are errors: fix deprecations instead of silencing them. A third-party
 # warning that cannot be fixed gets a narrow "ignore:" entry linking the issue.
@@ -187,6 +204,10 @@ exclude_also = [ "if TYPE_CHECKING:", "raise NotImplementedError", "@overload" ]
 
 [tool.mypy]
 python_version = "3.14"
+# typings/ holds local stubs for third-party packages without py.typed
+# (django-environ 0.14.0). Both checkers read them: pyright via stubPath, mypy
+# via mypy_path. scripts/check.sh lint runs stubtest against the installed package.
+mypy_path = "typings"
 check_untyped_defs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
@@ -196,19 +217,14 @@ extra_checks = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 warn_unused_configs = true
+enable_error_code = ["possibly-undefined", "truthy-bool", "ignore-without-code", "exhaustive-match", "unimported-reveal"]
 plugins = [
   "mypy_django_plugin.main",
-  "mypy_drf_plugin.main",
 ]
 
 [[tool.mypy.overrides]]
-# Generated migrations are not type-checked.
-module = "*.migrations.*"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
 # Third-party packages that ship no type information (no stubs, no py.typed).
-module = [ "allauth.*", "environ", "zeal", "zeal.*" ]
+module = [ "allauth.*", "zeal", "zeal.*" ]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -253,16 +269,15 @@ include_external_packages = true
 
 [[tool.importlinter.contracts]]
 id = "api-framework-in-api-layer"
-name = "Only the API layer imports DRF and drf-spectacular"
+name = "Only the API layer imports Django Ninja"
 type = "protected"
-protected_modules = [ "rest_framework", "drf_spectacular" ]
+protected_modules = [ "ninja" ]
 allowed_importers = [
   "apps.*.api",
   "core.api",
-  "config.api_router",
-  # Tests of DRF itself (docs/development.md#test-layout).
-  "apps.*.tests.drf",
-  "core.tests.drf",
+  # Adapter fixtures re-pointed onto Ninja (still loaded from this path).
+  "core.tests.ninja",
+  "apps.*.tests.ninja",
 ]
 
 [[tool.importlinter.contracts]]
@@ -312,3 +327,18 @@ ignore_imports = [
   # Under TYPE_CHECKING only: the manager annotates what it returns.
   "apps.*.managers -> apps.*.models",
 ]
+
+
+[tool.pyright]
+# standard on the whole repository: apps, core, config, migrations, tests,
+# conftest.py, manage.py, scripts/ and the typings/ stubs. No include/exclude:
+# pyright's defaults already skip **/.* (.venv, .agents), **/__pycache__ and
+# **/node_modules. Errors get a real type; a suppression is a rule-scoped
+# `# pyright: ignore[rule]` that pyright reports once it is no longer needed.
+# `# type: ignore[code]` belongs to mypy (warn_unused_ignores) and pyright does
+# not read it. See docs/typing.md#suppressions.
+pythonVersion = "3.14"
+typeCheckingMode = "standard"
+stubPath = "typings"
+enableTypeIgnoreComments = false
+reportUnnecessaryTypeIgnoreComment = "error"

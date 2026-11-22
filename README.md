@@ -1,11 +1,12 @@
-# Don Linux Django Template
+# Agentic Django
 
-A Django REST Framework template by don-linux, based on the [HackSoft Django Styleguide](https://github.com/HackSoftware/Django-Styleguide). It is a pure JSON API for clients: no HTML API views, and no i18n (`USE_I18N` is off). Registration is open; accounts verify by email code. The Django admin and the staff schema UI at `/api/v1/docs/` are the only HTML pages.
+A Django Ninja template by don-linux, based on the [HackSoft Django Styleguide](https://github.com/HackSoftware/Django-Styleguide). It is a pure JSON API for clients: no HTML API views, and no i18n (`USE_I18N` is off). Registration is open; accounts verify by email code. The Django admin and the staff schema UI at `/api/v1/docs/` are the only HTML pages.
 
 ## What it ships
 
 - **Python 3.14** and **Django 6.1**, installed and locked with **uv**
-- **Django REST Framework**, with an OpenAPI schema and Swagger UI from **drf-spectacular** (staff session at `/api/v1/docs/`)
+- **Django Ninja**, with an OpenAPI 3.1 schema (`docs/openapi.json`) and Swagger UI (staff session at `/api/v1/docs/`)
+- Type checked with **pyright** (standard) and **mypy** with the django-stubs plugin ([docs/typing.md](docs/typing.md))
 - **django-allauth** in headless mode: signup, login, email verification by code, and password reset over JSON
 - **PostgreSQL 18**
 - **Valkey**, on by default: cache, session cache (`cached_db`), and the Celery broker

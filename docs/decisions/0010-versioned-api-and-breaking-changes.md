@@ -1,6 +1,6 @@
 # 0010. The API is versioned under /api/v1/; a breaking change needs /api/v2/
 
-- Status: Accepted
+- Status: Superseded by 0011
 - Date: 2026-11-18
 
 ## Context

@@ -971,7 +971,7 @@ def test_schema_and_docs_401_and_403_bodies(client: Any, user_client: Client) ->
     schema_user = user_client.get(reverse("api-schema"))
     docs_user = user_client.get(reverse("api-docs"))
 
-    # The schema and docs views answer the API's JSON errors, not spectacular's
+    # The schema and docs views answer the API's JSON errors, not Ninja's
     # OpenAPI or HTML error pages.
     for response, status, token in (
         (schema_anon, HTTPStatus.UNAUTHORIZED, "not_authenticated"),

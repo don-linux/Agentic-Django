@@ -29,22 +29,22 @@ if TYPE_CHECKING:
     ThrottleRates = Callable[[dict[str, str]], None]
     TrustedProxies = Callable[[int], override_settings]
 
-# Fixture modules: the adapters between framework-neutral tests and DRF
+# Fixture modules: the adapters between framework-neutral tests and Ninja
 # (throttle_rates, trusted_proxies) and the real-Valkey fixtures.
-pytest_plugins = ["core.tests.drf.adapters", "core.tests.valkey_fixtures"]
+pytest_plugins = ["core.tests.ninja.adapters", "core.tests.valkey_fixtures"]
 
 # Celery reads this variable before the Django setting, so a shell that exports it
 # would point the tests at a real broker in spite of config/settings/test.py.
 os.environ.pop("CELERY_BROKER_URL", None)
 
 # The test layers of docs/development.md#test-layout, one marker each.
-LAYERS = ("http", "drf")
+LAYERS = ("http", "ninja")
 
 
 def pytest_collection_modifyitems(
     config: pytest.Config, items: list[pytest.Item]
 ) -> None:
-    """Mark each test under a tests/http/ or tests/drf/ directory with that layer."""
+    """Mark each test under a tests/http/ or tests/ninja/ directory with that layer."""
     for item in items:
         parts = item.path.relative_to(config.rootpath).parts
         for parent, child in pairwise(parts):

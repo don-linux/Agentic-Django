@@ -16,6 +16,7 @@ A map of this template's documentation, one topic per file. Mandatory rules for 
 
 - [ARCHITECTURE.md](ARCHITECTURE.md): layers, caching, tasks, authentication, settings map, deployment topology.
 - [api.md](api.md): HTTP conventions, errors, pagination, throttling, OpenAPI.
+- [typing.md](typing.md): pyright and mypy, what each catches, suppressions, and the upstream workarounds.
 - [settings.md](settings.md): how the settings modules and env files are read.
 - [security.md](security.md): secrets, Valkey, Sentry, HTTPS, field-encryption recipe.
 - [auth/](auth/README.md): optional authentication features (MFA, phone, OAuth) and how to turn them on.
@@ -24,5 +25,5 @@ A map of this template's documentation, one topic per file. Mandatory rules for 
 - [files.md](files.md): uploads, permissions, optional S3.
 - [tasks.md](tasks.md): writing a task, the worker, beat.
 - [data.md](data.md): opt-in data recipes (append-only tables, admin audit log).
-- [openapi.yaml](openapi.yaml): the committed API schema.
+- [openapi.json](openapi.json): the committed API schema (OpenAPI 3.1.0).
 - [decisions/](decisions/README.md): why the template is shaped this way, one short record per decision; read before undoing one.

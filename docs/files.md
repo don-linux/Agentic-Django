@@ -27,7 +27,7 @@ document = models.FileField(
 - Public (`default` storage, served by nginx at `MEDIA_URL`): only files meant to be world-readable, such as avatars or product images.
 - Private (`storage=private_storage`): everything user-sensitive (IDs, invoices, contracts). When in doubt, private.
 
-A private file is downloaded through an action that checks object permissions and returns `protected_file_response(...)`. With local storage behind nginx it answers with `X-Accel-Redirect` and nginx streams the file from an `internal` location; with S3 it redirects to a short-lived signed URL; in development Django streams it. Never serialize a private file's `.url`. Before it writes `X-Accel-Redirect`, it refuses a stored name with `..`, a NUL byte or no file name (`SuspiciousFileOperation`: Django answers 400 and logs it to `django.security`), so a name planted in the database cannot point nginx elsewhere.
+A private file is downloaded through an operation that scopes the lookup to the caller and returns `protected_file_response(...)`. With local storage behind nginx it answers with `X-Accel-Redirect` and nginx streams the file from an `internal` location; with S3 it redirects to a short-lived signed URL; in development Django streams it. Never serialize a private file's `.url`. Before it writes `X-Accel-Redirect`, it refuses a stored name with `..`, a NUL byte or no file name (`SuspiciousFileOperation`: Django answers 400 and logs it to `django.security`), so a name planted in the database cannot point nginx elsewhere.
 
 ```python
 from core.files import private_storage
@@ -41,14 +41,20 @@ class Invoice(BaseModel):
     )
 
 
-class InvoiceViewSet(RetrieveModelMixin, GenericViewSet):
-    def get_queryset(self):
-        return Invoice.objects.filter(owner=self.request.user)  # another user's: 404
-
-    @action(detail=True, url_path="download")
-    def download(self, request, public_id=None):
-        invoice = self.get_object()
-        return protected_file_response(invoice.document, filename="invoice.pdf")
+@router.get(
+    "/{public_id:id}/download/",
+    response={200: None, **LOOKUP_ERRORS},
+    openapi_extra=response_docs(LOOKUP_ERRORS),
+    operation_id="invoices_download",
+)
+def invoices_download(
+    request: HttpRequest, invoice_id: PathEx[UUID, P(alias="id")]
+) -> HttpResponse:
+    # Scoped to the owner, so another user's invoice is a 404.
+    invoice = get_object_or_404(
+        Invoice.objects.filter(owner=_owner(request)), public_id=invoice_id
+    )
+    return protected_file_response(invoice.document, filename="invoice.pdf")
 ```
 
 `private_storage` is a callable, so migrations store its name; it returns a lazy proxy that is reset when `STORAGES` changes. Private files are served only through a view that checks permissions, which answers with `X-Accel-Redirect`. In development uploads go to `media/` at the repository root (`/app/media` in the container).
@@ -59,8 +65,9 @@ Django writes uploaded files with mode `0o644` and directories with `0o755` (`FI
 
 ## Endpoint
 
-- The API accepts `application/json` only (`DEFAULT_PARSER_CLASSES`), so an upload is a dedicated view or action that opts in with `parser_classes = [MultiPartParser]`. Every other endpoint answers a multipart body with 415, so Django never spools it to disk.
-- The serializer returns the file's absolute URL, which DRF builds when `request` is in the serializer context.
+- The API accepts `application/json` bodies only (`core.api.parsers.JSONParser`), so an upload is a dedicated operation that takes `file: File[UploadedFile]` (both from `ninja`; Django's own `UploadedFile` class fails schema generation) and `Form[...]` fields instead of a JSON body ([Ninja: file uploads](https://django-ninja.dev/guide/files/)). Every operation with a JSON body answers a multipart body with 415 `unsupported_media_type`.
+- Pass the upload operation `response=` and `openapi_extra=response_docs(...)` like any other; an operation that returns an `HttpResponse` (a download) keeps it as is ([Ninja: returning an HttpResponse](https://django-ninja.dev/guide/responses/#returning-a-django-httpresponse)).
+- The output schema returns the file's absolute URL, built from the request when the view has one.
 
 ## Images
 

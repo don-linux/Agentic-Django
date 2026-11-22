@@ -36,7 +36,7 @@ The API answers on <http://localhost:8000>; check it with `curl http://localhost
 
 ## Checks
 
-`scripts/check.sh` calls `python`, `ruff` and `mypy` from the virtualenv, and the test settings never read `.env` themselves ([../settings.md#test](../settings.md#test)). Run it through `uv` with the root `.env` loaded, so the tests find PostgreSQL and Valkey:
+`scripts/check.sh` calls `python`, `ruff`, `mypy`, `stubtest` and `pyright` from the virtualenv, and the test settings never read `.env` themselves ([../settings.md#test](../settings.md#test)). Run it through `uv` with the root `.env` loaded, so the tests find PostgreSQL and Valkey:
 
 ```bash
 uv run --env-file .env scripts/check.sh
@@ -45,7 +45,7 @@ uv run --env-file .env scripts/check.sh
 `check.sh` with no argument runs `lint` then `test`; pass `lint`, `test` or `reversible` for one part ([../development.md#checks](../development.md#checks)). The tests create and drop `test_<POSTGRES_DB>`, so the role needs `CREATEDB` (`ALTER ROLE <user> CREATEDB;` as a superuser). Regenerate the schema the same way:
 
 ```bash
-uv run --env-file .env python manage.py spectacular --settings config.settings.test --file docs/openapi.yaml --validate --fail-on-warn
+uv run --env-file .env python manage.py export_openapi_schema --settings config.settings.test --api config.api.api --indent 2 > docs/openapi.json
 ```
 
 ## Celery worker

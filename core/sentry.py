@@ -134,8 +134,8 @@ def init_sentry(
         # Keep PII off, and never pass data_collection={"queues": True}: it sends
         # the arguments of every task.
         send_default_pii=False,
-        before_send=scrub_event,  # type: ignore[arg-type]
-        before_send_transaction=scrub_event,  # type: ignore[arg-type]
+        before_send=scrub_event,  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]
+        before_send_transaction=scrub_event,  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]
         # EventScrubber compares lowercased keys exactly, so header names must be
         # spelled with hyphens, as they appear in the event.
         event_scrubber=EventScrubber(

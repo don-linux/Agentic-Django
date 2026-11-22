@@ -58,8 +58,9 @@ class HealthCheckMiddleware:
     Answer the health probes before the rest of the stack.
 
     /health/live/ never touches the database or the cache. /health/ runs SELECT 1
-    and a Valkey PING and answers 503 while either fails: that is what makes an
-    outage of the fail-open cache visible. See docs/ARCHITECTURE.md#deployment.
+    and a Valkey round trip and answers 503 while either fails: that is what
+    makes an outage of the fail-open cache visible.
+    See docs/ARCHITECTURE.md#deployment.
     """
 
     def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
@@ -127,7 +128,7 @@ class RequestIdMiddleware:
         request_id = (
             incoming if _VALID_REQUEST_ID.fullmatch(incoming) else uuid.uuid4().hex
         )
-        request.request_id = request_id  # type: ignore[attr-defined]
+        request.request_id = request_id  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]
         token = request_id_var.set(request_id)
         try:
             _tag_error_reports(request_id)

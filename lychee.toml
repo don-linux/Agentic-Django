@@ -17,6 +17,9 @@ exclude = [
   '^https://\.\.\.',
 ]
 
+# Local, untracked trees: './**/*.md' is expanded without .gitignore, and
+# hidden = true would reach uv's .venv (core/tests/test_lychee_config.py).
 exclude_path = [
   '(^|/)graphify-out/',
+  '(^|/)\.venv/',
 ]

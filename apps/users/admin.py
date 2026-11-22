@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from django.contrib import admin
 from django.contrib import messages
 from django.contrib.auth import admin as auth_admin
+from django.contrib.auth.models import PermissionsMixin
 from django.db import transaction
 
 from .forms import UserAdminChangeForm
@@ -16,8 +17,17 @@ from .services import user_reactivate
 
 if TYPE_CHECKING:
     from django import forms
+    from django.contrib.auth.base_user import AbstractBaseUser
+    from django.contrib.auth.models import AnonymousUser
     from django.db.models import QuerySet
     from django.http import HttpRequest
+
+
+def _is_superuser(user: AbstractBaseUser | AnonymousUser) -> bool:
+    # HttpRequest.user is AbstractBaseUser | AnonymousUser in django-stubs 6.1.2.
+    # is_superuser lives on PermissionsMixin (and AnonymousUser), not on
+    # AbstractBaseUser, so pyright cannot see it on request.user.
+    return isinstance(user, PermissionsMixin) and user.is_superuser
 
 
 @admin.register(User)
@@ -92,7 +102,7 @@ class UserAdmin(auth_admin.UserAdmin):
         self, request: HttpRequest, obj: User | None = None
     ) -> tuple[str, ...] | list[str]:
         readonly = list(super().get_readonly_fields(request, obj))
-        if not request.user.is_superuser:
+        if not _is_superuser(request.user):
             readonly += [f for f in self._PRIVILEGE_FIELDS if f not in readonly]
         return readonly
 
@@ -103,7 +113,7 @@ class UserAdmin(auth_admin.UserAdmin):
             return False
         return (
             obj is None
-            or request.user.is_superuser
+            or _is_superuser(request.user)
             or not (obj.is_staff or obj.is_superuser)
         )
 
@@ -118,7 +128,7 @@ class UserAdmin(auth_admin.UserAdmin):
     @admin.action(description="Deactivate selected users")
     def deactivate_users(self, request: HttpRequest, queryset: QuerySet[User]) -> None:
         others = queryset.exclude(pk=request.user.pk) if request.user.pk else queryset
-        if not request.user.is_superuser:
+        if not _is_superuser(request.user):
             others = others.exclude(is_staff=True).exclude(is_superuser=True)
         count = 0
         for user in others:
@@ -136,7 +146,7 @@ class UserAdmin(auth_admin.UserAdmin):
     @admin.action(description="Reactivate selected users")
     def reactivate_users(self, request: HttpRequest, queryset: QuerySet[User]) -> None:
         others = queryset
-        if not request.user.is_superuser:
+        if not _is_superuser(request.user):
             others = others.exclude(is_staff=True).exclude(is_superuser=True)
         count = 0
         for user in others:

@@ -40,7 +40,7 @@ graphify extract . --code-only
 # graph.html and GRAPH_REPORT.md, still offline, with Community N labels:
 graphify cluster-only .
 graphify query "session token authentication"
-graphify path "SessionTokenAuthentication" "user_get"
+graphify path "XSessionTokenAuth" "user_get"
 graphify explain "BaseModel"
 ```
 

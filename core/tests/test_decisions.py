@@ -20,7 +20,7 @@ STATUS = re.compile(
 
 
 def test_records_are_numbered_from_0001_without_gaps() -> None:
-    numbers = [int(RECORD.fullmatch(path.name).group(1)) for path in RECORDS]  # type: ignore[union-attr]
+    numbers = [int(RECORD.fullmatch(path.name).group(1)) for path in RECORDS]  # type: ignore[union-attr]  # pyright: ignore[reportOptionalMemberAccess]
 
     assert numbers == list(range(1, len(numbers) + 1))
 

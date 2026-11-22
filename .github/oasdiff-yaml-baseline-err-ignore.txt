@@ -1,0 +1,2 @@
+GET /api/v1/users/ response property `next` list-of-types was widened by adding types `null` to media type `application/json` of response `200`
+GET /api/v1/users/ response property `previous` list-of-types was widened by adding types `null` to media type `application/json` of response `200`

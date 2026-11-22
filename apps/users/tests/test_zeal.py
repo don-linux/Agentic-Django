@@ -17,4 +17,4 @@ def test_zeal_raises_on_an_n_plus_one() -> None:
 
     with pytest.raises(NPlusOneError), zeal_context():  # noqa: PT012
         for user in User.objects.all():
-            list(user.emailaddress_set.all())  # type: ignore[attr-defined]
+            list(user.emailaddress_set.all())

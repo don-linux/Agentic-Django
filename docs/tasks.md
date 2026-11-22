@@ -214,58 +214,67 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 from typing import Any
-from typing import cast
 
-from drf_spectacular.utils import extend_schema
-from rest_framework import status
-from rest_framework.mixins import CreateModelMixin
-from rest_framework.mixins import RetrieveModelMixin
-from rest_framework.response import Response
-from rest_framework.viewsets import GenericViewSet
+from django.http import Http404
+from django.http import HttpRequest
+from django.http import HttpResponse
+from ninja import Router
+from ninja import Status
+from ninja.pagination import paginate
 
-from apps.reports.models import ReportRun
 from apps.reports.selectors import report_run_list
 from apps.reports.services import report_request
-from core.api.mixins import PublicIdLookupMixin
-
-from .serializers import ReportRunSerializer
+from apps.users.models import User
+from core.api.pagination import LimitPageNumberPagination
+from core.api.responses import LIST_ERRORS
+from core.api.responses import WRITE_ERRORS
+from core.api.responses import response_docs
 
 if TYPE_CHECKING:
     from django.db.models import QuerySet
-    from rest_framework.request import Request
 
-    from apps.users.models import User
+    from apps.reports.models import ReportRun
+
+router = Router(tags=["reports"])
 
 
-class ReportRunViewSet(
-    PublicIdLookupMixin, CreateModelMixin, RetrieveModelMixin, GenericViewSet
-):
-    serializer_class = ReportRunSerializer
-    http_method_names = ["get", "post", "head", "options"]
-    queryset = ReportRun.objects.order_by("-id")
+def _owner(request: HttpRequest) -> User:
+    # API_AUTH lets only authenticated users through; narrow AnonymousUser away.
+    if not isinstance(request.user, User):
+        raise Http404
+    return request.user
 
-    def get_queryset(self) -> QuerySet[ReportRun]:
-        if not self.request.user.is_authenticated or self.request.user.pk is None:
-            return self.queryset.none()
-        return report_run_list(user=self.request.user)
 
-    @extend_schema(responses={status.HTTP_202_ACCEPTED: ReportRunSerializer})
-    def create(self, request: Request, *args: Any, **kwargs: Any) -> Response:
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        report = report_request(
-            user=cast("User", request.user),
-            month=serializer.validated_data["month"],
-        )
-        body = self.get_serializer(report).data
-        # 202: accepted, not done. The client polls Location until the status is
-        # "done" or "failed".
-        return Response(
-            body,
-            status=status.HTTP_202_ACCEPTED,
-            headers={"Location": body["url"]},
-        )
+@router.get(
+    "/",
+    response={200: list[ReportRunOut], **LIST_ERRORS},
+    openapi_extra=response_docs(LIST_ERRORS),
+    operation_id="reports_list",
+)
+@paginate(LimitPageNumberPagination)
+def reports_list(request: HttpRequest) -> QuerySet[ReportRun]:
+    return report_run_list(user=_owner(request))
+
+
+@router.post(
+    "/",
+    response={202: ReportRunOut, **WRITE_ERRORS},
+    openapi_extra=response_docs(WRITE_ERRORS),
+    operation_id="reports_create",
+)
+def reports_create(
+    request: HttpRequest, response: HttpResponse, body: ReportRunIn
+) -> Any:
+    report = report_request(user=_owner(request), month=body.month)
+    # 202: accepted, not done. The client polls Location until the status is
+    # "done" or "failed".
+    response["Location"] = request.build_absolute_uri(
+        f"/api/v1/reports/{report.public_id}/"
+    )
+    return Status(202, report)
 ```
+
+`ReportRunIn` and `ReportRunOut` are schemas declared in the same module, as in `apps/users/api/views.py`. `Status(202, ...)` picks the response schema ([Ninja: multiple response schemas](https://django-ninja.dev/guide/responses/#multiple-response-schemas)) and the temporal `response` argument carries the header ([Ninja: setting headers](https://django-ninja.dev/guide/temporal-response/#setting-headers)).
 
 What the client sees:
 
@@ -280,10 +289,10 @@ GET /api/v1/reports/<id>/
 
 The rest is the same as for any resource:
 
-- `ReportRunSerializer` is a `BaseModelSerializer` with `id` from `public_id`, a `url`, and `status`, `error_code` and `created_at` read-only. `report_run_list` is the selector that scopes reports to their owner.
-- Add the app to `LOCAL_APPS`, register the viewset in `config/api_router.py`, run `python manage.py makemigrations reports --name create_report_run`, and regenerate `docs/openapi.yaml`.
-- The file is private. Serve it from an action that returns `protected_file_response(report.file, filename="report.csv")` once the status is `done` ([files.md](files.md)).
-- Each request starts minutes of work, so give the endpoint a `throttle_scope` ([api.md](api.md#throttling)).
+- `ReportRunOut` / `ReportRunIn` are Pydantic schemas with `id` from `public_id`, a `url`, and `status`, `error_code` and `created_at` read-only on the output. `report_run_list` is the selector that scopes reports to their owner.
+- Add the app to `LOCAL_APPS`, mount the router in `config/api.py` (served under `/api/v1/`), run `python manage.py makemigrations reports --name create_report_run`, and regenerate `docs/openapi.json`.
+- The file is private. Serve it from an operation that returns `protected_file_response(report.file, filename="report.csv")` once the status is `done` ([files.md](files.md)).
+- Each request starts minutes of work, so give the endpoint a scoped throttle ([api.md](api.md#throttling)).
 - Tests, besides the usual ones of an endpoint (AGENTS.md, "Testing"): the task is enqueued once after the commit and never after a rollback; building twice keeps the first file; the soft time limit, a bug and the last retry each leave the report `failed`; a failed report can be built again.
 
 ## Idempotency

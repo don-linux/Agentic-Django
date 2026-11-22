@@ -80,7 +80,7 @@ Never set `DOCKER_PROD_DJANGO_BIND` to `0.0.0.0` or a public address. A client t
 
 The host proxy has to:
 
-- Send `X-Forwarded-Proto: https` (without it every request redirects to HTTPS in a loop) and `X-Forwarded-For` (used by allauth rate limits and DRF throttling). `DJANGO_TRUSTED_PROXY_COUNT` must equal the number of proxies that append to `X-Forwarded-For` (default `1`, for a single nginx).
+- Send `X-Forwarded-Proto: https` (without it every request redirects to HTTPS in a loop) and `X-Forwarded-For` (used by allauth rate limits and API throttling). `DJANGO_TRUSTED_PROXY_COUNT` must equal the number of proxies that append to `X-Forwarded-For` (default `1`, for a single nginx).
 - Serve `/media/` from `<DOCKER_PROD_DJANGO_UPLOADS_PATH>/public`.
 - Check `/health/` before sending traffic ([Health](#health)).
 

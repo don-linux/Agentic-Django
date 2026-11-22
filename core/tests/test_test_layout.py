@@ -1,8 +1,8 @@
 """
 Tests are grouped by what they depend on (docs/development.md#test-layout).
 
-Only modules under a tests/drf/ directory import DRF or drf-spectacular, and
-nothing outside tests/drf/ imports from one. No module of the test tree imports
+Only modules under a tests/ninja/ directory import django-ninja, and
+nothing outside tests/ninja/ imports from one. No module of the test tree imports
 a test module: helpers that several modules share live in support modules.
 """
 
@@ -19,12 +19,12 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 BASE_DIR = Path(__file__).resolve().parents[2]
-FRAMEWORKS = frozenset({"rest_framework", "drf_spectacular"})
-LAYERS = ("http", "drf")
+FRAMEWORKS = frozenset({"ninja"})
+LAYERS = ("http", "ninja")
 
 
 def _layer(path: Path) -> str | None:
-    """Return "http" or "drf" when `path` is under a tests/http/ or tests/drf/."""
+    """Return "http" or "ninja" when `path` is under a tests/http/ or tests/ninja/."""
     for parent, child in pairwise(path.parts):
         if parent == "tests" and child in LAYERS:
             return child
@@ -53,7 +53,7 @@ def _imported(source: str) -> list[tuple[int, str]]:
 
 
 def _framework_imports(source: str) -> list[int]:
-    """Return the lines of `source` that import DRF or drf-spectacular."""
+    """Return the lines of `source` that import django-ninja."""
     return sorted(
         {
             line
@@ -63,13 +63,13 @@ def _framework_imports(source: str) -> list[int]:
     )
 
 
-def _drf_package_imports(source: str) -> list[int]:
-    """Return the lines of `source` that import from a tests.drf package."""
+def _ninja_package_imports(source: str) -> list[int]:
+    """Return the lines of `source` that import from a tests.ninja package."""
     return sorted(
         {
             line
             for line, name in _imported(source)
-            if ("tests", "drf") in pairwise(name.lstrip(".").split("."))
+            if ("tests", "ninja") in pairwise(name.lstrip(".").split("."))
         }
     )
 
@@ -96,13 +96,13 @@ def _test_tree(root: Path) -> list[Path]:
 
 
 def _scan(
-    root: Path, check: Callable[[str], list[int]], *, outside_drf: bool
+    root: Path, check: Callable[[str], list[int]], *, outside_ninja: bool
 ) -> tuple[int, list[str]]:
     """Run `check` on the test tree under `root`: files read, `path:line` found."""
     files = [
         path
         for path in _test_tree(root)
-        if not outside_drf or _layer(path.relative_to(root)) != "drf"
+        if not outside_ninja or _layer(path.relative_to(root)) != "ninja"
     ]
     found = [
         f"{path.relative_to(root).as_posix()}:{line}"
@@ -112,29 +112,29 @@ def _scan(
     return len(files), found
 
 
-def test_only_tests_drf_imports_drf_or_drf_spectacular() -> None:
-    scanned, found = _scan(BASE_DIR, _framework_imports, outside_drf=True)
+def test_only_tests_ninja_imports_ninja() -> None:
+    scanned, found = _scan(BASE_DIR, _framework_imports, outside_ninja=True)
 
     assert scanned, "no Python file was scanned"
     assert found == [], (
-        "These lines import rest_framework or drf_spectacular outside tests/drf/. "
-        "An HTTP test uses django.test.Client and the root fixtures; a test of DRF "
-        f"itself goes in tests/drf/ (docs/development.md): {found}"
+        "These lines import ninja outside tests/ninja/. "
+        "An HTTP test uses django.test.Client and the root fixtures; a test of Ninja "
+        f"itself goes in tests/ninja/ (docs/development.md): {found}"
     )
 
 
-def test_nothing_outside_tests_drf_imports_from_it() -> None:
-    scanned, found = _scan(BASE_DIR, _drf_package_imports, outside_drf=True)
+def test_nothing_outside_tests_ninja_imports_from_it() -> None:
+    scanned, found = _scan(BASE_DIR, _ninja_package_imports, outside_ninja=True)
 
     assert scanned, "no Python file was scanned"
     assert found == [], (
-        "These lines import a tests/drf/ module from outside tests/drf/, which "
-        f"brings DRF back in through a helper: {found}"
+        "These lines import a tests/ninja/ module from outside tests/ninja/, which "
+        f"brings Ninja back in through a helper: {found}"
     )
 
 
 def test_no_module_of_the_test_tree_imports_a_test_module() -> None:
-    scanned, found = _scan(BASE_DIR, _test_module_imports, outside_drf=False)
+    scanned, found = _scan(BASE_DIR, _test_module_imports, outside_ninja=False)
 
     assert scanned, "no Python file was scanned"
     assert found == [], (
@@ -160,12 +160,12 @@ def test_every_test_carries_the_marker_of_its_directory(
     ("path", "layer"),
     [
         ("apps/users/tests/http/test_views.py", "http"),
-        ("core/tests/drf/test_schema.py", "drf"),
-        ("core/tests/drf/adapters.py", "drf"),
+        ("core/tests/ninja/test_schema.py", "ninja"),
+        ("core/tests/ninja/adapters.py", "ninja"),
         ("core/tests/test_net.py", None),
-        # An app or a module that is only named http or drf is no layer.
+        # An app or a module that is only named http or ninja is no layer.
         ("apps/http/tests/test_views.py", None),
-        ("core/tests/drf_helpers.py", None),
+        ("core/tests/ninja_helpers.py", None),
     ],
 )
 def test_the_layer_comes_from_the_directory(path: str, layer: str | None) -> None:
@@ -175,13 +175,13 @@ def test_the_layer_comes_from_the_directory(path: str, layer: str | None) -> Non
 @pytest.mark.parametrize(
     "source",
     [
-        "import rest_framework\n",
-        "from rest_framework import status\n",
-        "from rest_framework.test import APIClient\n",
-        "import drf_spectacular.utils as schema\n",
-        "from drf_spectacular.utils import extend_schema\n",
-        "if TYPE_CHECKING:\n    from rest_framework.request import Request\n",
-        "def view():\n    from rest_framework.views import APIView\n",
+        "import ninja\n",
+        "from ninja import NinjaAPI\n",
+        "from ninja.testing import TestClient\n",
+        "import ninja.pagination as pagination\n",
+        "from ninja.errors import Throttled\n",
+        "if TYPE_CHECKING:\n    from ninja import Schema\n",
+        "def view():\n    from ninja import Router\n",
     ],
 )
 def test_the_framework_check_flags_every_way_of_importing_it(source: str) -> None:
@@ -192,12 +192,12 @@ def test_the_framework_check_flags_every_way_of_importing_it(source: str) -> Non
     "source",
     [
         "from django.test import Client\n",
-        # Project code may use DRF; only what the test module imports counts.
-        "from apps.users.api.views import UserViewSet\n",
-        "from .rest_framework import helper\n",
-        'REST_FRAMEWORK = {"NUM_PROXIES": 1}\n',
-        '"""Never `from rest_framework import status` here."""\n',
-        'pytest_plugins = ["core.tests.drf.adapters"]\n',
+        # Project code may use Ninja; only what the test module imports counts.
+        "from apps.users.api.views import users_list\n",
+        "from .ninja import helper\n",
+        'NINJA_DEFAULT_THROTTLE_RATES = {"anon": "60/min"}\n',
+        '"""Never `from ninja import NinjaAPI` here."""\n',
+        'pytest_plugins = ["core.tests.ninja.adapters"]\n',
     ],
 )
 def test_the_framework_check_accepts_django_and_project_imports(source: str) -> None:
@@ -207,26 +207,26 @@ def test_the_framework_check_accepts_django_and_project_imports(source: str) -> 
 @pytest.mark.parametrize(
     "source",
     [
-        "from core.tests.drf.pagination_views import _list\n",
-        "from core.tests import drf\n",
-        "import apps.users.tests.drf.test_views\n",
+        "from core.tests.ninja.pagination_views import _list\n",
+        "from core.tests import ninja\n",
+        "import apps.users.tests.ninja.test_views\n",
     ],
 )
-def test_the_drf_package_check_flags_imports_from_tests_drf(source: str) -> None:
-    assert _drf_package_imports(source) != []
+def test_the_ninja_package_check_flags_imports_from_tests_ninja(source: str) -> None:
+    assert _ninja_package_imports(source) != []
 
 
 @pytest.mark.parametrize(
     "source",
     [
         # A string names the plugin: loading it is not an import.
-        'pytest_plugins = ["core.tests.drf.adapters"]\n',
-        "from apps.users.api.views import UserViewSet\n",
+        'pytest_plugins = ["core.tests.ninja.adapters"]\n',
+        "from apps.users.api.views import users_list\n",
         "from core.tests.routes import _routes\n",
     ],
 )
-def test_the_drf_package_check_accepts_other_modules(source: str) -> None:
-    assert _drf_package_imports(source) == []
+def test_the_ninja_package_check_accepts_other_modules(source: str) -> None:
+    assert _ninja_package_imports(source) == []
 
 
 @pytest.mark.parametrize(
@@ -250,29 +250,29 @@ def test_the_test_import_check_flags_every_way_of_importing_one(source: str) -> 
         "from apps.users.tests.factories import UserFactory\n",
         "from django.test import Client\n",
         "from conftest import ThrottleRates\n",
-        'ROOT_URLCONF = "core.tests.drf.test_create_and_destroy"\n',
+        'ROOT_URLCONF = "core.tests.ninja.test_create_and_destroy"\n',
     ],
 )
 def test_the_test_import_check_accepts_support_modules(source: str) -> None:
     assert _test_module_imports(source) == []
 
 
-def test_the_scan_reads_the_test_tree_outside_drf_and_names_the_file(
+def test_the_scan_reads_the_test_tree_outside_ninja_and_names_the_file(
     tmp_path: Path,
 ) -> None:
-    drf_import = "import os\n\nfrom rest_framework.test import APIClient\n"
+    ninja_import = "import os\n\nfrom ninja.testing import TestClient\n"
     for path, source in {
-        "apps/shop/tests/http/test_orders.py": drf_import,
-        "apps/shop/tests/drf/test_serializers.py": drf_import,
-        "apps/shop/api/views.py": drf_import,
-        "core/tests/test_net.py": "import drf_spectacular\n",
+        "apps/shop/tests/http/test_orders.py": ninja_import,
+        "apps/shop/tests/ninja/test_schemas.py": ninja_import,
+        "apps/shop/api/views.py": ninja_import,
+        "core/tests/test_net.py": "import ninja\n",
         "core/tests/routes.py": "import re\n",
-        "conftest.py": "from rest_framework import status\n",
+        "conftest.py": "from ninja import Schema\n",
     }.items():
         (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / path).write_text(source)
 
-    assert _scan(tmp_path, _framework_imports, outside_drf=True) == (
+    assert _scan(tmp_path, _framework_imports, outside_ninja=True) == (
         4,
         [
             "apps/shop/tests/http/test_orders.py:3",

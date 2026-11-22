@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 pytestmark = pytest.mark.django_db
 
 
-class TestUserViewSet:
+class TestUsersAPI:
     def test_anonymous_requests_are_rejected(self, user: User, client: Client) -> None:
         list_response = client.get("/api/v1/users/")
         assert list_response.status_code == HTTPStatus.UNAUTHORIZED

@@ -55,14 +55,14 @@ class UserManager(DjangoUserManager["User"]):
         user.save(using=self._db)
         return user
 
-    def create_user(  # type: ignore[override]
+    def create_user(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]
         self, email: str, password: str | None = None, **extra_fields: Any
     ) -> User:
         extra_fields.setdefault("is_staff", False)
         extra_fields.setdefault("is_superuser", False)
         return self._create_user(email, password, **extra_fields)
 
-    def create_superuser(  # type: ignore[override]
+    def create_superuser(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]
         self, email: str, password: str | None = None, **extra_fields: Any
     ) -> User:
         extra_fields.setdefault("is_staff", True)

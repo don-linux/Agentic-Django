@@ -24,9 +24,9 @@ It also runs `uv lock`, because the lock file stores the project name. Secrets, 
 Without an agent, follow the same order by hand ([the skill](../.agents/skills/personalize-django-template/SKILL.md) lists every file):
 
 1. `project`: the Python slug in `pyproject.toml` (`name`), `bruno/opencollection.yml` (`info.name`) and the `DJANGO_CACHE_KEY_PREFIX` default in `config/settings/base.py`.
-2. `Project`: `SPECTACULAR_SETTINGS` (`TITLE`, `DESCRIPTION`) in `config/settings/base.py`, and the email variables of `.env.example` and `docker/prod/.env.example`. Leave the code defaults in `config/settings/base.py` and `config/settings/test.py` as they are.
+2. `Project`: `NINJA_TITLE` and `NINJA_DESCRIPTION` in `config/settings/base.py`, and the email variables of `.env.example` and `docker/prod/.env.example`. Leave the code defaults in `config/settings/base.py` and `config/settings/test.py` as they are.
 3. `project-name`, `project_db` and `example.com`: `PROJECT_NAME` in `docker/dev/.env.example` and `docker/prod/.env.example`, `.devcontainer/devcontainer.json`, the `/srv/project-name` paths, `POSTGRES_DB`, and the hosts and origins in `docker/prod/.env.example` and `docs/NEXT-STEPS.md`.
-4. Run `uv lock`, then regenerate `docs/openapi.yaml` ([without-docker.md](development/without-docker.md#checks) has the command).
+4. Run `uv lock`, then regenerate `docs/openapi.json` ([without-docker.md](development/without-docker.md#checks) has the command).
 5. Run the placeholder sweep and the checks from the skill's closing section ([Cierre](../.agents/skills/personalize-django-template/SKILL.md#cierre)).
 
 ## Accounts
@@ -67,11 +67,15 @@ Signup, verification and password reset stay manual, because their codes arrive 
 
 ## Checks
 
-`scripts/check.sh` is the one entry point for local runs and CI. `scripts/check.sh lint` runs ruff, the `cache.clear()` guard, mypy, the import contracts (`lint-imports`, [ARCHITECTURE.md#import-contracts](ARCHITECTURE.md#import-contracts)), django-upgrade and the OpenAPI validation and drift check; `scripts/check.sh test` checks for missing migrations, then runs pytest with coverage; with no argument it runs both. `scripts/check.sh reversible` unapplies and reapplies each local app's migrations, as CI does ([ci.md#reversible-migrations](ci.md#reversible-migrations)). It is not everything CI runs ([ci.md#workflows](ci.md#workflows)). It uses `config.settings.test`, unless the shell already exports another `DJANGO_SETTINGS_MODULE`, and `docs/openapi.yaml` is generated with those settings. The test part needs PostgreSQL. Without Docker, run it as `uv run --env-file .env scripts/check.sh` ([development/without-docker.md#checks](development/without-docker.md#checks)).
+`scripts/check.sh` is the one entry point for local runs and CI. `scripts/check.sh lint` runs ruff, the `cache.clear()` guard, mypy, stubtest, pyright ([#type-checking](#type-checking)), the import contracts (`lint-imports`, [ARCHITECTURE.md#import-contracts](ARCHITECTURE.md#import-contracts)), django-upgrade, and the OpenAPI export compared with the committed `docs/openapi.json` (`scripts/check.sh openapi` runs only that comparison); `scripts/check.sh test` checks for missing migrations, then runs pytest with coverage; with no argument it runs both. `scripts/check.sh reversible` unapplies and reapplies each local app's migrations, as CI does ([ci.md#reversible-migrations](ci.md#reversible-migrations)). It is not everything CI runs ([ci.md#workflows](ci.md#workflows)). It uses `config.settings.test`, unless the shell already exports another `DJANGO_SETTINGS_MODULE`, and `docs/openapi.json` is generated with those settings. The test part needs PostgreSQL. Without Docker, run it as `uv run --env-file .env scripts/check.sh` ([development/without-docker.md#checks](development/without-docker.md#checks)).
+
+## Type checking
+
+`scripts/check.sh lint` runs pyright (`standard`, the primary checker) and mypy with the django-stubs plugin on the whole repository, plus `stubtest` on `typings/`. Run them on the host with `uv run scripts/check.sh lint`, or one at a time with `uv run pyright` and `uv run mypy .`. Model fields carry their django-stubs generic type, and each checker has its own rule-scoped suppression comment. What each checker catches, how to suppress, and the upstream workarounds still in the code: [typing.md](typing.md).
 
 ## Pre-commit
 
-Install the Git hooks once after cloning. They run on the host (ruff, django-upgrade, file hygiene, `uv lock`, gitleaks, markdownlint); mypy and pytest stay in the container and CI:
+Install the Git hooks once after cloning. They run on the host (ruff, django-upgrade, file hygiene, `uv lock`, gitleaks, markdownlint); mypy, pyright and pytest stay in the container and CI:
 
 ```bash
 uv tool install pre-commit==4.7.0
@@ -84,7 +88,7 @@ pre-commit install
 
 Running the test suite.
 
-The tests marked `valkey` (`core/tests/test_valkey_integration.py` and `core/tests/drf/test_valkey_integration.py`) are the only ones that reach a server: the Valkey of the dev stack at `VALKEY_URL`, or the CI service. Without it they fail, never skip, because a skipped integration suite in CI would hide exactly what it is for; run the rest with `pytest -m "not valkey"`. They use databases 14 (broker) and 15 (cache) with a key prefix of their own, and delete only their own keys, one by one: nothing empties a whole database.
+The tests marked `valkey` (`core/tests/test_valkey_integration.py` and `core/tests/ninja/test_valkey_integration.py`) are the only ones that reach a server: the Valkey of the dev stack at `VALKEY_URL`, or the CI service. Without it they fail, never skip, because a skipped integration suite in CI would hide exactly what it is for; run the rest with `pytest -m "not valkey"`. They use databases 14 (broker) and 15 (cache) with a key prefix of their own, and delete only their own keys, one by one: nothing empties a whole database.
 
 ### Coverage
 
@@ -104,13 +108,13 @@ Query budgets (`django_assert_num_queries`) are measured with the test cache (Lo
 
 Tests are grouped by what they depend on, so the API framework can change without touching the contract tests:
 
-- `apps/<app>/tests/http/` and `core/tests/http/`: the HTTP contract. Each test calls a literal path (`/api/v1/...`, `/_allauth/...`, `/admin/...`, `/health/...`) with `django.test.Client` and asserts the status, the headers and the body. These modules never import `rest_framework` or `drf_spectacular`. The root fixtures `client`, `user_client` (logged in with `force_login()`) and `admin_client` authenticate; `throttle_rates` and `trusted_proxies` set the throttle rates and the trusted proxy count. Never change an assertion here to make a test pass after a framework change: only the client or the setup may change.
-- `apps/<app>/tests/drf/` and `core/tests/drf/`: tests of DRF and drf-spectacular themselves, such as serializers, viewsets, routers, the exception handler, paginators, throttle classes, parsers and the OpenAPI schema. A move to another framework rewrites or deletes them, together with `core/tests/drf/adapters.py`, which implements `throttle_rates` and `trusted_proxies`.
+- `apps/<app>/tests/http/` and `core/tests/http/`: the HTTP contract. Each test calls a literal path (`/api/v1/...`, `/_allauth/...`, `/admin/...`, `/health/...`) with `django.test.Client` and asserts the status, the headers and the body. These modules never import `ninja`. The root fixtures `client`, `user_client` (logged in with `force_login()`) and `admin_client` authenticate; `throttle_rates` and `trusted_proxies` set the throttle rates and the trusted proxy count. Never change an assertion here to make a test pass after a framework change: only the client or the setup may change.
+- `apps/<app>/tests/ninja/` and `core/tests/ninja/`: tests of Django Ninja itself, such as schemas, routers, exception handlers, paginators, throttle classes, parsers and the OpenAPI schema. `core/tests/ninja/adapters.py` implements `throttle_rates` and `trusted_proxies`.
 - `apps/<app>/tests/services/`, `apps/<app>/tests/selectors/` and the rest of `apps/<app>/tests/` and `core/tests/`: framework-neutral tests of models, services, selectors, settings, the cache, tasks and tooling.
 
-A helper that several test modules use lives in a support module (`core/tests/routes.py`, `core/tests/cache_helpers.py`, `core/tests/valkey_fixtures.py`), never in a `test_*.py`: a test module never imports another one. `core/tests/test_test_layout.py` enforces both rules, and also fails when a module outside `tests/drf/` imports from one.
+A helper that several test modules use lives in a support module (`core/tests/routes.py`, `core/tests/cache_helpers.py`, `core/tests/valkey_fixtures.py`), never in a `test_*.py`: a test module never imports another one. `core/tests/test_test_layout.py` enforces both rules, and also fails when a module outside `tests/ninja/` imports from one.
 
-The root `conftest.py` marks every test under `tests/http/` with `http` and every test under `tests/drf/` with `drf`, by path: `pytest -m http` runs the HTTP contract alone and `pytest -m drf` the DRF tests.
+The root `conftest.py` marks every test under `tests/http/` with `http` and every test under `tests/ninja/` with `ninja`, by path: `pytest -m http` runs the HTTP contract alone and `pytest -m ninja` the Ninja tests.
 
 ## Test settings
 
@@ -142,7 +146,7 @@ with django_assert_num_queries(0):
 
 ### Production settings loader
 
-Tests that need `config.settings.production` import it in a subprocess (`core/tests/production_settings.py`): `production.py` mutates dicts it shares with `base.py` (`REST_FRAMEWORK`, `SPECTACULAR_SETTINGS`), so importing it in the test process would change the settings the run is using. The subprocess starts without any `DJANGO_*`, `POSTGRES_*`, `ALLAUTH_*`, `SENTRY_*`, `VALKEY_*`, `CELERY_*` or `CORS_*` variable, `FRONTEND_URL` or `DATABASE_URL`, so nothing inherited leaks in.
+Tests that need `config.settings.production` import it in a subprocess (`core/tests/production_settings.py`): `production.py` mutates dicts it shares with `base.py` (for example `DATABASES` and `CACHES`), so importing it in the test process would change the settings the run is using. The subprocess starts without any `DJANGO_*`, `POSTGRES_*`, `ALLAUTH_*`, `SENTRY_*`, `VALKEY_*`, `CELERY_*` or `CORS_*` variable, `FRONTEND_URL` or `DATABASE_URL`, so nothing inherited leaks in.
 
 ## Packaging
 

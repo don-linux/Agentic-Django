@@ -2,7 +2,7 @@
 The API's one JSON error body, built without any API framework.
 
 `{"code", "detail"}`, plus `extra` for some domain errors and `fields` for
-validation errors. The DRF exception handler (`core.api.exceptions`) and the
+validation errors. The API exception handlers (`core.api.exceptions`) and the
 plain Django handlers below build it here, so another API framework reuses the
 same body and codes. See docs/api.md#error-body.
 """
@@ -70,7 +70,7 @@ def validation_error_body(fields: dict[str, object]) -> ValidationErrorBody:
 
 
 # handler400/403/404/500 (config/urls.py) for requests that never reach an API
-# view. See docs/api.md#errors-outside-drf-views.
+# view. See docs/api.md#errors-outside-api-views.
 
 
 def _error(code: str, detail: str, status: HTTPStatus) -> JsonResponse:

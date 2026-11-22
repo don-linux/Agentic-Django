@@ -14,8 +14,7 @@
   "customizations": {
     "vscode": {
       "settings": {
-        "python.defaultInterpreterPath": "/opt/venv/bin/python",
-        "cursorpyright.analysis.typeCheckingMode": "off"
+        "python.defaultInterpreterPath": "/opt/venv/bin/python"
       },
       "extensions": [
         // Theme

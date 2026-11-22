@@ -564,3 +564,10 @@ def test_pre_commit_and_pyproject_pin_the_same_version(
 
     assert len(revs) == 1, f"{hook_repo} hook not found"
     assert pins == revs
+
+
+def test_devcontainer_leaves_pyright_to_the_project_config() -> None:
+    # [tool.pyright] in pyproject.toml decides the checks, in the editor too.
+    data = _load_jsonc(BASE_DIR / ".devcontainer/devcontainer.json")
+    settings = data["customizations"]["vscode"]["settings"]
+    assert not [key for key in settings if "typeCheckingMode" in key]

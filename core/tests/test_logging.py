@@ -50,14 +50,14 @@ def _with_request_id(record: logging.LogRecord, request_id: str) -> logging.LogR
 
 
 def test_filter_adds_the_current_request_id() -> None:
-    assert _with_request_id(_record(), "abc123").request_id == "abc123"  # type: ignore[attr-defined]
+    assert _with_request_id(_record(), "abc123").request_id == "abc123"  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def test_filter_outside_a_request_uses_a_dash() -> None:
     record = _record()
     RequestIdFilter().filter(record)
 
-    assert record.request_id == "-"  # type: ignore[attr-defined]
+    assert record.request_id == "-"  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def test_json_formatter_writes_one_object_with_request_id_and_extra() -> None:

@@ -18,6 +18,7 @@ from django.core.exceptions import ImproperlyConfigured
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+    from collections.abc import Mapping
 
 PLACEHOLDER = "change-me"
 PLACEHOLDER_COMPACT = "changeme"
@@ -381,20 +382,28 @@ LOCAL_DATABASE_HOSTS = frozenset({"postgres_db", "postgres", "db"})
 LOCAL_VALKEY_HOSTS = frozenset({"valkey"})
 
 
-# DRF's SimpleRateThrottle.parse_rate reads "<int>/<period>" and only the first
-# letter of the period (s, m, h or d), so "60/min" and "60/minute" both work.
-_THROTTLE_RATE = re.compile(r"[0-9]+/[smhd][a-z]*")
+# Ninja 1.8.0 SimpleRateThrottle.parse_rate: "<int>/[<int>]<unit>" with unit s, sec,
+# m, min, h, hour, d or day, or "<int>/<seconds>". "60/minute" or "60/hours" raise
+# ValueError when core/api/api.py builds the throttles: every URL would be a 500.
+# Ninja also parses "0/min" (every request is a 429) and "5/0" or "5/0s" (a zero
+# window); the guard refuses a zero count or window too.
+# Source: ninja/throttling.py; https://django-ninja.dev/guide/throttling/
+_POSITIVE = r"0*[1-9][0-9]*"
+_THROTTLE_RATE = re.compile(
+    rf"{_POSITIVE}/(?:{_POSITIVE}|(?:{_POSITIVE})?(?:s|sec|m|min|h|hour|d|day))"
+)
 
 
-def assert_throttle_rates(rates: dict[str, str | None]) -> None:
+def assert_throttle_rates(rates: Mapping[str, str | None]) -> None:
     """
-    Raise ImproperlyConfigured if a DRF throttle rate cannot be parsed.
+    Raise ImproperlyConfigured if a throttle rate cannot be parsed.
 
-    DRF parses rates on each request, so a typo would be a 500 on every call.
+    A typo would otherwise be a 500 on the first request.
     Every environment runs this. See docs/api.md#throttling.
     """
     problems = [
-        f"Throttle rate {scope!r} must be <number>/<s|m|h|d>, like 60/min "
+        f"Throttle rate {scope!r} must be <number>/<s|m|h|d>, like 60/min, "
+        "with a count and window above zero "
         "(anon and user come from DJANGO_THROTTLE_ANON_RATE and "
         "DJANGO_THROTTLE_USER_RATE)."
         for scope, rate in rates.items()

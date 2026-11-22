@@ -13,8 +13,6 @@ from .base import DATABASES
 from .base import DEFAULT_FROM_EMAIL
 from .base import LOG_FORMATTERS
 from .base import LOGGERS_FOR_CELERY
-from .base import REST_FRAMEWORK
-from .base import SPECTACULAR_SETTINGS
 from .base import STORAGES
 from .base import VALKEY_BROKER_DB
 from .base import VALKEY_CACHE_DB
@@ -56,14 +54,14 @@ VALKEY_URL = env("VALKEY_URL")
 VALKEY_PASSWORD = env("VALKEY_PASSWORD")
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-# Proxies that append to X-Forwarded-For; one value for allauth and DRF, with
+# Proxies that append to X-Forwarded-For; one value for allauth and Ninja, with
 # ALLAUTH_TRUSTED_PROXY_COUNT as a fallback. See docs/api.md#throttling.
 TRUSTED_PROXY_COUNT = env.int(
     "DJANGO_TRUSTED_PROXY_COUNT",
     default=env.int("ALLAUTH_TRUSTED_PROXY_COUNT", default=1),
 )
 ALLAUTH_TRUSTED_PROXY_COUNT = TRUSTED_PROXY_COUNT
-REST_FRAMEWORK["NUM_PROXIES"] = TRUSTED_PROXY_COUNT
+NINJA_NUM_PROXIES = TRUSTED_PROXY_COUNT
 FRONTEND_URL = env("FRONTEND_URL", default="https://app.example.com").rstrip("/")
 HEADLESS_FRONTEND_URLS = build_headless_frontend_urls(FRONTEND_URL)
 SECURE_SSL_REDIRECT = env.bool("DJANGO_SECURE_SSL_REDIRECT", default=True)
@@ -218,7 +216,7 @@ LOGGING = {
 }
 
 # Tools that generate code samples can use SERVERS to point to the correct domain
-SPECTACULAR_SETTINGS["SERVERS"] = [
+NINJA_SERVERS = [
     {"url": f"https://{host.lstrip('.')}", "description": "Production server"}
     for host in ALLOWED_HOSTS
     if host != "*"

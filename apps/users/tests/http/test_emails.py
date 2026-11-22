@@ -74,7 +74,7 @@ def test_production_reads_the_mailer_timeout_from_env() -> None:
 
 
 def _pending(payload: dict[str, object], flow_id: str) -> bool:
-    flows = payload["data"]["flows"]  # type: ignore[index]
+    flows = payload["data"]["flows"]  # type: ignore[index]  # pyright: ignore[reportIndexIssue]
     return any(flow["id"] == flow_id and flow.get("is_pending") for flow in flows)
 
 

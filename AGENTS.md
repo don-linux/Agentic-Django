@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Django 6.1 on Python 3.14, managed with uv. Pure JSON API with Django REST Framework; accounts through django-allauth headless. No HTML views, no i18n (`USE_I18N = False`), no `django.contrib.sites`. Valkey is on by default (cache DB 0, Celery broker DB 1). Celery is wired and a worker runs by default; no business task ships.
+Django 6.1 on Python 3.14, managed with uv. Pure JSON API with Django Ninja (Pydantic schemas, OpenAPI 3.1 in `docs/openapi.json`); accounts through django-allauth headless. No HTML views, no i18n (`USE_I18N = False`), no `django.contrib.sites`. Valkey is on by default (cache DB 0, Celery broker DB 1). Celery is wired and a worker runs by default; no business task ships.
 
 [docs/README.md](docs/README.md) · [NEXT-STEPS](docs/NEXT-STEPS.md) · [architecture](docs/ARCHITECTURE.md) · [API](docs/api.md) · [data](docs/data.md) · [security](docs/security.md) · [email](docs/email.md) · [files](docs/files.md) · [tasks](docs/tasks.md) · [settings](docs/settings.md) · [development](docs/development.md) · [deploy](docs/deploy.md) · [CI](docs/ci.md)
 
@@ -27,7 +27,7 @@ Do not translate or rename the Spanish-by-design exceptions: the whole `bruno/` 
 ## Skills
 
 - [.agents/skills/personalize-django-template](.agents/skills/personalize-django-template/SKILL.md) — first, when `name = "project"`.
-- `.agents/skills/add-model-endpoint` — model, cached selector, invalidation, serializer, view, route, error tests, Bruno request.
+- `.agents/skills/add-model-endpoint` — model, cached selector, invalidation, schemas, Ninja operations, router, error tests, Bruno request.
 - `.agents/skills/maintain-django-template` — read-only audit of outdated dependencies, images, hooks, actions, tool pins and end-of-life dates, then a tiered upgrade plan; upgrades only after approval.
 - Optional `.agents/skills/graphify`: local use only; see **Graphify**.
 
@@ -38,18 +38,20 @@ Run inside the dev container (`docker compose -f docker/dev/compose.yaml exec dj
 ```bash
 python manage.py seed_dev   # idempotent dev users (DEBUG only); apps add data in apps/<app>/seed.py
 scripts/check.sh            # or scripts/check.sh lint / test
-python manage.py spectacular --settings config.settings.test --file docs/openapi.yaml --validate --fail-on-warn
+python manage.py export_openapi_schema --settings config.settings.test --api config.api.api --indent 2 > docs/openapi.json
 ```
 
 Tests marked `valkey` need the dev-stack Valkey; `pytest -m "not valkey"` runs the rest.
+
+Typing: pyright and mypy (django-stubs plugin) both pass in `scripts/check.sh lint`. Annotate every model field with its django-stubs generic type. Prefer a real type to a suppression; a suppression is rule-scoped and per checker (`# pyright: ignore[rule]`, `# type: ignore[code]`), and one that stays goes in [docs/typing.md#upstream-workarounds](docs/typing.md#upstream-workarounds).
 
 ## API
 
 [docs/api.md](docs/api.md). Staff-only Swagger: `/api/v1/docs/`. Or use Bruno.
 
-DRF routes live under `/api/v1/`, use kebab-case static segments, and end in `/` (missing slash → 404, no redirect). `/_allauth/` has no trailing slash (a slash is 404). The admin still redirects. Thin views: validate, call one service or selector, serialize. Expose `public_id` (UUIDv7) as string `id` and look objects up by it; integer pks never leave the server, including `/_allauth/` payloads. Scope `get_queryset()` to the requester and test that another user's object is 404. Serializers extend `BaseModelSerializer` (unknown key → 400 `unknown_field`); hand-written datetimes use `UTCDateTimeField`. Selectors own the query shape.
+API routes live under `/api/v1/`, use kebab-case static segments, and end in `/` (missing slash → 404, no redirect). `/_allauth/` has no trailing slash (a slash is 404). The admin still redirects. Thin views: validate, call one service or selector, return a schema. Expose `public_id` (UUIDv7) as string `id` and look objects up by it; integer pks never leave the server, including `/_allauth/` payloads. Scope list and detail lookups to the requester and test that another user's object is 404. Request schemas use Pydantic with `extra="forbid"` (unknown key → 400 `unknown_field`). Selectors own the query shape.
 
-DRF errors use `{"code", "detail"}` (plus `fields` for validation); `/_allauth/` keeps allauth's format. Raise `ApplicationError` or `ConflictError` with a registered code; never subclass `APIException` for domain errors. Unauthenticated **resource** requests under `/api/v1/` return 401 (`WWW-Authenticate: X-Session-Token`). `/api/v1/schema/` and `/api/v1/docs/` are staff-only (`IsAdminUser`) and not JSON resources. Lists paginate; order querysets; index list filters (`core/tests/drf/test_list_indexes.py`). `/api/` responses are `no-store`; never cache a session-dependent response; `cache_page` is banned (ruff `TID251`). Compatible additions stay on `/api/v1/`; breaking changes open `/api/v2/`. `docs/openapi.yaml` is the committed contract. Scoped endpoints set `throttle_scope`, register a rate, keep the global throttle classes, and test that the N+1th call is 429 `throttled`. [paths](docs/api.md#paths) · [representation](docs/api.md#representation) · [errors](docs/api.md#error-codes) · [pagination](docs/api.md#pagination) · [caching](docs/api.md#caching) · [throttling](docs/api.md#throttling) · [deprecation](docs/api.md#deprecating-endpoints-and-fields)
+API errors use `{"code", "detail"}` (plus `fields` for validation); `/_allauth/` keeps allauth's format. Raise `ApplicationError` or `ConflictError` with a registered code; never raise a Ninja or Django HTTP exception for a domain rule. Unauthenticated **resource** requests under `/api/v1/` return 401 (`WWW-Authenticate: X-Session-Token`). `/api/v1/docs/` and `/api/v1/schema/` are staff-only; the docs page is not a JSON resource. Lists paginate; order querysets; index list filters (`core/tests/ninja/test_list_indexes.py`). `/api/` responses are `no-store`; never cache a session-dependent response; `cache_page` is banned (ruff `TID251`). Compatible additions stay on `/api/v1/`; breaking changes open `/api/v2/`. `docs/openapi.json` is the committed contract. A scoped endpoint passes `throttle=[AnonThrottle(), UserThrottle(), ScopedThrottle(scope="<app>.<action>")]` (`core.api.throttling`; `throttle=` replaces the API-level throttles), registers the rate in `NINJA_DEFAULT_THROTTLE_RATES`, and tests that the N+1th call is 429 `throttled`. [paths](docs/api.md#paths) · [representation](docs/api.md#representation) · [errors](docs/api.md#error-codes) · [pagination](docs/api.md#pagination) · [caching](docs/api.md#caching) · [throttling](docs/api.md#throttling) · [deprecation](docs/api.md#deprecating-endpoints-and-fields)
 
 ## Data
 
@@ -93,7 +95,7 @@ Add a task only when the work does not fit a request. `@shared_task` in `tasks.p
 
 [docs/development.md](docs/development.md#pytest) · [fixtures](docs/development.md#test-fixtures) · [N+1](docs/development.md#n-plus-one) · [coverage](docs/development.md#coverage) · [layout](docs/development.md#test-layout)
 
-Layout: `apps/<app>/tests/{services,selectors,http,drf}/` and `core/tests/{http,drf}/`, plus model/manager tests when needed. `http/` is the HTTP contract: `django.test.Client` (`client`, `user_client`, `admin_client`), literal paths, no `rest_framework` or `drf_spectacular` import. Never change an assertion under `http/` to make a test pass after a framework change; only the client or the setup may change. `drf/` tests DRF and drf-spectacular themselves (serializers, viewsets, routers, the exception handler, the schema). A test module never imports another test module: shared helpers go in a support module. `core/tests/test_test_layout.py` enforces both rules; the `http` and `drf` markers follow the directory (`pytest -m http`). Shared fixtures in root `conftest.py`; one factory-boy factory per model; no JSON fixtures. API tests hit literal `/api/v1/...` paths and assert status, error `code`, and body shape. Every new endpoint has 401, 403 (when it applies), 404 for another user's object, 400 validation, and the happy path; an exact query budget; and, for lists, `assert_constant_queries`. Every service tests its `full_clean()` failure. zeal fails N+1 queries; fix them in the selector and only allowlist third-party models. Warnings are errors. Register custom pytest markers in `pyproject.toml`. Every cached selector tests that a second call makes zero queries, that a write through its service returns fresh data, and that a rolled-back write leaves the cache untouched. Query budgets are measured with the test cache, so a cached selector is always a miss. Paginated querysets must be ordered. `fail_under = 98` is branch coverage: never lower it, and do not ratchet it toward 100.
+Layout: `apps/<app>/tests/{services,selectors,http,ninja}/` and `core/tests/{http,ninja}/`, plus model/manager tests when needed. `http/` is the HTTP contract: `django.test.Client` (`client`, `user_client`, `admin_client`), literal paths, no `ninja` import. Never change an assertion under `http/` to make a test pass after a framework change; only the client or the setup may change. `ninja/` tests Django Ninja itself (schemas, routers, exception handlers, paginators, throttles, the schema). A test module never imports another test module: shared helpers go in a support module. `core/tests/test_test_layout.py` enforces both rules; the `http` and `ninja` markers follow the directory (`pytest -m http`). Shared fixtures in root `conftest.py`; one factory-boy factory per model; no JSON fixtures. API tests hit literal `/api/v1/...` paths and assert status, error `code`, and body shape. Every new endpoint has 401, 403 (when it applies), 404 for another user's object, 400 validation, and the happy path; an exact query budget; and, for lists, `assert_constant_queries`. Every service tests its `full_clean()` failure. zeal fails N+1 queries; fix them in the selector and only allowlist third-party models. Warnings are errors. Register custom pytest markers in `pyproject.toml`. Every cached selector tests that a second call makes zero queries, that a write through its service returns fresh data, and that a rolled-back write leaves the cache untouched. Query budgets are measured with the test cache, so a cached selector is always a miss. Paginated querysets must be ordered. `fail_under = 98` is branch coverage: never lower it, and do not ratchet it toward 100.
 
 ## Migrations
 
@@ -107,7 +109,7 @@ Read env vars through `env` in `config/settings/base.py`. New production variabl
 
 Email uses `MAILERS`, not `EMAIL_*`. Dev → Mailpit; tests → locmem. Send email in the request; Celery is a per-project option. [docs/email.md](docs/email.md). `FileField`/`ImageField`: `core.files.UploadTo` and `MaxFileSizeValidator`; never store the client filename; no unsanitized HTML/SVG. [docs/files.md](docs/files.md)
 
-A model with a file follows `.agents/skills/add-model-endpoint` plus [docs/files.md](docs/files.md) (private storage, download action, MultiPartParser only on the upload).
+A model with a file follows `.agents/skills/add-model-endpoint` plus [docs/files.md](docs/files.md) (private storage, download operation, multipart `File` parameters only on the upload).
 
 New auth or secret headers go in `core.sentry.SENSITIVE_HEADERS`. Sentry's `RedisIntegration` stays disabled. django-axes protects only the admin login (`core.admin_lockout.is_outside_admin`). [docs/security.md](docs/security.md#error-tracking) · [admin lockout](docs/security.md#admin-lockout)
 

@@ -20,7 +20,7 @@ Todo lo que identifica a un backend usa uno de estos valores, y el plan los sust
 | Placeholder | Qué es | Dónde aparece |
 | --- | --- | --- |
 | `project` | Slug Python | `pyproject.toml`, Bruno, el default de `DJANGO_CACHE_KEY_PREFIX` |
-| `Project` | Nombre visible | título y descripción de la API (`SPECTACULAR_SETTINGS`) |
+| `Project` | Nombre visible | título y descripción de la API (`NINJA_TITLE`, `NINJA_DESCRIPTION`) |
 | `project-name` | Nombre de Docker y ruta de uploads | `PROJECT_NAME` de dev y prod, `devcontainer.json`, `DOCKER_PROD_DJANGO_UPLOADS_PATH=/srv/project-name/uploads` y los ejemplos `/srv/project-name` en compose, `docs/NEXT-STEPS.md`, `docs/ARCHITECTURE.md`, `docs/files.md`, `docs/deploy.md` |
 | `example.com` | Dominio en *ejemplos y docs* | `docker/prod/.env.example`, `docs/NEXT-STEPS.md`. **No** es placeholder en el código de denylist (ver más abajo) |
 | `project_db` | Base de datos | `.env.example`, `docker/prod/.env.example`, `docs/NEXT-STEPS.md` y `docs/ci.md` |
@@ -34,7 +34,7 @@ Lo que es igual en todos los backends no es placeholder y no se toca: el paquete
 - `config/settings/base.py`: `DEFAULT_FROM_EMAIL` default `Project <noreply@example.com>`, `EMAIL_SUBJECT_PREFIX` default `[Project]` (con un espacio al final), `EMAIL_SIGNATURE_NAME` default `Project`
 - `config/settings/guards.py`: `EXAMPLE_DOMAINS` y las comprobaciones `endswith("example.com")`
 
-Los valores reales del proyecto van en `docker/prod/.env.example` (y en `.env.example` para lo local). Sí se cambian en código: `SPECTACULAR_SETTINGS` (`TITLE`, `DESCRIPTION`) y el default de `DJANGO_CACHE_KEY_PREFIX` (el slug: dos proyectos no deben compartir claves en Valkey).
+Los valores reales del proyecto van en `docker/prod/.env.example` (y en `.env.example` para lo local). Sí se cambian en código: `NINJA_TITLE` y `NINJA_DESCRIPTION`, y el default de `DJANGO_CACHE_KEY_PREFIX` (el slug: dos proyectos no deben compartir claves en Valkey).
 
 ## Preguntar
 
@@ -58,7 +58,7 @@ Muestra estos valores, ya resueltos, antes del plan:
 - From (solo en ejemplos de entorno, no en defaults de código): `{Nombre} <noreply@{dominio}>`
 - Prefijo de asunto (comentado en el ejemplo de prod): `[{Nombre}]` seguido de un espacio
 - Título de la API: `{Nombre} API`
-- Descripción de Spectacular: `The {Nombre} JSON API. Account endpoints under /_allauth/ belong to django-allauth and keep its own format (docs/api.md).`
+- Descripción de la API (`NINJA_DESCRIPTION`): `The {Nombre} JSON API. Account endpoints under /_allauth/ belong to django-allauth and keep its own format (docs/api.md).`
 - Descripción de `pyproject` y del README: `Backend for {dominio}`, o `Backend for {Nombre}` si el dominio está pendiente. El texto actual de `pyproject.toml` es `description = "Django project template"`.
 - Producción (solo `docker/prod/.env.example`): `DJANGO_ALLOWED_HOSTS={dominio}`, `DJANGO_CSRF_TRUSTED_ORIGINS=https://app.{dominio}` y `FRONTEND_URL=https://app.{dominio}`
 
@@ -68,26 +68,27 @@ El plan actualiza solo estas rutas.
 
 ### Django
 
-- `config/settings/base.py`: `SPECTACULAR_SETTINGS` (`TITLE`, `DESCRIPTION`) y el default de `DJANGO_CACHE_KEY_PREFIX` (`{slug}`). **No** cambies `DEFAULT_FROM_EMAIL`, `EMAIL_SUBJECT_PREFIX` ni `EMAIL_SIGNATURE_NAME`.
+- `config/settings/base.py`: `NINJA_TITLE`, `NINJA_DESCRIPTION` y el default de `DJANGO_CACHE_KEY_PREFIX` (`{slug}`). **No** cambies `DEFAULT_FROM_EMAIL`, `EMAIL_SUBJECT_PREFIX` ni `EMAIL_SIGNATURE_NAME`.
 - `config/settings/production.py`: no se toca (los defaults de denylist se quedan).
 
 ### Proyecto
 
 - `pyproject.toml`: `name`, `description` (`Backend for {dominio}` o `Backend for {Nombre}`) y `authors` (nombre y correo que haya dado el usuario)
 - `bruno/opencollection.yml`: `info.name: {slug}`
-- `.env.example`: `POSTGRES_DB`, `DJANGO_TIME_ZONE`, `DJANGO_EMAIL_SIGNATURE_NAME={Nombre}` y las líneas comentadas `DJANGO_EMAIL_SUBJECT_PREFIX="[{Nombre}] "` y `DJANGO_DEFAULT_FROM_EMAIL="{Nombre} <noreply@{dominio}>"` (si el dominio está pendiente, `example.com` se queda y va a pendientes)
+- `.env.example`: `POSTGRES_DB`, `DJANGO_TIME_ZONE`, `DJANGO_EMAIL_SIGNATURE_NAME="{Nombre}"` y las líneas comentadas `DJANGO_EMAIL_SUBJECT_PREFIX="[{Nombre}] "` y `DJANGO_DEFAULT_FROM_EMAIL="{Nombre} <noreply@{dominio}>"` (si el dominio está pendiente, `example.com` se queda y va a pendientes)
 - `docker/prod/.env.example`: la línea comentada `# DJANGO_ADMINS=admin@example.com` pasa a `# DJANGO_ADMINS={correo}`; con nombre, `# DJANGO_ADMINS='"{Admin}" <{correo}>'` (comillas simples por Compose)
-- `docker/prod/.env.example`: `POSTGRES_DB`, `DJANGO_TIME_ZONE`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS`, `FRONTEND_URL` (`https://app.{dominio}`), `DJANGO_DEFAULT_FROM_EMAIL` (`{Nombre} <noreply@{dominio}>`), `DJANGO_EMAIL_SIGNATURE_NAME={Nombre}`, `CORS_ALLOWED_ORIGINS` (`https://app.{dominio}`), `DOCKER_PROD_DJANGO_UPLOADS_PATH=/srv/{docker}/uploads` y el comentario `sudo mkdir -p /srv/{docker}/uploads/...`, y la línea comentada `DJANGO_EMAIL_SUBJECT_PREFIX="[{Nombre}] "`. `PROJECT_NAME` va en la sección de Docker
+- `docker/prod/.env.example`: `POSTGRES_DB`, `DJANGO_TIME_ZONE`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS`, `FRONTEND_URL` (`https://app.{dominio}`), `DJANGO_DEFAULT_FROM_EMAIL="{Nombre} <noreply@{dominio}>"`, `DJANGO_EMAIL_SIGNATURE_NAME="{Nombre}"`, `CORS_ALLOWED_ORIGINS` (`https://app.{dominio}`), `DOCKER_PROD_DJANGO_UPLOADS_PATH=/srv/{docker}/uploads` y el comentario `sudo mkdir -p /srv/{docker}/uploads/...`, y la línea comentada `DJANGO_EMAIL_SUBJECT_PREFIX="[{Nombre}] "`. `PROJECT_NAME` va en la sección de Docker
+- En los tres `.env.example`, todo valor con espacios va entre comillas dobles, como en el template (`DJANGO_EMAIL_SIGNATURE_NAME="Acme Backend"`). `uv run --env-file .env` deja de leer el archivo en la primera línea sin comillas con espacios (solo avisa): esa variable y todas las que vienen después no se cargan; `core/tests/test_env_examples.py` lo comprueba y el paso 3 lo verifica con el `.env` real.
 - Los tests no se editan: no dependen del nombre ni del dominio. `config/settings/test.py` fija `Project` y `example.com` a propósito, y `core/tests/test_production_email_guard.py` usa `Project <noreply@example.com>` y `smtp.example.com` como casos permanentes de denylist.
 
 ### Docs
 
 - `README.md`: sustituye el título por `# {Nombre}` y el primer párrafo por `Backend for {dominio}` (o `Backend for {Nombre}` si el dominio está pendiente). El resto del README no se reescribe.
 - `AGENTS.md`: borra el punto de `## Init` que manda a correr esta skill (`If pyproject.toml still says name = "project"...`) y, en `## Skills`, quita `— first, when name = "project"` (la skill sigue listada para renombrar más adelante).
-- `docs/NEXT-STEPS.md`: `example.com` pasa a `{dominio}`, `project_db` a `{db}` y `/srv/project-name` a `/srv/{docker}`
+- `docs/NEXT-STEPS.md`: `example.com` pasa a `{dominio}`, `project_db` a `{db}` y `/srv/project-name` a `/srv/{docker}`, salvo en el paso 1 («Personalize the placeholders»), que describe esta skill y se queda igual
 - `docs/ci.md`: en «Reversible migrations», la base de dev de ejemplo (`project_db`) pasa a `{db}`
 - `docs/ARCHITECTURE.md`, `docs/files.md` y `docs/deploy.md`: el ejemplo `/srv/project-name` pasa a `/srv/{docker}`
-- `docs/openapi.yaml`: no se edita a mano. Es generado y lleva el `TITLE` y la `DESCRIPTION` de `SPECTACULAR_SETTINGS`, así que se regenera en el Cierre; si no, falla `test_committed_schema_matches_the_code`
+- `docs/openapi.json`: no se edita a mano. Es generado y lleva `NINJA_TITLE` y `NINJA_DESCRIPTION`, así que se regenera en el Cierre; si no, `scripts/check.sh lint` falla al comparar el export con el archivo comprometido.
 
 ## Docker y Dev Container
 
@@ -110,7 +111,7 @@ Después de editar, en este orden:
 2. Barrido de placeholders:
 
    ```bash
-   rg -n --hidden -g '!.git' -g '!.venv' -g '!.agents/skills/**' -g '!uv.lock' -g '!docs/openapi.yaml' \
+   rg -n --hidden -g '!.git' -g '!.venv' -g '!.agents/skills/**' -g '!uv.lock' -g '!docs/openapi.json' \
      -e 'project-name' -e 'project_db' -e 'example\.com' -e '\bProject\b' \
      -e '"project' -e 'name: project$' .
    ```
@@ -129,7 +130,10 @@ Después de editar, en este orden:
    - Los fallbacks `${PROJECT_NAME:-project-name}` de `docker/dev/compose.yaml` y `docker/prod/compose.yaml`, y su mención en `docs/development/with-docker.md`: solo actúan sin `PROJECT_NAME`
    - Las columnas de default de `docs/environment/development.md` y `docs/environment/production.md` (`Project`, `[Project]`, `project-name`): documentan los defaults de código, que no cambian
    - La sección `## Personalize` de `docs/development.md` (tabla y pasos manuales), el paso 1 de `docs/NEXT-STEPS.md` y la línea del checklist en `README.md`: describen esta skill
-   - El ejemplo `https://api.example.com` de `core/api/pagination.py` (OpenAPI) y `nobody@example.com` de `bruno/Cuentas/iniciar-sesion-invalido.yml`
+   - `nobody@example.com` de `bruno/Cuentas/iniciar-sesion-invalido.yml` y `user@example.com` de `bruno/environments/seed.yml` (el usuario de `seed_dev`)
+   - Los enlaces de ejemplo `https://example.com/docs/...` de las recetas de `docs/api.md` (deprecación)
+   - Los comentarios de `docker/prod/.env.example` que explican la guarda (`every example.com / example.org / example.net`, `not example.com, not localhost`, `refuses example.com and localhost`)
+   - Los defaults `getattr(settings, "NINJA_TITLE", "Project API")` y `NINJA_DESCRIPTION` de `core/api/api.py`: solo actúan sin el setting. La página de Swagger toma su título de la API, así que cambia con `NINJA_TITLE`
    - Usuarios de `apps/users/management/commands/seed_dev.py` (`admin@example.com`, `user@example.com`) y las menciones de esos correos o de «no `example.com` o `localhost`» en los docs (documentan la guarda, no son el dominio del producto)
 
    No menciones `smtp.example.com` como residuo del `.env.example` de prod: ya no está ahí. Cualquier otra coincidencia de `project-name`, `project_db` o `/srv/project-name` sí es un placeholder que faltó. Un hit de `example.com` / `Project` en la denylist o en tests no se reescribe.
@@ -140,7 +144,7 @@ Después de editar, en este orden:
    [ -f .env ] || cp .env.example .env
    [ -f docker/dev/.env ] || cp docker/dev/.env.example docker/dev/.env
    docker compose -f docker/dev/compose.yaml up -d --build
-   docker compose -f docker/dev/compose.yaml exec -T django python manage.py spectacular --settings config.settings.test --validate --fail-on-warn > docs/openapi.yaml
+   docker compose -f docker/dev/compose.yaml exec -T django python manage.py export_openapi_schema --settings config.settings.test --api config.api.api --indent 2 > docs/openapi.json
    docker compose -f docker/dev/compose.yaml exec django scripts/check.sh
    if [ ! -f docker/prod/.env ]; then
      cp docker/prod/.env.example docker/prod/.env
@@ -159,11 +163,13 @@ Después de editar, en este orden:
 
    ```bash
    [ -f .env ] || cp .env.example .env
-   uv run --env-file .env python manage.py spectacular --settings config.settings.test --file docs/openapi.yaml --validate --fail-on-warn
+   uv run --env-file .env python manage.py export_openapi_schema --settings config.settings.test --api config.api.api --indent 2 > docs/openapi.json
    uv run --env-file .env scripts/check.sh
+   uv run --env-file .env python -c 'import os; print(os.environ["DJANGO_EMAIL_SIGNATURE_NAME"])'
+   # expect: {Nombre}. Un KeyError es una línea del .env sin comillas con espacios: uv dejó de leer el archivo ahí.
    ```
 
-   `docs/openapi.yaml` se regenera con una redirección en el host cuando se usa `compose exec`, para que el archivo no quede con dueño root. `docs/openapi.yaml` no entra en el barrido del paso 2 porque es generado.
+   `docs/openapi.json` se regenera en el host (o con `compose exec` de forma que el archivo no quede con dueño root). `docs/openapi.json` no entra en el barrido del paso 2 porque es generado.
 
 ## Pendientes
 

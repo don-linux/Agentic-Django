@@ -1,6 +1,6 @@
 # 0007. Tests split into http/ and drf/
 
-- Status: Accepted
+- Status: Superseded by 0012
 - Date: 2026-11-18
 
 ## Context

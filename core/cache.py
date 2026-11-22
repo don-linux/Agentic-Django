@@ -43,8 +43,9 @@ def probe() -> None:
     """
     Raise unless the default cache answers; the readiness probe calls it.
 
-    On Valkey this is a PING, which never fails open. `caches[...]` is the backend
-    itself: `django.core.cache.cache` is a proxy, and no isinstance check matches it.
+    On Valkey this is `ValkeyCache.ping()`, which never fails open. `caches[...]`
+    is the backend itself: `django.core.cache.cache` is a proxy, and no isinstance
+    check matches it.
     """
     backend = _backend()
     if isinstance(backend, ValkeyCache):

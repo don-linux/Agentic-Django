@@ -7,8 +7,10 @@ from django.urls import path
 from django.views.generic import RedirectView
 
 from apps.users.views import PhoneView
-from core.api.views import DocsView
-from core.api.views import SchemaView
+from config.api import api
+from core.api.negotiation import docs_view
+from core.api.negotiation import schema_view
+from core.api.negotiation import staff_docs_required
 
 urlpatterns = [
     path(settings.ADMIN_URL, admin.site.urls),
@@ -26,18 +28,12 @@ urlpatterns = [
 ]
 
 urlpatterns += [
-    path("api/v1/", include("config.api_router")),
-    path("api/v1/schema/", SchemaView.as_view(), name="api-schema"),
-    # The split view needs no inline script under SECURE_CSP.
-    # See docs/security.md#content-security-policy.
-    path(
-        "api/v1/docs/",
-        DocsView.as_view(url_name="api-schema"),
-        name="api-docs",
-    ),
+    path("api/v1/", api.urls),
+    path("api/v1/schema/", staff_docs_required(schema_view), name="api-schema"),
+    path("api/v1/docs/", staff_docs_required(docs_view), name="api-docs"),
 ]
 
-# Same JSON body as the API. See docs/api.md#errors-outside-drf-views.
+# Same JSON body as the API. See docs/api.md#errors-outside-api-views.
 handler400 = "core.errors.bad_request"
 handler403 = "core.errors.permission_denied"
 handler404 = "core.errors.page_not_found"
