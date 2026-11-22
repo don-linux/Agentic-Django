@@ -189,13 +189,11 @@ The client is the `X-Forwarded-For` entry that many trusted proxies from the end
 
 ```bash
 git show origin/main:docs/openapi.json > /tmp/openapi-base.json
-oasdiff breaking /tmp/openapi-base.json docs/openapi.json --fail-on ERR --severity-levels .github/oasdiff-levels.txt
-oasdiff changelog /tmp/openapi-base.json docs/openapi.json    # every change, breaking or not
+oasdiff breaking /tmp/openapi-base.json docs/openapi.json --fail-on ERR --severity-levels .github/oasdiff-levels.txt --flatten-allof
+oasdiff changelog /tmp/openapi-base.json docs/openapi.json --flatten-allof    # every change, breaking or not
 ```
 
 The same comparison checks a change of API framework: generate the new schema, then compare it with the last committed one. Component names that Ninja emits (`UserOut`, `ErrorSchema`, `ValidationErrorSchema`, and the like) are treated as non-breaking. oasdiff reports a removed response field only when the field is in its component's `required` list, so every response component lists each property the API always renders: all model fields, including optional ones such as `User.name`, and a page's `next` and `previous`, which are `null` at either end. `Error.extra` stays optional. Request schemas set `additionalProperties: false`.
-
-The first pull request that introduces `docs/openapi.json` still compares against `docs/openapi.yaml` (OpenAPI 3.0.3) on the base branch. oasdiff 1.38.0 reports two classified errors there: typelist widening on `next` and `previous` (OpenAPI 3.1 `anyOf: [string, null]` versus 3.0 `nullable: true`). The `api-contract` job first renames the base's `Error` and `ValidationError` components to Ninja's `ErrorSchema` and `ValidationErrorSchema` with `sed`, so the PATCH 400 `oneOf` branches are still compared field by field, then applies `--err-ignore .github/oasdiff-yaml-baseline-err-ignore.txt` only when the base schema is YAML. After that merge, comparisons are JSON against JSON; the next pull request must delete the ignore file and the ignore branch in `.github/workflows/ci.yml`.
 
 ## Deprecating endpoints and fields
 
