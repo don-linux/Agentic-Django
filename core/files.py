@@ -16,6 +16,7 @@ from functools import partial
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import cast
 
 from django.conf import settings
 from django.core.exceptions import SuspiciousFileOperation
@@ -95,7 +96,13 @@ class MaxFileSizeValidator:
 
 
 class _PrivateStorage(LazyObject):
-    """STORAGES["private"], resolved on first use and again after a settings change."""
+    """
+    STORAGES["private"], resolved on first use and again after a settings change.
+
+    The LazyObject subclass Django documents for a STORAGES alias that tests override
+    (Managing files, "Using a callable"). Django's example only works until the
+    proxy is first used; reset() makes overrides apply after that too.
+    """
 
     _wrapped: Any
 
@@ -103,6 +110,9 @@ class _PrivateStorage(LazyObject):
         self._wrapped = storages["private"]
 
     def reset(self) -> None:
+        # `empty` is the sentinel LazyObject checks before calling _setup(). Django
+        # resets its own default_storage the same way when STORAGES changes
+        # (django.test.signals.storages_changed).
         self._wrapped = empty
 
 
@@ -115,14 +125,15 @@ def _reset_private_storage(*, setting: str, **kwargs: Any) -> None:
         _private_storage.reset()
 
 
-def private_storage() -> Any:
+def private_storage() -> Storage:
     """
     `storage=` for files only their owner may download.
 
     A callable that returns a lazy proxy: migrations never bake in the backend, and
-    STORAGES overrides reach fields. See docs/files.md#public-or-private.
+    STORAGES overrides reach fields. The proxy forwards everything, `__class__`
+    included, so it is a Storage at run time. See docs/files.md#public-or-private.
     """
-    return _private_storage
+    return cast("Storage", _private_storage)
 
 
 def protected_file_response(

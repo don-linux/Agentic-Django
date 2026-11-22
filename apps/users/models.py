@@ -3,18 +3,25 @@ from typing import TYPE_CHECKING
 from typing import Any
 from typing import ClassVar
 
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.base_user import AbstractBaseUser
+from django.contrib.auth.models import PermissionsMixin
+from django.db.models import BooleanField
 from django.db.models import CharField
+from django.db.models import DateTimeField
 from django.db.models import EmailField
 from django.db.models import ProtectedError
 from django.db.models import UniqueConstraint
 from django.db.models import UUIDField
 from django.db.models.functions import Lower
+from django.utils import timezone
 
 from .managers import USER_DELETE_BLOCKED
 from .managers import UserManager
 
 if TYPE_CHECKING:
+    from datetime import date
+    from datetime import datetime
+
     from allauth.account.models import EmailAddress
     from allauth.mfa.models import Authenticator
     from django.contrib.admin.models import LogEntry
@@ -22,20 +29,43 @@ if TYPE_CHECKING:
     from django_stubs_ext.db.models.manager import RelatedManager
 
 
-class User(AbstractUser):
-    """Email-login user. Signup goes through allauth headless."""
+class User(AbstractBaseUser, PermissionsMixin):
+    """
+    Email-login user. Signup goes through allauth headless.
 
-    # First and last name do not cover name patterns around the globe
-    # Annotated for pyright, as in core/models.py (docs/typing.md).
+    Built on AbstractBaseUser and PermissionsMixin, as Django's guide builds a user
+    model without `username` (docs/decisions/0014). Not AbstractUser.
+    """
+
+    # AbstractUser's status fields with its exact options, so migration 0001 still
+    # matches. Declared before `name` to keep their place in _meta.fields.
+    is_staff: BooleanField[bool | Combinable, bool] = BooleanField(
+        "staff status",
+        default=False,
+        help_text="Designates whether the user can log into this admin site.",
+    )
+    # django-stubs annotates AbstractBaseUser.is_active with this union, and pyright
+    # requires a redeclared class variable to keep its declared type (docs/typing.md).
+    is_active: bool | BooleanField[bool | Combinable, bool] = BooleanField(
+        "active",
+        default=True,
+        help_text=(
+            "Designates whether this user should be treated as active. "
+            "Unselect this instead of deleting accounts."
+        ),
+    )
+    date_joined: DateTimeField[str | datetime | date | Combinable, datetime] = (
+        DateTimeField("date joined", default=timezone.now)
+    )
+    # One name field: first and last name do not cover name patterns around the
+    # globe. Annotated for pyright, as in core/models.py (docs/typing.md).
     name: CharField[str | int | Combinable, str] = CharField(
         "Name", blank=True, max_length=255
     )
-    first_name = None  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
-    last_name = None  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
     email: EmailField[str | Combinable, str] = EmailField("email address", unique=True)
-    username = None  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
-    # The API identifier, declared here: User subclasses AbstractUser, so it cannot
-    # inherit core.models.PublicIdModel. The integer pk stays internal.
+    # The API identifier (docs/decisions/0003); the integer pk stays internal.
+    # Declared here, not inherited from core.models.PublicIdModel, so the field
+    # keeps its place and Meta keeps two parents (docs/decisions/0014).
     public_id: UUIDField[str | uuid.UUID, uuid.UUID] = UUIDField(
         default=uuid.uuid7, unique=True, editable=False
     )
@@ -47,19 +77,15 @@ class User(AbstractUser):
     authenticator_set: RelatedManager[Authenticator]
     logentry_set: RelatedManager[LogEntry]
 
+    EMAIL_FIELD = "email"
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
 
-    # django-stubs declares AbstractUser.objects as ClassVar[UserManager[Self]].
-    # Pyright 1.1.414 compares this override with UserManager[AbstractUser] and,
-    # objects being a mutable class variable, requires that exact type, which
-    # the custom manager (a subclass of UserManager[User]) is not (listed in
-    # docs/typing.md).
-    objects: ClassVar[UserManager] = UserManager()  # pyright: ignore[reportIncompatibleVariableOverride]
+    objects: ClassVar[UserManager] = UserManager()
 
-    # Extends AbstractUser.Meta, as Django documents for an abstract parent's
-    # Meta and as django.contrib.auth's own User does.
-    class Meta(AbstractUser.Meta):
+    # Extends the Meta of both abstract parents: with several, Django inherits only
+    # the first one's unless Meta names them all (Django, "Meta inheritance").
+    class Meta(AbstractBaseUser.Meta, PermissionsMixin.Meta):
         verbose_name = "user"
         verbose_name_plural = "users"
         constraints = [

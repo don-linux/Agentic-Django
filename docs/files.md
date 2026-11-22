@@ -57,7 +57,7 @@ def invoices_download(
     return protected_file_response(invoice.document, filename="invoice.pdf")
 ```
 
-`private_storage` is a callable, so migrations store its name; it returns a lazy proxy that is reset when `STORAGES` changes. Private files are served only through a view that checks permissions, which answers with `X-Accel-Redirect`. In development uploads go to `media/` at the repository root (`/app/media` in the container).
+`private_storage` is a callable, so migrations store its name. It returns the `LazyObject` that Django documents for a storage alias that tests override ([Using a callable](https://docs.djangoproject.com/en/6.1/topics/files/#using-a-callable)), reset when `STORAGES` changes so an override applies even after the proxy was first used. Do not replace it with a callable that returns `storages["private"]`: Django calls it once, when the models load, and `STORAGES` overrides would no longer reach the fields. Private files are served only through a view that checks permissions, which answers with `X-Accel-Redirect`. In development uploads go to `media/` at the repository root (`/app/media` in the container).
 
 ## Permissions
 

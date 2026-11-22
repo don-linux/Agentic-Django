@@ -36,7 +36,9 @@ def test_generates_an_id_when_missing() -> None:
     request, response, during = _run()
 
     assert GENERATED.fullmatch(response["X-Request-ID"])
-    assert request.request_id == response["X-Request-ID"] == during  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]
+    assert response["X-Request-ID"] == during
+    # request_id_var is the only home of the id (core/middleware.py).
+    assert not hasattr(request, "request_id")
 
 
 def test_keeps_a_valid_incoming_id() -> None:

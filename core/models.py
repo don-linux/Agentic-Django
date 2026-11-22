@@ -57,8 +57,9 @@ class BaseModel(PublicIdModel):
     """
     Shared fields for domain models: `public_id`, `created_at`, `updated_at`.
 
-    Both timestamps come from the database clock (`Now()`). User keeps AbstractUser
-    and declares its own `public_id`. Custom managers derive from `BaseManager`.
+    Both timestamps come from the database clock (`Now()`). User builds on
+    AbstractBaseUser and PermissionsMixin and declares its own `public_id`. Custom
+    managers derive from `BaseManager`.
     See docs/ARCHITECTURE.md#layers.
     """
 

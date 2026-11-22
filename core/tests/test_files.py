@@ -167,10 +167,9 @@ def test_signed_url_storages_redirect() -> None:
     assert response["Location"].endswith("invoices/a.pdf?X-Amz-Signature=abc")
 
 
-def test_private_storage_follows_storages_overrides(tmp_path: Path) -> None:
-    assert isinstance(private_storage(), InMemoryStorage)
-
-    with override_settings(
+def _private_on_disk(tmp_path: Path) -> override_settings:
+    """The base settings' private storage (FileSystemStorage), under tmp_path."""
+    return override_settings(
         STORAGES={
             **base_settings.STORAGES,
             "private": {
@@ -181,13 +180,33 @@ def test_private_storage_follows_storages_overrides(tmp_path: Path) -> None:
                 },
             },
         },
-    ):
+    )
+
+
+def test_private_storage_follows_storages_overrides(tmp_path: Path) -> None:
+    assert isinstance(private_storage(), InMemoryStorage)
+
+    with _private_on_disk(tmp_path):
         storage = private_storage()
         assert isinstance(storage, FileSystemStorage)
         # Private files never get a URL under MEDIA_URL that nginx would serve.
         assert storage.url("a.pdf") == "/private-media-not-served/a.pdf"
 
     assert isinstance(private_storage(), InMemoryStorage)
+
+
+def test_a_field_follows_storages_overrides_after_its_storage_was_used(
+    tmp_path: Path,
+) -> None:
+    # Django calls a callable storage once, when the field is built, and the field
+    # keeps what it returned: only the lazy proxy follows later overrides.
+    field = models.FileField(storage=private_storage, upload_to=UploadTo("x/y"))
+    assert isinstance(field.storage, InMemoryStorage)
+
+    with _private_on_disk(tmp_path):
+        assert isinstance(field.storage, FileSystemStorage)
+
+    assert isinstance(field.storage, InMemoryStorage)
 
 
 def test_private_storage_serializes_as_a_reference_in_migrations() -> None:
