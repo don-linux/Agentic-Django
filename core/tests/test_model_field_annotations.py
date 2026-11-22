@@ -4,7 +4,7 @@ Every model field is annotated with its django-stubs generic type.
 pyright does not run the django-stubs mypy plugin, so an unannotated
 `name = CharField(...)` is Unknown to it. mypy's plugin checks that the
 annotation matches the field (null=True needs `| None`). See
-docs/development.md#type-checking.
+docs/typing.md#model-field-annotations.
 """
 
 from __future__ import annotations

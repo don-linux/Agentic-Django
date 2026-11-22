@@ -25,7 +25,7 @@ class PublicIdModel(models.Model):
 
     # Field annotations repeat django-stubs' set/get types so pyright sees them
     # (it does not run the mypy plugin, which also checks them against null=).
-    # See docs/development.md#type-checking.
+    # See docs/typing.md#model-field-annotations.
     public_id: models.UUIDField[str | uuid.UUID, uuid.UUID] = models.UUIDField(
         default=uuid.uuid7, unique=True, editable=False
     )

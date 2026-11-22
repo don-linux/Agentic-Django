@@ -26,7 +26,7 @@ class User(AbstractUser):
     """Email-login user. Signup goes through allauth headless."""
 
     # First and last name do not cover name patterns around the globe
-    # Annotated for pyright: see core/models.py and docs/development.md#type-checking.
+    # Annotated for pyright, as in core/models.py (docs/typing.md).
     name: CharField[str | int | Combinable, str] = CharField(
         "Name", blank=True, max_length=255
     )
@@ -53,7 +53,8 @@ class User(AbstractUser):
     # django-stubs declares AbstractUser.objects as ClassVar[UserManager[Self]].
     # Pyright 1.1.414 compares this override with UserManager[AbstractUser] and,
     # objects being a mutable class variable, requires that exact type, which
-    # the custom manager (a subclass of UserManager[User]) is not.
+    # the custom manager (a subclass of UserManager[User]) is not (listed in
+    # docs/typing.md).
     objects: ClassVar[UserManager] = UserManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
     # Extends AbstractUser.Meta, as Django documents for an abstract parent's

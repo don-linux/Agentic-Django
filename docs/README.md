@@ -16,6 +16,7 @@ A map of this template's documentation, one topic per file. Mandatory rules for 
 
 - [ARCHITECTURE.md](ARCHITECTURE.md): layers, caching, tasks, authentication, settings map, deployment topology.
 - [api.md](api.md): HTTP conventions, errors, pagination, throttling, OpenAPI.
+- [typing.md](typing.md): pyright and mypy, what each catches, suppressions, and the upstream workarounds.
 - [settings.md](settings.md): how the settings modules and env files are read.
 - [security.md](security.md): secrets, Valkey, Sentry, HTTPS, field-encryption recipe.
 - [auth/](auth/README.md): optional authentication features (MFA, phone, OAuth) and how to turn them on.

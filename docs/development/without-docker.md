@@ -36,7 +36,7 @@ The API answers on <http://localhost:8000>; check it with `curl http://localhost
 
 ## Checks
 
-`scripts/check.sh` calls `python`, `ruff` and `mypy` from the virtualenv, and the test settings never read `.env` themselves ([../settings.md#test](../settings.md#test)). Run it through `uv` with the root `.env` loaded, so the tests find PostgreSQL and Valkey:
+`scripts/check.sh` calls `python`, `ruff`, `mypy`, `stubtest` and `pyright` from the virtualenv, and the test settings never read `.env` themselves ([../settings.md#test](../settings.md#test)). Run it through `uv` with the root `.env` loaded, so the tests find PostgreSQL and Valkey:
 
 ```bash
 uv run --env-file .env scripts/check.sh
