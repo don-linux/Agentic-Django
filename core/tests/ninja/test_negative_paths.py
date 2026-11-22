@@ -30,11 +30,16 @@ def test_zero_or_negative_pages_are_404_without_hitting_valueerror(page: str) ->
     assert response.json() == {"code": "not_found", "detail": "Invalid page."}
 
 
-def test_an_invalid_cursor_is_404_not_found() -> None:
+def test_an_invalid_cursor_is_400_on_the_cursor_field() -> None:
     _create_users(1)
     response = _list(cursor_api(), "?cursor=not-a-cursor")
-    # Ninja's cursor parser is a 400; the page-number contract stays 404.
-    assert response.status_code in {HTTPStatus.BAD_REQUEST, HTTPStatus.NOT_FOUND}
+    # A cursor is a query field: a bad one is a 400 validation error, unlike
+    # an out-of-range page number, which stays 404 "Invalid page.".
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()["code"] == "validation_error"
+    assert response.json()["fields"] == {
+        "cursor": [{"code": "invalid", "detail": "Invalid cursor."}]
+    }
 
 
 def test_cached_count_list_still_answers_during_a_valkey_outage(settings) -> None:
