@@ -58,10 +58,11 @@ uvx "$pip_audit" --strict --disable-pip -r "$scratch/requirements.txt"
 
 The pins in `pyproject.toml` are also the minimum versions. For each direct package that moves, note:
 
-- `requires-python`, the Python classifier, ruff `target-version` and mypy `python_version` for a Python minor release.
+- `requires-python`, the Python classifier, ruff `target-version`, mypy `python_version` and pyright `pythonVersion` for a Python minor release.
 - django-upgrade `--target-version` (`.pre-commit-config.yaml` and `scripts/check.sh`), `django-stubs` and the "Django X.Y" mentions in `AGENTS.md` and `README.md` for a Django feature release.
 - Which Django versions the new django-allauth, django-ninja, django-axes and django-cors-headers support, and the reverse.
-- `djangorestframework-stubs`, `celery-types` and `kombu` move with the package they type or pair with.
+- `django-stubs` and `django-stubs-ext` move together and with Django; `celery-types` with Celery, `kombu` with Celery, `pydantic` within the range django-ninja supports. Pyright (`pyright[nodejs]`) moves on its own, and a new release may report new errors: fix them, or scope a suppression and record it in [docs/typing.md](../../../docs/typing.md#suppressions).
+- When django-stubs, django-ninja or pyright moves, review [docs/typing.md#upstream-workarounds](../../../docs/typing.md#upstream-workarounds) (step 6 below).
 
 ### Docker images
 
@@ -188,10 +189,16 @@ Add the open Dependabot pull requests, and anything you could not check and why.
 6. After each commit:
 
    ```bash
-   scripts/check.sh                 # lint, migrations check, pytest with coverage
+   scripts/check.sh                 # lint (ruff, mypy, stubtest, pyright), migrations check, pytest with coverage
    python manage.py export_openapi_schema --settings config.settings.test --api config.api.api --indent 2 > docs/openapi.json
    git diff --exit-code docs/openapi.json
    ```
+
+   After a django-stubs, django-ninja or pyright bump, walk [docs/typing.md#upstream-workarounds](../../../docs/typing.md#upstream-workarounds):
+
+   - django-stubs: check whether the release includes [typeddjango/django-stubs#3763](https://github.com/typeddjango/django-stubs/pull/3763) (read its release notes, or `gh pr view 3763 -R typeddjango/django-stubs --json state,mergedAt`). If it does, follow the "Tracked" steps in that section in the same pull request.
+   - Every bump: remove each suppression in the "Permanent" tables one at a time and run `scripts/check.sh lint`. One that is no longer needed goes, with its row. Both checkers already fail on a stale suppression (mypy `warn_unused_ignores`, pyright `reportUnnecessaryTypeIgnoreComment`), so `lint` names the ones the upgrade made unnecessary.
+   - django-ninja: re-read the Ninja deviations table against the release notes and the linked guide pages; the pin tests under `tests/ninja/` fail when a private behavior changed.
 
    A schema diff after a django-ninja, pydantic or django-allauth bump is a change in the API: commit it with that upgrade and say so in the report. A django-ninja bump may need changes under `tests/ninja/` only; a failure under `tests/http/` is a change in the HTTP contract: report it and never edit the assertion to make it pass ([docs/development.md](../../../docs/development.md#test-layout)). After a Django or PostgreSQL bump, also run `scripts/check.sh reversible` against a throwaway database ([docs/ci.md](../../../docs/ci.md#reversible-migrations)).
 7. A deprecation warning fails the suite (`filterwarnings = ["error"]`). Fix the call; add a narrow `ignore:` entry only for a third-party warning, with a link to the issue.
@@ -200,7 +207,7 @@ Add the open Dependabot pull requests, and anything you could not check and why.
 
 ### Python minor release
 
-Dependabot ignores it. In one commit, move together: `.python-version`, `requires-python` and the classifier, ruff `target-version`, mypy `python_version`, `python-version` in `.github/actions/setup-python-env/action.yml`, the `FROM` tag and digest of both Dockerfiles, and the docs that name the version (`rg -n '3\.14' .`). Check first that every dependency ships wheels for the new version.
+Dependabot ignores it. In one commit, move together: `.python-version`, `requires-python` and the classifier, ruff `target-version`, mypy `python_version`, pyright `pythonVersion`, `python-version` in `.github/actions/setup-python-env/action.yml`, the `FROM` tag and digest of both Dockerfiles, and the docs that name the version (`rg -n '3\.14' .`). Check first that every dependency ships wheels for the new version.
 
 ### PostgreSQL or Valkey major
 

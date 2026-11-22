@@ -84,7 +84,7 @@ El plan actualiza solo estas rutas.
 
 - `README.md`: sustituye el título por `# {Nombre}` y el primer párrafo por `Backend for {dominio}` (o `Backend for {Nombre}` si el dominio está pendiente). El resto del README no se reescribe.
 - `AGENTS.md`: borra el punto de `## Init` que manda a correr esta skill (`If pyproject.toml still says name = "project"...`) y, en `## Skills`, quita `— first, when name = "project"` (la skill sigue listada para renombrar más adelante).
-- `docs/NEXT-STEPS.md`: `example.com` pasa a `{dominio}`, `project_db` a `{db}` y `/srv/project-name` a `/srv/{docker}`
+- `docs/NEXT-STEPS.md`: `example.com` pasa a `{dominio}`, `project_db` a `{db}` y `/srv/project-name` a `/srv/{docker}`, salvo en el paso 1 («Personalize the placeholders»), que describe esta skill y se queda igual
 - `docs/ci.md`: en «Reversible migrations», la base de dev de ejemplo (`project_db`) pasa a `{db}`
 - `docs/ARCHITECTURE.md`, `docs/files.md` y `docs/deploy.md`: el ejemplo `/srv/project-name` pasa a `/srv/{docker}`
 - `docs/openapi.json`: no se edita a mano. Es generado y lleva `NINJA_TITLE` y `NINJA_DESCRIPTION`, así que se regenera en el Cierre; si no, `scripts/check.sh lint` falla al comparar el export con el archivo comprometido.
@@ -129,7 +129,10 @@ Después de editar, en este orden:
    - Los fallbacks `${PROJECT_NAME:-project-name}` de `docker/dev/compose.yaml` y `docker/prod/compose.yaml`, y su mención en `docs/development/with-docker.md`: solo actúan sin `PROJECT_NAME`
    - Las columnas de default de `docs/environment/development.md` y `docs/environment/production.md` (`Project`, `[Project]`, `project-name`): documentan los defaults de código, que no cambian
    - La sección `## Personalize` de `docs/development.md` (tabla y pasos manuales), el paso 1 de `docs/NEXT-STEPS.md` y la línea del checklist en `README.md`: describen esta skill
-   - El ejemplo `https://api.example.com` de `core/api/pagination.py` (OpenAPI) y `nobody@example.com` de `bruno/Cuentas/iniciar-sesion-invalido.yml`
+   - `nobody@example.com` de `bruno/Cuentas/iniciar-sesion-invalido.yml` y `user@example.com` de `bruno/environments/seed.yml` (el usuario de `seed_dev`)
+   - Los enlaces de ejemplo `https://example.com/docs/...` de las recetas de `docs/api.md` (deprecación)
+   - Los comentarios de `docker/prod/.env.example` que explican la guarda (`every example.com / example.org / example.net`, `not example.com, not localhost`, `refuses example.com and localhost`)
+   - Los defaults `getattr(settings, "NINJA_TITLE", "Project API")` y `NINJA_DESCRIPTION` de `core/api/api.py`: solo actúan sin el setting. La página de Swagger toma su título de la API, así que cambia con `NINJA_TITLE`
    - Usuarios de `apps/users/management/commands/seed_dev.py` (`admin@example.com`, `user@example.com`) y las menciones de esos correos o de «no `example.com` o `localhost`» en los docs (documentan la guarda, no son el dominio del producto)
 
    No menciones `smtp.example.com` como residuo del `.env.example` de prod: ya no está ahí. Cualquier otra coincidencia de `project-name`, `project_db` o `/srv/project-name` sí es un placeholder que faltó. Un hit de `example.com` / `Project` en la denylist o en tests no se reescribe.
