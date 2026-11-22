@@ -38,4 +38,5 @@ def test_swagger_ui_is_self_hosted_without_inline_script(admin_client: Client) -
     assert _INLINE_SCRIPT.search(html) is None
     assert "<style" not in html
     policy = response["Content-Security-Policy"]
+    assert "'self'" in _directive(policy, "script-src")
     assert "'unsafe-inline'" not in _directive(policy, "script-src")

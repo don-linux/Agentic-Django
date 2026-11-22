@@ -593,7 +593,8 @@ CORS_ALLOW_HEADERS = (
 )
 
 # For the admin and Swagger UI, which run with staff sessions; styles allow
-# 'unsafe-inline' for Swagger's <style>. See docs/security.md#content-security-policy.
+# 'unsafe-inline' for the admin's style attributes, scripts never do.
+# See docs/security.md#content-security-policy.
 SECURE_CSP = {
     "default-src": [CSP.SELF],
     "script-src": [CSP.SELF],

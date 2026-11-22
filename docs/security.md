@@ -300,11 +300,11 @@ Option A keeps dedicated keys, so `SECRET_KEY` rotation never touches encrypted 
 Django's built-in CSP (`django.middleware.csp.ContentSecurityPolicyMiddleware` and `SECURE_CSP` in `config/settings/base.py`) protects the HTML pages that run with staff sessions: the admin and Swagger UI at `/api/v1/docs/`. JSON responses carry the header too, where it is harmless.
 
 - Scripts load only from the site (`script-src 'self'`), with no plugins (`object-src 'none'`), no `<base>` tag, forms posting only to the site, and no framing (`frame-ancestors 'none'`).
-- Swagger UI at `/api/v1/docs/` is staff-only and runs no inline script: `core.api.negotiation.docs_view` serves its own page, which loads `/static/ninja/swagger-ui-bundle.js` and the init script from `/api/v1/docs/?script=`. `script-src` stays `'self'`, with no `'unsafe-inline'`, hashes or nonces. Do not load Swagger assets from a CDN.
-- Styles allow `'unsafe-inline'` because the admin uses `style` attributes. The docs page has no inline `<style>`.
+- Swagger UI at `/api/v1/docs/` is staff-only and served by `core.api.negotiation.docs_view` instead of Ninja's template, which has an inline script ([Ninja: protecting the docs](https://django-ninja.dev/guide/openapi/#protecting-the-docs)). The page loads the bundled Swagger files from `/static/ninja/` and its init code from `/api/v1/docs/?script=`, so it has no inline script and `script-src 'self'` holds. Do not load Swagger assets from a CDN.
+- Styles allow `'unsafe-inline'` because the admin uses `style` attributes; scripts never do. The docs page has no inline `<style>`.
 - A view that needs another policy uses `django.views.decorators.csp.csp_override({...})`, which replaces the whole policy for that view. To allow one inline script instead, add `CSP.NONCE` to `script-src`, the `django.template.context_processors.csp` context processor, and `nonce="{{ csp_nonce }}"` on the tag.
-- `core/tests/http/test_csp.py` fails if the admin gains an inline script. `core/tests/ninja/test_csp.py` pins the docs page to `frame-ancestors 'none'` and `object-src 'none'`, and fails if it gains an inline script or `<style>`, loads Swagger from a CDN, or `script-src` allows `'unsafe-inline'`.
+- `core/tests/http/test_csp.py` fails if the admin gains an inline script. `core/tests/ninja/test_csp.py` pins the docs page to `frame-ancestors 'none'`, `object-src 'none'` and `script-src 'self'`, and fails if the page gains an inline script or `<style>`, loads Swagger from a CDN, or `script-src` allows `'unsafe-inline'`.
 
 nginx sets its own, stricter policy for `/media/` and `/protected-media/` ([NEXT-STEPS.md](NEXT-STEPS.md)).
 
-Swagger UI is staff-only and served by the application, not a CDN, under the same `script-src 'self'` policy (see above).
+Swagger UI is staff-only and served by the application, not a CDN, with no inline script (see above).

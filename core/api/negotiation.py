@@ -22,6 +22,7 @@ from django.http import HttpResponseNotAllowed
 from django.http import JsonResponse
 from django.urls import Resolver404
 from django.urls import resolve
+from django.utils.html import escape
 
 from core.api.api import api
 from core.api.auth import API_AUTH
@@ -514,7 +515,7 @@ def docs_view(request: HttpRequest) -> HttpResponse:
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <title>Project API</title>
+  <title>{title}</title>
   <link rel="stylesheet" href="/static/ninja/swagger-ui.css"/>
 </head>
 <body>
@@ -524,4 +525,6 @@ def docs_view(request: HttpRequest) -> HttpResponse:
 </body>
 </html>
 """
-    return HttpResponse(html, content_type="text/html; charset=utf-8")
+    # The title follows NINJA_TITLE, so personalizing settings renames the page.
+    page = html.replace("{title}", escape(api.title))
+    return HttpResponse(page, content_type="text/html; charset=utf-8")
