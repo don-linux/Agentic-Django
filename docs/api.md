@@ -129,8 +129,7 @@ Every new code is added to this table in the same PR. Codes are never renamed on
 | `validation_error` | 400 | The body failed validation; see `fields` | Pydantic request schemas, Django `ValidationError` |
 | `unknown_field` | 400 | Field-level code inside the `fields` of a `validation_error`: the body has a key that is not a field of this endpoint | Pydantic request schemas with `extra="forbid"` |
 | `parse_error` | 400 | The body is not valid for its content type (for example malformed JSON, or JSON nested too deeply to decode) | Ninja parsers |
-| `not_authenticated` | 401 | No credentials were sent | Ninja authentication |
-| `authentication_failed` | 401 | The credentials are invalid | Ninja authentication |
+| `not_authenticated` | 401 | No valid credentials were sent (none, or an invalid or expired token) | Ninja authentication |
 | `permission_denied` | 403 | Authenticated, but not allowed | Ninja permissions, Django `PermissionDenied` (also `handler403`) |
 | `not_found` | 404 | The resource does not exist or is not visible to the caller | `Http404`, `ObjectDoesNotExist`, pagination, unknown routes (`handler404`) |
 | `method_not_allowed` | 405 | The HTTP method is not supported on this route | Ninja operations |
