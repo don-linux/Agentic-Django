@@ -49,7 +49,9 @@ REQUEST_ID_HEADER = "X-Request-ID"
 _VALID_REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,128}")
 # What request_id_var holds outside a request (a shell, a command, a worker).
 NO_REQUEST_ID = "-"
-# The current request id, read by core.logging.RequestIdFilter.
+# The current request id, and its only home: the request object carries no copy.
+# core.logging.RequestIdFilter and core.tasks.enqueue_on_commit read it; other code
+# calls request_id_var.get() (docs/ARCHITECTURE.md#deployment).
 request_id_var: ContextVar[str] = ContextVar("request_id", default=NO_REQUEST_ID)
 
 
@@ -128,7 +130,6 @@ class RequestIdMiddleware:
         request_id = (
             incoming if _VALID_REQUEST_ID.fullmatch(incoming) else uuid.uuid4().hex
         )
-        request.request_id = request_id  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]
         token = request_id_var.set(request_id)
         try:
             _tag_error_reports(request_id)
