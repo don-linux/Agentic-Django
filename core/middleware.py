@@ -58,8 +58,9 @@ class HealthCheckMiddleware:
     Answer the health probes before the rest of the stack.
 
     /health/live/ never touches the database or the cache. /health/ runs SELECT 1
-    and a Valkey PING and answers 503 while either fails: that is what makes an
-    outage of the fail-open cache visible. See docs/ARCHITECTURE.md#deployment.
+    and a Valkey round trip and answers 503 while either fails: that is what
+    makes an outage of the fail-open cache visible.
+    See docs/ARCHITECTURE.md#deployment.
     """
 
     def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:

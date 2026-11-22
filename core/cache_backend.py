@@ -34,6 +34,9 @@ WARNING_INTERVAL = 30.0
 # deletes fail open, or each login would be a 500 during an outage.
 # See docs/security.md#valkey-outages.
 FAIL_OPEN_DELETE_PREFIXES = ("allauth:rl:", "axes-")
+# The key `ping()` touches. Nothing writes it, and EXPIRE on a missing key
+# changes nothing. See docs/ARCHITECTURE.md#deployment.
+PING_KEY = "health:ping"
 
 
 class OutageLog:
@@ -87,8 +90,13 @@ class ValkeyCache(RedisCache):
         return self.max_ttl if backend_timeout is None else int(backend_timeout)
 
     def ping(self) -> None:
-        """Raise unless Valkey answers PING (wrong credentials raise too)."""
-        self._cache.get_client(write=True).ping()
+        """
+        Raise unless Valkey answers on the write connection (wrong credentials too).
+
+        Django's cache API has no ping: this is `RedisCache.touch()` on PING_KEY,
+        one EXPIRE, bypassing the fail-open `touch()` below.
+        """
+        super().touch(PING_KEY)
 
     def strict_set(
         self,

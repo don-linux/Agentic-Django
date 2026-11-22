@@ -13,6 +13,7 @@ from axes.handlers.proxy import AxesProxyHandler
 from django.contrib.sessions.backends.base import UpdateError
 from django.contrib.sessions.backends.cached_db import KEY_PREFIX as SESSION_PREFIX
 from django.contrib.sessions.models import Session
+from django.core.cache.backends.redis import RedisCache
 from django.test import Client
 from redis.exceptions import ConnectionError as ValkeyConnectionError
 from redis.exceptions import ResponseError
@@ -243,6 +244,17 @@ def test_rate_limit_bookkeeping_deletes_fail_open(
 ) -> None:
     # allauth and django-axes delete these keys on every login.
     assert dead.delete(key) is False
+
+
+def test_ping_is_django_s_touch_of_the_reserved_key() -> None:
+    # Django's cache API has no ping. RedisCache.touch, not the fail-open
+    # ValkeyCache.touch, with the default timeout (the TIMEOUT of CACHES), on the
+    # key docs/ARCHITECTURE.md reserves for the probe.
+    backend = _backend()
+    with mock.patch.object(RedisCache, "touch", autospec=True) as touch:
+        backend.ping()
+
+    touch.assert_called_once_with(backend, "health:ping")
 
 
 def test_strict_calls_never_fail_open(dead: ValkeyCache) -> None:

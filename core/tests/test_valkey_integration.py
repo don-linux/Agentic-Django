@@ -8,6 +8,7 @@ See docs/development.md#pytest.
 from __future__ import annotations
 
 import time
+import uuid
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 from typing import Any
@@ -16,8 +17,11 @@ from urllib.parse import urlsplit
 import pytest
 from allauth.account.models import EmailAddress
 from django.conf import settings as django_settings
+from django.core.cache import caches
 from django.test import Client
 from kombu.exceptions import OperationalError
+from redis.exceptions import AuthenticationError
+from redis.exceptions import NoPermissionError
 
 from apps.users.selectors import user_get
 from apps.users.services import user_update
@@ -25,6 +29,7 @@ from apps.users.tests.factories import UserFactory
 from config import celery_app
 from config.settings.base import build_broker_url
 from core.cache import NAMESPACE_TTL
+from core.cache_backend import ValkeyCache
 from core.tests.valkey_fixtures import CACHE_DB
 from core.tests.valkey_fixtures import HOW_TO_START
 from core.tests.valkey_fixtures import _client
@@ -38,7 +43,6 @@ if TYPE_CHECKING:
     from apps.users.models import User
     from conftest import CacheWrites
     from conftest import ThrottleRates
-    from core.cache_backend import ValkeyCache
 
 pytestmark = [pytest.mark.valkey, pytest.mark.django_db]
 
@@ -172,6 +176,88 @@ def test_readiness_is_ok_with_valkey_up(valkey: ValkeyCache) -> None:
 
     assert response.status_code == HTTPStatus.OK
     assert response.content == b"ok\n"
+
+
+def test_ping_reaches_valkey_and_writes_nothing(valkey: ValkeyCache) -> None:
+    valkey.ping()
+
+    assert valkey.has_key("health:ping") is False
+
+
+def test_ping_sets_the_cache_timeout_on_the_versioned_key(
+    valkey: ValkeyCache,
+    cache_config: dict[str, Any],
+) -> None:
+    # The physical key is <KEY_PREFIX>:<VERSION>:health:ping, and the probe is
+    # one EXPIRE with the TIMEOUT of CACHES: it shows on a key that already exists.
+    key = valkey.make_key("health:ping")
+    assert key == f"{cache_config['KEY_PREFIX']}:{cache_config['VERSION']}:health:ping"
+    _client(valkey).set(key, b"left by hand")
+
+    valkey.ping()
+
+    assert (
+        cache_config["TIMEOUT"] - 1
+        <= _ttl(valkey, "health:ping")
+        <= cache_config["TIMEOUT"]
+    )
+
+
+def test_readiness_is_503_when_the_valkey_user_cannot_write(
+    valkey: ValkeyCache,
+    settings: Settings,
+    cache_config: dict[str, Any],
+    run_prefix: str,
+) -> None:
+    # EXPIRE is a write command: a user that may only read connects, selects the
+    # database and reads, but the probe is refused (NOPERM) and /health/ is 503.
+    username, password = f"{run_prefix}-read-only", uuid.uuid4().hex
+    admin = _client(valkey)
+    admin.acl_setuser(
+        username,
+        enabled=True,
+        passwords=[f"+{password}"],
+        keys=["*"],
+        categories=["+@read", "+@connection"],
+        commands=["+select"],
+    )
+    try:
+        options = {
+            **cache_config["OPTIONS"],
+            "username": username,
+            "password": password,
+        }
+        settings.CACHES = {"default": {**cache_config, "OPTIONS": options}}
+        backend = caches["default"]
+        assert isinstance(backend, ValkeyCache)
+        assert _client(backend).exists(backend.make_key("anything")) == 0
+
+        with pytest.raises(NoPermissionError):
+            backend.ping()
+        response = Client().get("/health/")
+    finally:
+        admin.acl_deluser(username)
+
+    assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+    assert response.content == b"cache unavailable\n"
+
+
+def test_readiness_is_503_when_valkey_refuses_the_credentials(
+    settings: Settings,
+    cache_config: dict[str, Any],
+) -> None:
+    # A user Valkey does not know: WRONGPASS whether or not the server has a password.
+    options = {**cache_config["OPTIONS"], "username": "nobody", "password": "wrong"}
+    settings.CACHES = {"default": {**cache_config, "OPTIONS": options}}
+    backend = caches["default"]
+    assert isinstance(backend, ValkeyCache)
+
+    with pytest.raises(AuthenticationError):
+        backend.ping()
+    response = Client().get("/health/")
+
+    assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+    assert response.content == b"cache unavailable\n"
 
 
 def test_readiness_is_503_quickly_when_the_port_is_closed(

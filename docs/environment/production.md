@@ -83,7 +83,7 @@ From `docker/prod/.env.example`, the only production env file. Compose reads it 
 | `DJANGO_CACHE_VERSION` | No | `1` | Raise it to drop every cached entry; never tie it to `APP_RELEASE`. |
 | `VALKEY_CACHE_DB` | No | `0` | Logical database of the cache. |
 | `VALKEY_BROKER_DB` | No | `1` | Logical database of the task broker; must differ from the cache's. |
-| `VALKEY_USERNAME` | No | Empty | ACL user, only for a server that defines one. |
+| `VALKEY_USERNAME` | No | Empty | ACL user, only for a server that defines one. It needs write commands: the readiness probe is an `EXPIRE` ([ARCHITECTURE](../ARCHITECTURE.md#deployment)). |
 
 ### Background tasks
 
