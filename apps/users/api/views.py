@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from typing import Annotated
 from typing import Any
 from uuid import UUID
@@ -34,6 +35,9 @@ from core.api.responses import WRITE_ERRORS
 from core.api.responses import response_docs
 from core.api.schemas import BaseSchema
 from core.api.schemas import InputSchema
+
+if TYPE_CHECKING:
+    from django.db.models import QuerySet
 
 router = Router(tags=["users"])
 
@@ -131,6 +135,15 @@ def _visible_user(request: HttpRequest, public_id: UUID) -> User:
     return user
 
 
+def _current_user(request: HttpRequest) -> User:
+    # API_AUTH only lets authenticated users through; narrow AnonymousUser away.
+    user = request.user
+    if not isinstance(user, User):
+        msg = "Not found."
+        raise Http404(msg)
+    return user
+
+
 def _validate_visible_id(value: UUID, info: ValidationInfo) -> UUID:
     # Ninja passes {"request": request} to Pydantic validation. A public
     # AfterValidator on a path argument runs before the body is parsed.
@@ -166,9 +179,6 @@ UserPatchBody = BodyEx[UserUpdateIn, P(default_factory=UserUpdateIn)]
 
 
 def _apply_update(user: User, data: dict[str, Any]) -> User:
-    if not isinstance(user, User):
-        msg = "expected a User instance"
-        raise TypeError(msg)
     if "name" not in data:
         return user
     return user_update(user=user, name=data["name"])
@@ -183,7 +193,7 @@ def _apply_update(user: User, data: dict[str, Any]) -> User:
     summary="List users",
 )
 @paginate(LimitPageNumberPagination)
-def users_list(request: HttpRequest) -> Any:
+def users_list(request: HttpRequest) -> QuerySet[User]:
     current = request.user
     if (
         not current.is_authenticated
@@ -203,11 +213,7 @@ def users_list(request: HttpRequest) -> Any:
     summary="Retrieve the current user",
 )
 def users_me_retrieve(request: HttpRequest) -> User:
-    user = request.user
-    if not isinstance(user, User):
-        msg = "Not found."
-        raise Http404(msg)
-    return user
+    return _current_user(request)
 
 
 @router.patch(
@@ -219,11 +225,7 @@ def users_me_retrieve(request: HttpRequest) -> User:
     summary="Partially update the current user",
 )
 def users_me_partial_update(request: HttpRequest, body: UserPatchBody) -> User:
-    user = request.user
-    if not isinstance(user, User):
-        msg = "Not found."
-        raise Http404(msg)
-    return _apply_update(user, body.model_dump(exclude_unset=True))
+    return _apply_update(_current_user(request), body.model_dump(exclude_unset=True))
 
 
 @router.get(
