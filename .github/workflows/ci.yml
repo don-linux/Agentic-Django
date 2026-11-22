@@ -89,7 +89,6 @@ jobs:
   # Pull requests only: compares docs/openapi.json with the base branch and
   # fails on a breaking change, such as a removed path, response field or enum
   # value. .github/oasdiff-levels.txt raises a removed request field to ERR.
-  # The first migration PR still finds docs/openapi.yaml on the base branch.
   # The lint job already proves the file matches the code.
   # See docs/api.md#breaking-changes.
   api-contract:
@@ -108,7 +107,6 @@ jobs:
           path: base
           sparse-checkout: |
             docs/openapi.json
-            docs/openapi.yaml
           sparse-checkout-cone-mode: false
           persist-credentials: false
 
@@ -126,28 +124,11 @@ jobs:
 
       - name: Fail on breaking API changes
         run: |
-          if [ -f base/docs/openapi.json ]; then
-            BASE_SCHEMA=base/docs/openapi.json
-            IGNORE_ARGS=()
-          else
-            # Temporary: the first migration PR still diffs OpenAPI 3.1 JSON
-            # against the 3.0.3 YAML baseline. Remove --err-ignore in the next
-            # pull request (docs/api.md#breaking-changes).
-            # Map the drf-spectacular component names onto Ninja's so oasdiff
-            # still compares the PATCH 400 oneOf branches field by field.
-            sed -e "s#schemas/ValidationError'#schemas/ValidationErrorSchema'#g" \
-                -e "s#schemas/Error'#schemas/ErrorSchema'#g" \
-                -e 's#^    ValidationError:#    ValidationErrorSchema:#' \
-                -e 's#^    Error:#    ErrorSchema:#' \
-                base/docs/openapi.yaml > "$RUNNER_TEMP/base-openapi.yaml"
-            BASE_SCHEMA="$RUNNER_TEMP/base-openapi.yaml"
-            IGNORE_ARGS=(--err-ignore .github/oasdiff-yaml-baseline-err-ignore.txt)
-          fi
           # Ninja 1.8.0 wraps an optional body $ref in a one-item allOf
           # (NinjaGenerateJsonSchema.default_schema); compare the merged schema.
-          "$RUNNER_TEMP/oasdiff" breaking "$BASE_SCHEMA" docs/openapi.json \
+          "$RUNNER_TEMP/oasdiff" breaking base/docs/openapi.json docs/openapi.json \
             --fail-on ERR --severity-levels .github/oasdiff-levels.txt \
-            --flatten-allof --format githubactions "${IGNORE_ARGS[@]}"
+            --flatten-allof --format githubactions
 
   test:
     runs-on: ubuntu-latest
