@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -82,3 +83,67 @@ def test_production_example_points_csrf_and_cors_at_the_frontend() -> None:
 @pytest.mark.parametrize("path", [DEV_EXAMPLE, PROD_EXAMPLE])
 def test_both_environments_use_the_django_database_role(path: Path) -> None:
     assert _assignments(path)["POSTGRES_USER"] == "django"
+
+
+# One assignment per line, commented or not: a commented example is meant to be
+# uncommented as is.
+_ASSIGNMENT = re.compile(r"^(?:# ?)?([A-Z][A-Z0-9_]*)=(.*)$")
+
+
+def _unquoted_values_with_spaces(text: str) -> list[str]:
+    """Lines that uv run --env-file (dotenvy) refuses: whitespace outside quotes.
+
+    uv stops reading the file at such a line, with only a warning: that
+    variable and every one after it stay unset.
+    """
+    refused = []
+    for line in text.splitlines():
+        match = _ASSIGNMENT.match(line)
+        if match is None:
+            continue
+        value = match.group(2)
+        quoted = len(value) > 1 and value[0] == value[-1] and value[0] in "\"'"
+        if not quoted and re.search(r"\s", value):
+            refused.append(line)
+    return refused
+
+
+@pytest.mark.parametrize(
+    "path",
+    [DEV_EXAMPLE, PROD_EXAMPLE, BASE_DIR / "docker" / "dev" / ".env.example"],
+    ids=["dev", "prod", "compose-dev"],
+)
+def test_every_value_with_spaces_is_quoted(path: Path) -> None:
+    assert _unquoted_values_with_spaces(path.read_text()) == []
+
+
+def test_only_unquoted_values_with_spaces_are_refused() -> None:
+    # Each line takes another branch: a plain and a commented assignment with
+    # a space, a double- and a single-quoted value with one. The real files
+    # above cover values without spaces.
+    refused = [
+        "DJANGO_EMAIL_SIGNATURE_NAME=Acme Backend",
+        "# DJANGO_EMAIL_SUBJECT_PREFIX=[Acme Backend] ",
+    ]
+    accepted = [
+        'DJANGO_EMAIL_SIGNATURE_NAME="Acme Backend"',
+        "DJANGO_ADMINS='\"Ops\" <ops@example.com>'",
+    ]
+    assert _unquoted_values_with_spaces("\n".join(refused + accepted)) == refused
+
+
+PERSONALIZE_SKILL = (
+    BASE_DIR / ".agents" / "skills" / "personalize-django-template" / "SKILL.md"
+)
+# A `KEY=value` the skill tells the agent to write, with the project name in it.
+_SKILL_ASSIGNMENT = re.compile(r"`(#? ?[A-Z][A-Z0-9_]*=[^`]*\{Nombre\}[^`]*)`")
+
+
+def test_the_personalize_skill_quotes_every_value_with_the_project_name() -> None:
+    # What the skill makes the agent write for a two-word name.
+    written = [
+        line.replace("{Nombre}", "Acme Backend").replace("{dominio}", "acme.dev")
+        for line in _SKILL_ASSIGNMENT.findall(PERSONALIZE_SKILL.read_text())
+    ]
+    assert written
+    assert _unquoted_values_with_spaces("\n".join(written)) == []

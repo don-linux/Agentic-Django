@@ -75,9 +75,10 @@ El plan actualiza solo estas rutas.
 
 - `pyproject.toml`: `name`, `description` (`Backend for {dominio}` o `Backend for {Nombre}`) y `authors` (nombre y correo que haya dado el usuario)
 - `bruno/opencollection.yml`: `info.name: {slug}`
-- `.env.example`: `POSTGRES_DB`, `DJANGO_TIME_ZONE`, `DJANGO_EMAIL_SIGNATURE_NAME={Nombre}` y las líneas comentadas `DJANGO_EMAIL_SUBJECT_PREFIX="[{Nombre}] "` y `DJANGO_DEFAULT_FROM_EMAIL="{Nombre} <noreply@{dominio}>"` (si el dominio está pendiente, `example.com` se queda y va a pendientes)
+- `.env.example`: `POSTGRES_DB`, `DJANGO_TIME_ZONE`, `DJANGO_EMAIL_SIGNATURE_NAME="{Nombre}"` y las líneas comentadas `DJANGO_EMAIL_SUBJECT_PREFIX="[{Nombre}] "` y `DJANGO_DEFAULT_FROM_EMAIL="{Nombre} <noreply@{dominio}>"` (si el dominio está pendiente, `example.com` se queda y va a pendientes)
 - `docker/prod/.env.example`: la línea comentada `# DJANGO_ADMINS=admin@example.com` pasa a `# DJANGO_ADMINS={correo}`; con nombre, `# DJANGO_ADMINS='"{Admin}" <{correo}>'` (comillas simples por Compose)
-- `docker/prod/.env.example`: `POSTGRES_DB`, `DJANGO_TIME_ZONE`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS`, `FRONTEND_URL` (`https://app.{dominio}`), `DJANGO_DEFAULT_FROM_EMAIL` (`{Nombre} <noreply@{dominio}>`), `DJANGO_EMAIL_SIGNATURE_NAME={Nombre}`, `CORS_ALLOWED_ORIGINS` (`https://app.{dominio}`), `DOCKER_PROD_DJANGO_UPLOADS_PATH=/srv/{docker}/uploads` y el comentario `sudo mkdir -p /srv/{docker}/uploads/...`, y la línea comentada `DJANGO_EMAIL_SUBJECT_PREFIX="[{Nombre}] "`. `PROJECT_NAME` va en la sección de Docker
+- `docker/prod/.env.example`: `POSTGRES_DB`, `DJANGO_TIME_ZONE`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS`, `FRONTEND_URL` (`https://app.{dominio}`), `DJANGO_DEFAULT_FROM_EMAIL="{Nombre} <noreply@{dominio}>"`, `DJANGO_EMAIL_SIGNATURE_NAME="{Nombre}"`, `CORS_ALLOWED_ORIGINS` (`https://app.{dominio}`), `DOCKER_PROD_DJANGO_UPLOADS_PATH=/srv/{docker}/uploads` y el comentario `sudo mkdir -p /srv/{docker}/uploads/...`, y la línea comentada `DJANGO_EMAIL_SUBJECT_PREFIX="[{Nombre}] "`. `PROJECT_NAME` va en la sección de Docker
+- En los tres `.env.example`, todo valor con espacios va entre comillas dobles, como en el template (`DJANGO_EMAIL_SIGNATURE_NAME="Acme Backend"`). `uv run --env-file .env` deja de leer el archivo en la primera línea sin comillas con espacios (solo avisa): esa variable y todas las que vienen después no se cargan; `core/tests/test_env_examples.py` lo comprueba y el paso 3 lo verifica con el `.env` real.
 - Los tests no se editan: no dependen del nombre ni del dominio. `config/settings/test.py` fija `Project` y `example.com` a propósito, y `core/tests/test_production_email_guard.py` usa `Project <noreply@example.com>` y `smtp.example.com` como casos permanentes de denylist.
 
 ### Docs
@@ -164,6 +165,8 @@ Después de editar, en este orden:
    [ -f .env ] || cp .env.example .env
    uv run --env-file .env python manage.py export_openapi_schema --settings config.settings.test --api config.api.api --indent 2 > docs/openapi.json
    uv run --env-file .env scripts/check.sh
+   uv run --env-file .env python -c 'import os; print(os.environ["DJANGO_EMAIL_SIGNATURE_NAME"])'
+   # expect: {Nombre}. Un KeyError es una línea del .env sin comillas con espacios: uv dejó de leer el archivo ahí.
    ```
 
    `docs/openapi.json` se regenera en el host (o con `compose exec` de forma que el archivo no quede con dueño root). `docs/openapi.json` no entra en el barrido del paso 2 porque es generado.
