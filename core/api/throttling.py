@@ -33,7 +33,8 @@ if TYPE_CHECKING:
 # One throttle instance serves every request of a process (core/api/api.py), and
 # Ninja's SimpleRateThrottle keeps key/history/now on it. DRF built one per request
 # (APIView.get_throttles). Each check runs on a per-thread copy instead; Ninja calls
-# wait() right after allow_request() in the same thread (ninja/operation.py).
+# wait() right after allow_request() in the same thread (ninja/operation.py);
+# core/tests/ninja/test_throttle_call_order.py pins that order.
 _STATE = threading.local()
 
 
