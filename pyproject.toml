@@ -28,7 +28,7 @@ dependencies = [
   "pydantic==2.14.3",
   "pyyaml==6.0.3",
   "kombu==5.7.0",
-  "psycopg[c]==3.3.8",
+  "psycopg[c]==3.3.9",
   "redis[hiredis]==8.1.0",
   "sentry-sdk[django]==2.75.0",
   "whitenoise==6.12.0",
