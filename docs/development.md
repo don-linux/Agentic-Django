@@ -78,6 +78,8 @@ Two checkers run from the CLI in `scripts/check.sh lint`, both on the whole repo
 
 Suppressions are per checker and per rule. pyright reads only `# pyright: ignore[rule]` (`enableTypeIgnoreComments = false`) and fails on one that is no longer needed (`reportUnnecessaryTypeIgnoreComment`); mypy reads only `# type: ignore[code]` and fails on an unused one (`warn_unused_ignores`). A line both flag carries both comments. Before adding either, try a real type: narrow with `isinstance`, annotate the variable, or declare the reverse accessor (`emailaddress_set: RelatedManager[EmailAddress]`, from `django_stubs_ext.db.models.manager`).
 
+Model fields carry their django-stubs generic type, as in `name: CharField[str | int | Combinable, str] = CharField(...)`: without it pyright sees the field as `Unknown` and lets any use of it pass. The set and get types are the `_pyi_private_set_type` and `_pyi_private_get_type` of the field class in django-stubs; a nullable field adds `| None` to both, and mypy's plugin fails when the annotation and `null=` disagree. `core/tests/test_model_field_annotations.py` fails on an unannotated field.
+
 `typings/` holds stubs for packages that ship no types (django-environ). pyright reads them through `stubPath` and mypy through `mypy_path`; `stubtest` compares them with the installed package, so a bump that renames a parameter fails `lint`.
 
 ## Pre-commit

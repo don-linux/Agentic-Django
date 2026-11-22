@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from allauth.account.models import EmailAddress
     from allauth.mfa.models import Authenticator
     from django.contrib.admin.models import LogEntry
+    from django.db.models.expressions import Combinable
     from django_stubs_ext.db.models.manager import RelatedManager
 
 
@@ -25,14 +26,19 @@ class User(AbstractUser):
     """Email-login user. Signup goes through allauth headless."""
 
     # First and last name do not cover name patterns around the globe
-    name = CharField("Name", blank=True, max_length=255)
+    # Annotated for pyright: see core/models.py and docs/development.md#type-checking.
+    name: CharField[str | int | Combinable, str] = CharField(
+        "Name", blank=True, max_length=255
+    )
     first_name = None  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
     last_name = None  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
-    email = EmailField("email address", unique=True)
+    email: EmailField[str | Combinable, str] = EmailField("email address", unique=True)
     username = None  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
     # The API identifier, declared here: User subclasses AbstractUser, so it cannot
     # inherit core.models.PublicIdModel. The integer pk stays internal.
-    public_id = UUIDField(default=uuid.uuid7, unique=True, editable=False)
+    public_id: UUIDField[str | uuid.UUID, uuid.UUID] = UUIDField(
+        default=uuid.uuid7, unique=True, editable=False
+    )
 
     # Reverse accessors. The django-stubs mypy plugin declares them; pyright does
     # not run the plugin, so they are declared here (django-stubs README, "Do I

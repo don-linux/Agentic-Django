@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 import uuid
+from typing import TYPE_CHECKING
 from typing import Any
 
 from django.db import models
 from django.db.models.functions import Now
+
+if TYPE_CHECKING:
+    from datetime import date
+    from datetime import datetime
+
+    from django.db.models.expressions import Combinable
+
+    type _DateTimeIn = str | datetime | date | Combinable
 
 
 class PublicIdModel(models.Model):
@@ -14,7 +23,12 @@ class PublicIdModel(models.Model):
     See docs/ARCHITECTURE.md#layers.
     """
 
-    public_id = models.UUIDField(default=uuid.uuid7, unique=True, editable=False)
+    # Field annotations repeat django-stubs' set/get types so pyright sees them
+    # (it does not run the mypy plugin, which also checks them against null=).
+    # See docs/development.md#type-checking.
+    public_id: models.UUIDField[str | uuid.UUID, uuid.UUID] = models.UUIDField(
+        default=uuid.uuid7, unique=True, editable=False
+    )
 
     class Meta:
         abstract = True
@@ -48,8 +62,12 @@ class BaseModel(PublicIdModel):
     See docs/ARCHITECTURE.md#layers.
     """
 
-    created_at = models.DateTimeField(db_default=Now(), editable=False)
-    updated_at = models.DateTimeField(db_default=Now(), editable=False)
+    created_at: models.DateTimeField[_DateTimeIn, datetime] = models.DateTimeField(
+        db_default=Now(), editable=False
+    )
+    updated_at: models.DateTimeField[_DateTimeIn, datetime] = models.DateTimeField(
+        db_default=Now(), editable=False
+    )
 
     objects = BaseManager()
 
