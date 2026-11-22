@@ -281,7 +281,7 @@ GET /api/v1/reports/<id>/
 The rest is the same as for any resource:
 
 - `ReportRunSerializer` is a `BaseModelSerializer` with `id` from `public_id`, a `url`, and `status`, `error_code` and `created_at` read-only. `report_run_list` is the selector that scopes reports to their owner.
-- Add the app to `LOCAL_APPS`, register the viewset in `config/api_router.py`, run `python manage.py makemigrations reports --name create_report_run`, and regenerate `docs/openapi.yaml`.
+- Add the app to `LOCAL_APPS`, register the viewset in `config/api_router.py`, run `python manage.py makemigrations reports --name create_report_run`, and regenerate `docs/openapi.json`.
 - The file is private. Serve it from an action that returns `protected_file_response(report.file, filename="report.csv")` once the status is `done` ([files.md](files.md)).
 - Each request starts minutes of work, so give the endpoint a `throttle_scope` ([api.md](api.md#throttling)).
 - Tests, besides the usual ones of an endpoint (AGENTS.md, "Testing"): the task is enqueued once after the commit and never after a rollback; building twice keeps the first file; the soft time limit, a bug and the last retry each leave the report `failed`; a failed report can be built again.

@@ -1,4 +1,4 @@
-"""scripts/check.sh openapi: the docs/openapi.yaml drift check that ends `lint`.
+"""scripts/check.sh openapi: the docs/openapi.json drift check that ends `lint`.
 
 The export goes to a private mktemp directory, never to a fixed $TMPDIR path:
 parallel runs (one per commit, one per user) must not read each other's file.
@@ -30,14 +30,14 @@ def _check_openapi(tmpdir: Path, **env: str) -> subprocess.CompletedProcess[str]
 def test_a_file_at_the_old_fixed_path_is_neither_read_nor_replaced(
     tmp_path: Path,
 ) -> None:
-    # The previous fixed path, $TMPDIR/openapi-check.yaml: something else
+    # The previous fixed path, $TMPDIR/openapi-check.json: something else
     # (here a directory) at that path made every run fail.
-    (tmp_path / "openapi-check.yaml").mkdir()
+    (tmp_path / "openapi-check.json").mkdir()
 
     result = _check_openapi(tmp_path)
 
     assert result.returncode == 0, result.stderr
-    assert [p.name for p in tmp_path.iterdir()] == ["openapi-check.yaml"]
+    assert [p.name for p in tmp_path.iterdir()] == ["openapi-check.json"]
 
 
 def test_parallel_checks_pass_and_leave_nothing_behind(tmp_path: Path) -> None:

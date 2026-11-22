@@ -38,7 +38,7 @@ A variable already set in the process environment always wins over the file, so 
 - `axes.W001` is silenced: `LocMemCache` is per process, which is fine for one test process. Every other environment uses Valkey, where the check stays on.
 - Passwords hash with MD5 for speed, mail uses the in-memory backend, and `WHITENOISE_AUTOREFRESH` is on.
 - Throttles stay on; a test that needs other rates patches them ([api.md#throttling](api.md#throttling)).
-- Project values are pinned to the template defaults: `TIME_ZONE`, `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, the email identity (`DEFAULT_FROM_EMAIL`, subject prefix, signature), `ACCOUNT_ALLOW_REGISTRATION` and `REST_FRAMEWORK_MAX_PAGE_NUMBER`. A new variable in `.env.example` is pinned here too, or listed as harmless in `core/tests/test_test_settings.py`.
+- Project values are pinned to the template defaults: `TIME_ZONE`, `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, the email identity (`DEFAULT_FROM_EMAIL`, subject prefix, signature), `ACCOUNT_ALLOW_REGISTRATION` and `API_MAX_PAGE_NUMBER`. A new variable in `.env.example` is pinned here too, or listed as harmless in `core/tests/test_test_settings.py`.
 
 ## Production overrides
 

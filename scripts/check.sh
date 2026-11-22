@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # The lint and test gate for local runs and CI: `lint`, `test`, `reversible`,
-# `openapi` (the docs/openapi.yaml drift check that ends `lint`), or lint then
+# `openapi` (the docs/openapi.json drift check that ends `lint`), or lint then
 # test with no argument. See docs/development.md#checks.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-# The settings CI uses; docs/openapi.yaml is generated with them.
+# The settings CI uses; docs/openapi.json is generated with them.
 export DJANGO_SETTINGS_MODULE="${DJANGO_SETTINGS_MODULE:-config.settings.test}"
 
 run_lint() {
@@ -34,11 +34,11 @@ run_openapi() {
     # a fixed path is never read or overwritten.
     OPENAPI_CHECK_DIR="$(mktemp -d)"
     trap 'rm -rf -- "$OPENAPI_CHECK_DIR"' EXIT
-    local schema="$OPENAPI_CHECK_DIR/openapi.yaml"
-    python manage.py spectacular --file "$schema" --validate --fail-on-warn
-    if ! diff -u docs/openapi.yaml "$schema"; then
-        echo "docs/openapi.yaml is out of date. Regenerate it with:" >&2
-        echo "  python manage.py spectacular --settings config.settings.test --file docs/openapi.yaml --validate --fail-on-warn" >&2
+    local schema="$OPENAPI_CHECK_DIR/openapi.json"
+    python manage.py export_openapi_schema --api config.api.api --indent 2 >"$schema"
+    if ! diff -u docs/openapi.json "$schema"; then
+        echo "docs/openapi.json is out of date. Regenerate it with:" >&2
+        echo "  python manage.py export_openapi_schema --settings config.settings.test --api config.api.api --indent 2 > docs/openapi.json" >&2
         return 1
     fi
 }

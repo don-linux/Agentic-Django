@@ -1,32 +1,34 @@
+"""JSON parser for Ninja: RecursionError becomes a 400 parse_error."""
+
 from __future__ import annotations
 
-from typing import IO
+import json
 from typing import TYPE_CHECKING
 from typing import Any
 
-from rest_framework import parsers
-from rest_framework.exceptions import ParseError
+from django.core.exceptions import RequestDataTooBig
+from django.core.exceptions import TooManyFieldsSent
+from ninja.errors import HttpError
+from ninja.parser import Parser
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from django.http import HttpRequest
 
 
-class JSONParser(parsers.JSONParser):
+class JSONParser(Parser):
     """
-    DRF's JSONParser, plus a 400 for JSON nested too deeply to decode.
+    Ninja's default json.loads, plus a 400 when JSON is nested too deeply.
 
-    Python's decoder raises RecursionError there, not the ValueError DRF turns
-    into parse_error. See docs/api.md#error-codes.
+    Python's decoder raises RecursionError there, not JSONDecodeError. See
+    docs/api.md#error-codes. Source: django-ninja 1.8.0 ninja/parser.py.
     """
 
-    def parse(
-        self,
-        stream: IO[Any],
-        media_type: str | None = None,
-        parser_context: Mapping[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    def parse_body(self, request: HttpRequest) -> dict[str, Any]:
         try:
-            return super().parse(stream, media_type, parser_context)
+            return super().parse_body(request)
         except RecursionError as exc:
-            msg = "JSON parse error - nested too deeply."
-            raise ParseError(msg) from exc
+            raise HttpError(400, "JSON parse error - nested too deeply.") from exc
+        except RequestDataTooBig, TooManyFieldsSent:
+            raise
+        except json.JSONDecodeError as exc:
+            raise HttpError(400, f"JSON parse error - {exc}") from exc

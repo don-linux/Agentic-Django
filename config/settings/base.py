@@ -8,12 +8,17 @@ from urllib.parse import quote
 from urllib.parse import urlsplit
 from urllib.parse import urlunsplit
 
+import django_stubs_ext
 import environ
 from corsheaders.defaults import default_headers
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.csp import CSP
 
 from .guards import assert_throttle_rates
+
+# Adds __class_getitem__ to Django generics such as QuerySet, so annotations
+# like QuerySet[User] work at run time (django-stubs-ext README).
+django_stubs_ext.monkeypatch()
 
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
 env = environ.Env()
@@ -293,11 +298,8 @@ THIRD_PARTY_APPS = [
     "allauth.account",
     "allauth.headless",
     "allauth.mfa",
-    "rest_framework",
     "corsheaders",
-    "drf_spectacular",
-    # Swagger UI assets served from STATIC_URL instead of a CDN.
-    "drf_spectacular_sidecar",
+    "ninja",
     "axes",
 ]
 
@@ -345,6 +347,7 @@ MIDDLEWARE = [
     # Right after the probe, so every logged request has an id.
     "core.middleware.RequestIdMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "core.api.negotiation.ApiContractMiddleware",
     "django.middleware.csp.ContentSecurityPolicyMiddleware",
     # Right after SecurityMiddleware, so CORS and 404 responses under /api/ get it too.
     "core.middleware.ApiNoStoreMiddleware",
@@ -547,56 +550,39 @@ FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:3000").rstrip("/")
 HEADLESS_FRONTEND_URLS = build_headless_frontend_urls(FRONTEND_URL)
 
 # Proxies that append to X-Forwarded-For: the one count core.net.get_client_ip,
-# DRF's throttles and allauth read. 0 trusts no proxy (REMOTE_ADDR only), as
+# Ninja throttles and allauth read. 0 trusts no proxy (REMOTE_ADDR only), as
 # local and test need; production.py sets it from DJANGO_TRUSTED_PROXY_COUNT.
 TRUSTED_PROXY_COUNT = 0
 
-REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": (
-        "core.api.authentication.SessionTokenAuthentication",
-        "rest_framework.authentication.SessionAuthentication",
-    ),
-    "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
-    "DEFAULT_PAGINATION_CLASS": "core.api.pagination.LimitPageNumberPagination",
-    "DEFAULT_SCHEMA_CLASS": "core.api.schema.AutoSchema",
-    "EXCEPTION_HANDLER": "core.api.exceptions.api_exception_handler",
-    # JSON only, in every environment: no Browsable API. Swagger at /api/v1/docs/
-    # renders its own page.
-    "DEFAULT_RENDERER_CLASSES": ("rest_framework.renderers.JSONRenderer",),
-    # JSON bodies only: a form or multipart body is a 415, and the schema
-    # advertises only application/json. Upload views opt in with
-    # parser_classes = [MultiPartParser] (docs/files.md).
-    "DEFAULT_PARSER_CLASSES": ("core.api.parsers.JSONParser",),
-    "TEST_REQUEST_DEFAULT_FORMAT": "json",
-    # DRF's default: decimals are JSON strings, so no precision is lost to floats.
-    "COERCE_DECIMAL_TO_STRING": True,
-    # Global anon/user limits are always on. ScopedRateThrottle only applies to views
-    # that set throttle_scope = "<app>.<action>" (see docs/api.md, "Throttling").
-    "DEFAULT_THROTTLE_CLASSES": (
-        "rest_framework.throttling.AnonRateThrottle",
-        "rest_framework.throttling.UserRateThrottle",
-        "rest_framework.throttling.ScopedRateThrottle",
-    ),
-    "DEFAULT_THROTTLE_RATES": {
-        "anon": env("DJANGO_THROTTLE_ANON_RATE", default="60/min"),
-        "user": env("DJANGO_THROTTLE_USER_RATE", default="600/min"),
-        # Scoped rates: "<app>.<action>": "5/min",
-    },
-    # TRUSTED_PROXY_COUNT (above); production.py updates both.
-    "NUM_PROXIES": TRUSTED_PROXY_COUNT,
-    # Content negotiation uses the Accept header only: ?format= is ignored, so it
-    # can neither change a response nor leak into hyperlinks (docs/api.md).
-    "URL_FORMAT_OVERRIDE": None,
+# NINJA_TITLE, NINJA_DESCRIPTION, NINJA_VERSION and NINJA_SERVERS are this
+# project's settings: core/api/api.py passes them to NinjaAPI. Ninja itself reads
+# the pagination, NUM_PROXIES and throttle-rate aliases (ninja/conf.py in 1.8.0).
+# The throttles take the client IP from core.net (TRUSTED_PROXY_COUNT, above);
+# NINJA_NUM_PROXIES keeps Ninja's own get_ident in step with it, and
+# production.py sets both from DJANGO_TRUSTED_PROXY_COUNT.
+NINJA_TITLE = "Project API"
+NINJA_DESCRIPTION = (
+    "The Project JSON API. Account endpoints under /_allauth/ belong to "
+    "django-allauth and keep its own format (docs/api.md)."
+)
+NINJA_VERSION = "1.0.0"
+NINJA_SERVERS = [{"url": "/", "description": "Current host"}]
+NINJA_PAGINATION_PER_PAGE = 20
+NINJA_MAX_PER_PAGE_SIZE = 100
+NINJA_PAGINATION_CLASS = "core.api.pagination.LimitPageNumberPagination"
+NINJA_NUM_PROXIES = TRUSTED_PROXY_COUNT
+NINJA_DEFAULT_THROTTLE_RATES = {
+    "anon": env("DJANGO_THROTTLE_ANON_RATE", default="60/min"),
+    "user": env("DJANGO_THROTTLE_USER_RATE", default="600/min"),
+    # Scoped rates go here as "<app>.<action>": "5/min".
 }
 # A bad rate is a 500 on every request: refuse it at startup.
-assert_throttle_rates(
-    cast("dict[str, str | None]", REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"])
-)
+assert_throttle_rates(cast("dict[str, str | None]", NINJA_DEFAULT_THROTTLE_RATES))
 
 # Deepest page LimitPageNumberPagination serves; deeper pages are a 404.
-REST_FRAMEWORK_MAX_PAGE_NUMBER = env.int("DJANGO_API_MAX_PAGE_NUMBER", default=1000)
+# Env var stays DJANGO_API_MAX_PAGE_NUMBER; the setting is framework-neutral.
+API_MAX_PAGE_NUMBER = env.int("DJANGO_API_MAX_PAGE_NUMBER", default=1000)
 
-# Paths only. An empty origin list still blocks a client on another domain.
 CORS_URLS_REGEX = r"^/(api|_allauth)/.*$"
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
 CORS_ALLOW_HEADERS = (
@@ -617,33 +603,4 @@ SECURE_CSP = {
     "base-uri": [CSP.NONE],
     "form-action": [CSP.SELF],
     "frame-ancestors": [CSP.NONE],
-}
-
-SPECTACULAR_SETTINGS: dict[str, Any] = {
-    "TITLE": "Project API",
-    "DESCRIPTION": (
-        "The Project JSON API. Account endpoints under /_allauth/ belong to "
-        "django-allauth and keep its own format (docs/api.md)."
-    ),
-    "VERSION": "1.0.0",
-    "SERVE_PERMISSIONS": ["rest_framework.permissions.IsAdminUser"],
-    # The schema endpoint does not describe itself.
-    "SERVE_INCLUDE_SCHEMA": False,
-    # Separate request and response components (PatchedUserRequest vs User):
-    # read-only fields such as id and url stay out of request bodies.
-    "COMPONENT_SPLIT_REQUEST": True,
-    # Tags and operationIds ignore the version prefix (users_me_retrieve, tag
-    # "users") for /api/v1/ and any future /api/v2/.
-    "SCHEMA_PATH_PREFIX": r"/api/v[0-9]+",
-    # Relative default so the committed contract is host-agnostic. production.py
-    # replaces this list from ALLOWED_HOSTS.
-    "SERVERS": [{"url": "/", "description": "Current host"}],
-    "POSTPROCESSING_HOOKS": [
-        "drf_spectacular.hooks.postprocess_schema_enums",
-        "core.api.schema.forbid_additional_properties_on_requests",
-    ],
-    # Self-hosted Swagger UI (drf-spectacular-sidecar): no CDN script runs in the
-    # staff session that opens /api/v1/docs/.
-    "SWAGGER_UI_DIST": "SIDECAR",
-    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
 }

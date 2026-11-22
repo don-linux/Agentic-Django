@@ -1,6 +1,6 @@
 # Agentic Django
 
-A Django REST Framework template by don-linux, based on the [HackSoft Django Styleguide](https://github.com/HackSoftware/Django-Styleguide). It is a pure JSON API for clients: no HTML API views, and no i18n (`USE_I18N` is off). Registration is open; accounts verify by email code. The Django admin and the staff schema UI at `/api/v1/docs/` are the only HTML pages.
+A Django Ninja template by don-linux, based on the [HackSoft Django Styleguide](https://github.com/HackSoftware/Django-Styleguide). It is a pure JSON API for clients: no HTML API views, and no i18n (`USE_I18N` is off). Registration is open; accounts verify by email code. The Django admin and the staff schema UI at `/api/v1/docs/` are the only HTML pages.
 
 ## What it ships
 

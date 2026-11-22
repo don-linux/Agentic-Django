@@ -19,7 +19,7 @@ class AppendOnlyError(ConflictError):
         super().__init__(message, code="append_only")
 ```
 
-`core.api.exceptions.api_exception_handler` maps every `ApplicationError`, so the API answers `409 {"code": "append_only", ...}` with no other change. Register `append_only` in the "Error codes" table of [api.md](api.md) when you adopt the recipe.
+`core.api.exceptions.register_exception_handlers` maps every `ApplicationError`, so the API answers `409 {"code": "append_only", ...}` with no other change. Register `append_only` in the "Error codes" table of [api.md](api.md) when you adopt the recipe.
 
 ### Model and queryset
 

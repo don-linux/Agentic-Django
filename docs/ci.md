@@ -9,7 +9,7 @@ How the GitHub Actions workflows check the template. Local commands are in [deve
 - `secrets`: scans the whole Git history with gitleaks ([Secrets](#secrets)).
 - `lint`: pre-commit, then `scripts/check.sh lint`.
 - `links`: internal Markdown links and heading anchors, offline ([Docs lint](#docs-lint)).
-- `api-contract`: pull requests only. oasdiff compares `docs/openapi.yaml` with the base branch's copy and fails on a breaking change ([api.md#breaking-changes](api.md#breaking-changes)).
+- `api-contract`: pull requests only. oasdiff compares `docs/openapi.json` with the base branch's copy and fails on a breaking change ([api.md#breaking-changes](api.md#breaking-changes)).
 - `test`: `scripts/check.sh test` against PostgreSQL (the tests marked `valkey` also use a Valkey service), then `scripts/check.sh reversible`.
 - `docker`: validates the production and development Compose files with the example values, builds the production image, scans it with Trivy, runs `manage.py check --deploy`, and smoke-tests it against a password-protected Valkey.
 - `bruno`: the Bruno smoke requests against `runserver` ([Bruno smoke](#bruno-smoke)).
@@ -20,7 +20,7 @@ A new push to a pull request cancels the run still in progress for it; pushes to
 
 ### Lint
 
-pre-commit runs every hook, then `scripts/check.sh lint` runs ruff, the `cache.clear()` guard, mypy, the import contracts (`lint-imports`), `django-upgrade --check`, the OpenAPI validation (`spectacular --validate --fail-on-warn`) and a diff against the committed `docs/openapi.yaml`.
+pre-commit runs every hook, then `scripts/check.sh lint` runs ruff, the `cache.clear()` guard, mypy, the import contracts (`lint-imports`), `django-upgrade --check`, the OpenAPI export (`export_openapi_schema`, its stdout redirected to a temporary file) and a diff against the committed `docs/openapi.json`.
 
 ### Secrets
 

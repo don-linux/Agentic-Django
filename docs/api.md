@@ -36,7 +36,7 @@ Errors use the [error body](#error-body): 400, 401 (with `WWW-Authenticate`), 40
 - `Content-Type: application/json`, without a charset parameter: JSON is UTF-8 by definition.
 - Request bodies are `application/json` only (`DEFAULT_PARSER_CLASSES`): a form or multipart body is a 415 `unsupported_media_type`, and the schema advertises only JSON. Upload views opt in with `parser_classes = [MultiPartParser]` ([files.md](files.md)).
 - A request body key that is not a field of the endpoint is a 400 `validation_error` whose `fields` entry has the code `unknown_field`, not a silently ignored key. Read-only fields (`id`, `url`) are fields, so a client can send a `GET` body back in a `PATCH`.
-- Content negotiation uses the `Accept` header only. `?format=` is ignored (`URL_FORMAT_OVERRIDE = None`), so it never changes a response or leaks into hyperlinks. The schema at `/api/v1/schema/` is YAML by default; request JSON with `Accept: application/json`, or generate it with `python manage.py spectacular --format openapi-json`.
+- Content negotiation uses the `Accept` header only. `?format=` is ignored (`URL_FORMAT_OVERRIDE = None`), so it never changes a response or leaks into hyperlinks. The schema at `/api/v1/schema/` is YAML by default; request JSON with `Accept: application/json`, or generate it with `python manage.py export_openapi_schema --api config.api.api`.
 
 `BaseModelSerializer` has no class docstring on purpose: drf-spectacular would publish it on every subclass. `apps.users.adapters.HeadlessAdapter` overrides `get_user_dataclass` and `user_as_dataclass` (not `serialize_user`), so allauth's user payload carries the public UUID as `"id"` and its schema stays in sync. The schema and Swagger UI are for staff only (`SERVE_PERMISSIONS` is `IsAdminUser`), and production fills the schema's `servers` from `ALLOWED_HOSTS`.
 
@@ -183,12 +183,12 @@ The client is the `X-Forwarded-For` entry that many trusted proxies from the end
 
 ## Breaking changes
 
-`docs/openapi.yaml` is the contract. The `lint` job proves it matches the code; on a pull request, the `api-contract` job runs [oasdiff](https://github.com/oasdiff/oasdiff) against the base branch's copy and fails on any change at level `ERR`: a removed path or operation, a removed or newly required request field, a removed required response field, a narrowed type or enum. oasdiff rates a removed request field only `WARN`, but request bodies reject unknown keys (`unknown_field`), so a client that still sends it gets a `400`: `.github/oasdiff-levels.txt` raises `request-property-removed` to `ERR`. Such a change goes to `/api/v2/` instead ([Deprecating endpoints and fields](#deprecating-endpoints-and-fields)). Run it locally before pushing (oasdiff 1.38.0, the version in `ci.yml`):
+`docs/openapi.json` is the contract. The `lint` job proves it matches the code; on a pull request, the `api-contract` job runs [oasdiff](https://github.com/oasdiff/oasdiff) against the base branch's copy and fails on any change at level `ERR`: a removed path or operation, a removed or newly required request field, a removed required response field, a narrowed type or enum. oasdiff rates a removed request field only `WARN`, but request bodies reject unknown keys (`unknown_field`), so a client that still sends it gets a `400`: `.github/oasdiff-levels.txt` raises `request-property-removed` to `ERR`. Such a change goes to `/api/v2/` instead ([Deprecating endpoints and fields](#deprecating-endpoints-and-fields)). Run it locally before pushing (oasdiff 1.38.0, the version in `ci.yml`):
 
 ```bash
-git show origin/main:docs/openapi.yaml > /tmp/openapi-base.yaml
-oasdiff breaking /tmp/openapi-base.yaml docs/openapi.yaml --fail-on ERR --severity-levels .github/oasdiff-levels.txt
-oasdiff changelog /tmp/openapi-base.yaml docs/openapi.yaml    # every change, breaking or not
+git show origin/main:docs/openapi.json > /tmp/openapi-base.json
+oasdiff breaking /tmp/openapi-base.json docs/openapi.json --fail-on ERR --severity-levels .github/oasdiff-levels.txt
+oasdiff changelog /tmp/openapi-base.json docs/openapi.json    # every change, breaking or not
 ```
 
 The same comparison checks a change of API framework: generate the new schema, then compare it with the last committed one. oasdiff compares the resolved shapes, so renamed components and operation ids are reported as information, not as breaking. oasdiff reports a removed response field only when the field is in its component's `required` list, so every response component lists each property DRF always renders: all model fields, including `blank=True` ones such as `User.name`, and a page's `next` and `previous`, which are `null` at either end. Only a field declared with `required=False`, no default and no `allow_null` stays optional, because DRF leaves it out when the object lacks the attribute (`Error.extra`). Request components keep drf-spectacular's own `required` lists.
