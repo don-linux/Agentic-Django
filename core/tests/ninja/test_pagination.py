@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from http import HTTPStatus
 from typing import TYPE_CHECKING
@@ -10,9 +11,11 @@ from django.test import override_settings
 from ninja import Schema
 
 from apps.users.models import User
+from core.api.pagination import CachedCountPageNumberPagination
 from core.api.pagination import CachedCountPaginatorCount
 from core.api.pagination import LimitCursorPagination
 from core.api.pagination import LimitPageNumberPagination
+from core.api.pagination import PageNumberIn
 from core.cache import invalidate
 from core.tests.ninja.pagination_views import _create_users
 from core.tests.ninja.pagination_views import _list
@@ -202,4 +205,20 @@ def test_page_number_pagination_rejects_a_foreign_input_schema() -> None:
     with pytest.raises(TypeError, match="expected PageNumberIn"):
         paginator.paginate_queryset(
             User.objects.none(), Schema(), RequestFactory().get("/")
+        )
+
+
+@pytest.mark.parametrize(
+    "paginator", [LimitPageNumberPagination, CachedCountPageNumberPagination]
+)
+def test_page_number_pagination_refuses_async_views(paginator: type) -> None:
+    # Ninja's inherited apaginate_queryset answers {items, count} with no 404 for
+    # a bad page: an async view would change the contract without a failing test.
+    with pytest.raises(NotImplementedError, match="sync views only"):
+        asyncio.run(
+            paginator().apaginate_queryset(
+                User.objects.none(),
+                PageNumberIn(),
+                RequestFactory().get("/"),
+            )
         )

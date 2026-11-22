@@ -118,6 +118,18 @@ class LimitPageNumberPagination(PageNumberPagination):
             return queryset.count()
         return len(queryset)
 
+    async def apaginate_queryset(
+        self,
+        queryset: QuerySet,
+        pagination: Schema,
+        request: HttpRequest,
+        **params: Any,
+    ) -> Any:
+        # Ninja's inherited async version answers {items, count} with no 404 for
+        # a bad page (ninja/pagination.py). Keep the contract to sync views.
+        msg = "LimitPageNumberPagination supports sync views only."
+        raise NotImplementedError(msg)
+
     def paginate_queryset(
         self,
         queryset: QuerySet,
