@@ -1,13 +1,12 @@
-"""Application code imports only the public API of its dependencies.
+"""The project's code, tests included, imports only its dependencies' public API.
 
 A module path with an ``internal`` or ``_private`` component, or an imported
 ``_name``, is a dependency's private API: it can change in any release without
 a deprecation (allauth keeps such helpers under ``*.internal``; Ninja, Django
 and Pydantic mark them with a leading underscore). ``importlib.import_module``
-and ``__import__`` with a literal module count as imports. Application code is
-config/, apps/, core/, scripts/, manage.py and conftest.py. Tests are out of
-scope: some pin the base template's own use of allauth internals. This check
-sees imports only; attribute access is not typed here.
+and ``__import__`` with a literal module count as imports. The project's code
+is config/, apps/, core/, scripts/, manage.py and conftest.py, with their
+tests. This check sees imports only; attribute access is not typed here.
 """
 
 from __future__ import annotations
@@ -64,20 +63,23 @@ def _private_imports(source: str) -> list[str]:
     return found
 
 
-def _application_modules() -> list[Path]:
+def _project_modules() -> list[Path]:
     return [
-        path
-        for source in SOURCES
-        for path in sorted((BASE_DIR / source).rglob("*.py"))
-        if "tests" not in path.relative_to(BASE_DIR).parts
+        path for source in SOURCES for path in sorted((BASE_DIR / source).rglob("*.py"))
     ] + [BASE_DIR / name for name in ROOT_MODULES]
 
 
-def test_application_code_uses_only_public_dependency_apis() -> None:
-    modules = _application_modules()
+def test_project_code_uses_only_public_dependency_apis() -> None:
+    modules = _project_modules()
     scanned = {str(path.relative_to(BASE_DIR)) for path in modules}
-    assert {"manage.py", "conftest.py", "scripts/forbid_cache_clear.py"} <= scanned
-    assert not any("tests" in Path(path).parts for path in scanned)
+    assert {
+        "manage.py",
+        "conftest.py",
+        "scripts/forbid_cache_clear.py",
+        # Tests too: a test that leans on a private helper breaks in any release.
+        "apps/users/tests/http/test_rate_limits.py",
+        "core/tests/test_cache_backend.py",
+    } <= scanned
     found = {
         str(path.relative_to(BASE_DIR)): imports
         for path in modules

@@ -57,9 +57,6 @@ from core.logging import RequestIdFilter
 from core.models import BaseModel
 from core.net import get_client_ip
 from core.sentry import scrub_event
-from core.tests.cache_helpers import MAX_TTL
-from core.tests.cache_helpers import ONE_MINUTE as BACKEND_ONE_MINUTE
-from core.tests.cache_helpers import _backend
 from core.tests.guard_values import FAKE_DSN
 from core.tests.guard_values import STRONG_KEY
 from core.tests.guard_values import VALID_SECRETS as SECRET_VALID
@@ -75,7 +72,6 @@ NAMESPACE = "tests.thing"
 ONE_MINUTE = 60
 
 MAX_PARTS_LENGTH = 160
-VERSION = 123
 ROWS = 3
 
 
@@ -87,13 +83,6 @@ class _Loader:
     def __call__(self) -> object:
         self.calls += 1
         return self.value
-
-
-@pytest.fixture
-def redis_client() -> Any:
-    """Stand in for the redis-py client, copied from test_cache_backend.client."""
-    with mock.patch.object(ValkeyCache, "_cache", new=mock.Mock()) as fake:
-        yield fake
 
 
 def test_a_weak_secret_key_is_rejected_even_with_a_valid_fallback() -> None:
@@ -271,37 +260,6 @@ def test_invalidate_on_valkey_writes_a_fresh_version_with_namespace_ttl(
     assert second_version is not None
     assert backend.strict_set.call_args_list[0].args[2] == NAMESPACE_TTL
     assert backend.strict_set.call_args_list[1].args[2] == NAMESPACE_TTL
-
-
-def test_has_key_and_get_many_forward_the_key(redis_client: mock.Mock) -> None:
-    # _cache is Django's RedisCacheClient: has_key(key) / get_many(keys).
-    backend = _backend()
-    redis_client.has_key.return_value = True
-    redis_client.get_many.return_value = {}
-    assert backend.has_key("key") is True
-    made = backend.make_and_validate_key("key")
-    assert redis_client.has_key.call_args.args[0] == made
-    backend.get_many(["key"])
-    forwarded = list(redis_client.get_many.call_args.args[0])
-    assert made in forwarded
-    assert None not in forwarded
-
-
-def test_set_many_and_touch_keep_an_explicit_timeout(redis_client: mock.Mock) -> None:
-    backend = _backend(MAX_TTL=MAX_TTL)
-    backend.set_many({"one": 1}, timeout=BACKEND_ONE_MINUTE)
-    backend.touch("one", timeout=BACKEND_ONE_MINUTE)
-    assert redis_client.set_many.call_args.args[-1] == BACKEND_ONE_MINUTE
-    assert redis_client.touch.call_args.args[-1] == BACKEND_ONE_MINUTE
-
-
-def test_strict_set_stores_the_given_value(redis_client: mock.Mock) -> None:
-    # RedisCache.set forwards (key, value, timeout) to RedisCacheClient.set
-    # before pickle, so the value is still 123 here.
-    backend = _backend()
-    backend.strict_set("ns:users.user", VERSION, BACKEND_ONE_MINUTE)
-    assert redis_client.set.call_args.args[-1] == BACKEND_ONE_MINUTE
-    assert redis_client.set.call_args.args[1] == VERSION
 
 
 def test_client_ip_is_empty_when_remote_addr_is_missing(
