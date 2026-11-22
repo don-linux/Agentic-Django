@@ -26,10 +26,10 @@ class User(AbstractUser):
 
     # First and last name do not cover name patterns around the globe
     name = CharField("Name", blank=True, max_length=255)
-    first_name = None  # type: ignore[assignment]
-    last_name = None  # type: ignore[assignment]
+    first_name = None  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
+    last_name = None  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
     email = EmailField("email address", unique=True)
-    username = None  # type: ignore[assignment]
+    username = None  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
     # The API identifier, declared here: User subclasses AbstractUser, so it cannot
     # inherit core.models.PublicIdModel. The integer pk stays internal.
     public_id = UUIDField(default=uuid.uuid7, unique=True, editable=False)

@@ -189,10 +189,10 @@ exclude_also = [ "if TYPE_CHECKING:", "raise NotImplementedError", "@overload" ]
 
 [tool.mypy]
 python_version = "3.14"
-# typings/ holds pyright stubs for third-party packages without py.typed
-# (django-environ). mypy already ignores those packages; do not type-check the
-# stub sources as first-party modules.
-exclude = ["typings/"]
+# typings/ holds local stubs for third-party packages without py.typed
+# (django-environ 0.14.0). Both checkers read them: pyright via stubPath, mypy
+# via mypy_path. scripts/check.sh lint runs stubtest against the installed package.
+mypy_path = "typings"
 check_untyped_defs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
@@ -207,13 +207,8 @@ plugins = [
 ]
 
 [[tool.mypy.overrides]]
-# Generated migrations are not type-checked.
-module = "*.migrations.*"
-ignore_errors = true
-
-[[tool.mypy.overrides]]
 # Third-party packages that ship no type information (no stubs, no py.typed).
-module = [ "allauth.*", "environ", "zeal", "zeal.*" ]
+module = [ "allauth.*", "zeal", "zeal.*" ]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -319,17 +314,15 @@ ignore_imports = [
 
 
 [tool.pyright]
-# standard on apps/, core/, and config/, including tests and settings.
-# Generated migrations, bytecode, the project venv, and agent skills are not
-# source. typings/ holds local stubs for third-party packages that ship none
-# (django-environ 0.14.0). mypy --strict on services/selectors/errors is unchanged.
+# standard on the whole repository: apps, core, config, migrations, tests,
+# conftest.py, manage.py, scripts/ and the typings/ stubs. No include/exclude:
+# pyright's defaults already skip **/.* (.venv, .agents), **/__pycache__ and
+# **/node_modules. Errors get a real type; a suppression is a rule-scoped
+# `# pyright: ignore[rule]` that pyright reports once it is no longer needed.
+# `# type: ignore[code]` belongs to mypy (warn_unused_ignores) and pyright does
+# not read it. See docs/development.md#type-checking.
 pythonVersion = "3.14"
 typeCheckingMode = "standard"
-include = ["apps", "core", "config"]
-exclude = [
-  "**/migrations",
-  "**/__pycache__",
-  ".venv",
-  ".agents",
-]
 stubPath = "typings"
+enableTypeIgnoreComments = false
+reportUnnecessaryTypeIgnoreComment = "error"

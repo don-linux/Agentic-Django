@@ -1,5 +1,5 @@
 # Fast checks on every commit. Install once: see docs/development.md#pre-commit.
-# mypy and pytest stay in the dev container and CI. Keep revs in sync with
+# mypy, pyright and pytest stay in the dev container and CI. Keep revs in sync with
 # pyproject.toml (ruff, django-upgrade), the uv version in
 # .github/actions/setup-python-env, and the CI gitleaks job.
 repos:

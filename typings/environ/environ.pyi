@@ -3,7 +3,10 @@
 # infers `default=NOTSET` on unannotated parameters as `NoValue` only, so every
 # `env("NAME", default="...")` call in settings is a false error. These stubs
 # describe the real signatures (defaults may be a value, None, or unset).
+# Env defines methods named str/bool/int/float/list, which shadow the builtins
+# inside the class body, so annotations there spell builtins.str and so on.
 
+import builtins
 from collections.abc import Iterable
 from pathlib import Path
 from typing import IO
@@ -17,122 +20,110 @@ class NoValue: ...
 
 class Env:
     NOTSET: NoValue
-    scheme: dict[str, Any]
+    scheme: dict[builtins.str, Any]
 
     def __init__(self, **scheme: Any) -> None: ...
     @overload
     def __call__(
         self,
-        var: str,
+        var: builtins.str,
         cast: None = None,
-        default: str = ...,
-        parse_default: bool = False,
-    ) -> str: ...
+        default: builtins.str = ...,
+        parse_default: builtins.bool = False,
+    ) -> builtins.str: ...
     @overload
     def __call__(
         self,
-        var: str,
+        var: builtins.str,
         cast: None = None,
         *,
         default: None,
-        parse_default: bool = False,
-    ) -> str | None: ...
+        parse_default: builtins.bool = False,
+    ) -> builtins.str | None: ...
     @overload
     def __call__(
         self,
-        var: str,
+        var: builtins.str,
         cast: None = None,
         default: NoValue = ...,
-        parse_default: bool = False,
-    ) -> str: ...
+        parse_default: builtins.bool = False,
+    ) -> builtins.str: ...
     @overload
     def __call__(
         self,
-        var: str,
+        var: builtins.str,
         cast: type[_T],
         default: _T = ...,
-        parse_default: bool = False,
-    ) -> _T: ...
-    @overload
-    def __call__(
-        self,
-        var: str,
-        cast: type[_T],
-        default: None,
-        parse_default: bool = False,
-    ) -> _T | None: ...
-    @overload
-    def __call__(
-        self,
-        var: str,
-        cast: type[_T],
-        default: NoValue = ...,
-        parse_default: bool = False,
+        parse_default: builtins.bool = False,
     ) -> _T: ...
     @overload
     def str(
         self,
-        var: str,
-        default: str = ...,
-        multiline: bool = False,
-        choices: Iterable[str] | NoValue = ...,
-    ) -> str: ...
+        var: builtins.str,
+        default: builtins.str = ...,
+        multiline: builtins.bool = False,
+        choices: Iterable[builtins.str] | NoValue = ...,
+    ) -> builtins.str: ...
     @overload
     def str(
         self,
-        var: str,
+        var: builtins.str,
         default: None,
-        multiline: bool = False,
-        choices: Iterable[str] | NoValue = ...,
-    ) -> str | None: ...
+        multiline: builtins.bool = False,
+        choices: Iterable[builtins.str] | NoValue = ...,
+    ) -> builtins.str | None: ...
     @overload
     def str(
         self,
-        var: str,
+        var: builtins.str,
         default: NoValue = ...,
-        multiline: bool = False,
-        choices: Iterable[str] | NoValue = ...,
-    ) -> str: ...
+        multiline: builtins.bool = False,
+        choices: Iterable[builtins.str] | NoValue = ...,
+    ) -> builtins.str: ...
     @overload
-    def bool(self, var: str, default: bool = ...) -> bool: ...
+    def bool(
+        self, var: builtins.str, default: builtins.bool = ...
+    ) -> builtins.bool: ...
     @overload
-    def bool(self, var: str, default: NoValue = ...) -> bool: ...
+    def bool(self, var: builtins.str, default: NoValue = ...) -> builtins.bool: ...
     @overload
-    def int(self, var: str, default: int = ...) -> int: ...
+    def int(self, var: builtins.str, default: builtins.int = ...) -> builtins.int: ...
     @overload
-    def int(self, var: str, default: None) -> int | None: ...
+    def int(self, var: builtins.str, default: None) -> builtins.int | None: ...
     @overload
-    def int(self, var: str, default: NoValue = ...) -> int: ...
+    def int(self, var: builtins.str, default: NoValue = ...) -> builtins.int: ...
     @overload
-    def float(self, var: str, default: float = ...) -> float: ...
+    def float(
+        self, var: builtins.str, default: builtins.float = ...
+    ) -> builtins.float: ...
     @overload
-    def float(self, var: str, default: None) -> float | None: ...
+    def float(self, var: builtins.str, default: None) -> builtins.float | None: ...
     @overload
-    def float(self, var: str, default: NoValue = ...) -> float: ...
+    def float(self, var: builtins.str, default: NoValue = ...) -> builtins.float: ...
     def list(
         self,
-        var: str,
+        var: builtins.str,
         cast: type[_T] | None = None,
-        default: list[Any] | NoValue = ...,
-    ) -> list[Any]: ...
+        default: builtins.list[Any] | NoValue = ...,
+    ) -> builtins.list[Any]: ...
     def db(
         self,
-        var: str = ...,
-        default: str | NoValue = ...,
-        engine: str | None = None,
-    ) -> dict[str, Any]: ...
+        var: builtins.str = ...,
+        default: builtins.str | NoValue = ...,
+        engine: builtins.str | None = None,
+    ) -> dict[builtins.str, Any]: ...
     def db_url(
         self,
-        var: str = ...,
-        default: str | NoValue = ...,
-        engine: str | None = None,
-    ) -> dict[str, Any]: ...
+        var: builtins.str = ...,
+        default: builtins.str | NoValue = ...,
+        engine: builtins.str | None = None,
+    ) -> dict[builtins.str, Any]: ...
     @classmethod
     def read_env(
         cls,
-        env_file: str | Path | IO[str] | None = None,
-        overwrite: bool = False,
-        parse_comments: bool = False,
-        encoding: str = "utf8",
+        env_file: builtins.str | Path | IO[builtins.str] | None = None,
+        overwrite: builtins.bool = False,
+        parse_comments: builtins.bool = False,
+        encoding: builtins.str = "utf8",
         **overrides: Any,
     ) -> None: ...

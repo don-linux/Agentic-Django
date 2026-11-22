@@ -52,7 +52,7 @@ def test_upload_to_drops_the_client_name_and_directories(
     client_name: str,
     extension: str,
 ) -> None:
-    name = UploadTo("invoices/document")(None, client_name)  # type: ignore[arg-type]
+    name = UploadTo("invoices/document")(None, client_name)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]
 
     assert GENERATED.fullmatch(name)
     assert name.endswith(extension) if extension else "." not in name.rsplit("/", 1)[1]
@@ -63,7 +63,7 @@ def test_upload_to_drops_the_client_name_and_directories(
 def test_upload_to_names_are_unique() -> None:
     upload_to = UploadTo("invoices/document")
 
-    names = {upload_to(None, "same.pdf") for _ in range(50)}  # type: ignore[arg-type]
+    names = {upload_to(None, "same.pdf") for _ in range(50)}  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]
 
     assert len(names) == 50  # noqa: PLR2004
 
@@ -90,7 +90,7 @@ def test_max_file_size_validator() -> None:
 
 
 def test_tests_store_uploads_in_memory() -> None:
-    name = default_storage.save(UploadTo("t")(None, "a.txt"), ContentFile(b"hi"))  # type: ignore[arg-type]
+    name = default_storage.save(UploadTo("t")(None, "a.txt"), ContentFile(b"hi"))  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]
 
     assert default_storage.__class__.__name__ == "InMemoryStorage"
     assert default_storage.open(name).read() == b"hi"
@@ -98,7 +98,7 @@ def test_tests_store_uploads_in_memory() -> None:
 
 def _field_file(storage: Any, name: str) -> FieldFile:
     # FieldFile only needs field.storage to open the file.
-    return FieldFile(None, SimpleNamespace(storage=storage), name)  # type: ignore[arg-type]
+    return FieldFile(None, SimpleNamespace(storage=storage), name)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]
 
 
 @override_settings(PRIVATE_MEDIA_ACCEL_REDIRECT_PREFIX="/protected-media/")
@@ -151,7 +151,7 @@ def test_without_a_proxy_django_streams_the_private_file() -> None:
     response = protected_file_response(_field_file(storage, name))
 
     assert response["Content-Disposition"] == 'attachment; filename="abc.txt"'
-    assert b"".join(response.streaming_content) == b"secret"  # type: ignore[attr-defined]
+    assert b"".join(response.streaming_content) == b"secret"  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]
 
 
 def test_signed_url_storages_redirect() -> None:

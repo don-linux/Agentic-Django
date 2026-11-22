@@ -18,6 +18,9 @@ run_lint() {
     python scripts/forbid_cache_clear.py apps core config
     echo "== mypy"
     mypy .
+    echo "== stubtest"
+    # typings/ must match the installed package (django-environ 0.14.0).
+    MYPYPATH=typings stubtest environ --ignore-missing-stub
     echo "== pyright"
     pyright
     echo "== import contracts"

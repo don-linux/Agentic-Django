@@ -67,11 +67,22 @@ Signup, verification and password reset stay manual, because their codes arrive 
 
 ## Checks
 
-`scripts/check.sh` is the one entry point for local runs and CI. `scripts/check.sh lint` runs ruff, the `cache.clear()` guard, mypy, the import contracts (`lint-imports`, [ARCHITECTURE.md#import-contracts](ARCHITECTURE.md#import-contracts)), django-upgrade and the OpenAPI validation and drift check (`scripts/check.sh openapi` runs only that check); `scripts/check.sh test` checks for missing migrations, then runs pytest with coverage; with no argument it runs both. `scripts/check.sh reversible` unapplies and reapplies each local app's migrations, as CI does ([ci.md#reversible-migrations](ci.md#reversible-migrations)). It is not everything CI runs ([ci.md#workflows](ci.md#workflows)). It uses `config.settings.test`, unless the shell already exports another `DJANGO_SETTINGS_MODULE`, and `docs/openapi.json` is generated with those settings. The test part needs PostgreSQL. Without Docker, run it as `uv run --env-file .env scripts/check.sh` ([development/without-docker.md#checks](development/without-docker.md#checks)).
+`scripts/check.sh` is the one entry point for local runs and CI. `scripts/check.sh lint` runs ruff, the `cache.clear()` guard, mypy, stubtest, pyright ([#type-checking](#type-checking)), the import contracts (`lint-imports`, [ARCHITECTURE.md#import-contracts](ARCHITECTURE.md#import-contracts)), django-upgrade and the OpenAPI validation and drift check (`scripts/check.sh openapi` runs only that check); `scripts/check.sh test` checks for missing migrations, then runs pytest with coverage; with no argument it runs both. `scripts/check.sh reversible` unapplies and reapplies each local app's migrations, as CI does ([ci.md#reversible-migrations](ci.md#reversible-migrations)). It is not everything CI runs ([ci.md#workflows](ci.md#workflows)). It uses `config.settings.test`, unless the shell already exports another `DJANGO_SETTINGS_MODULE`, and `docs/openapi.json` is generated with those settings. The test part needs PostgreSQL. Without Docker, run it as `uv run --env-file .env scripts/check.sh` ([development/without-docker.md#checks](development/without-docker.md#checks)).
+
+## Type checking
+
+Two checkers run from the CLI in `scripts/check.sh lint`, both on the whole repository (apps, core, config, migrations, tests, `conftest.py`, `manage.py`, `scripts/`, `typings/`):
+
+- `pyright` (pinned in the dev group with the `nodejs` extra, so Node.js comes from the lock file and is never downloaded at run time) in `standard` mode, `[tool.pyright]` in `pyproject.toml`. It has no `include` or `exclude`: its defaults already skip hidden directories (`.venv`, `.agents`) and `__pycache__`.
+- `mypy` with the django-stubs plugin, `[tool.mypy]`. The plugin knows the app registry and the settings, so it catches a setting that does not exist; pyright does not run plugins.
+
+Suppressions are per checker and per rule. pyright reads only `# pyright: ignore[rule]` (`enableTypeIgnoreComments = false`) and fails on one that is no longer needed (`reportUnnecessaryTypeIgnoreComment`); mypy reads only `# type: ignore[code]` and fails on an unused one (`warn_unused_ignores`). A line both flag carries both comments. Before adding either, try a real type: narrow with `isinstance`, annotate the variable, or declare the reverse accessor (`emailaddress_set: RelatedManager[EmailAddress]`, from `django_stubs_ext.db.models.manager`).
+
+`typings/` holds stubs for packages that ship no types (django-environ). pyright reads them through `stubPath` and mypy through `mypy_path`; `stubtest` compares them with the installed package, so a bump that renames a parameter fails `lint`.
 
 ## Pre-commit
 
-Install the Git hooks once after cloning. They run on the host (ruff, django-upgrade, file hygiene, `uv lock`, gitleaks, markdownlint); mypy and pytest stay in the container and CI:
+Install the Git hooks once after cloning. They run on the host (ruff, django-upgrade, file hygiene, `uv lock`, gitleaks, markdownlint); mypy, pyright and pytest stay in the container and CI:
 
 ```bash
 uv tool install pre-commit==4.7.0

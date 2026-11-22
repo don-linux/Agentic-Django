@@ -110,6 +110,6 @@ def test_s3_storages_build_public_and_signed_urls(
     assert "X-Amz-Signature=" in signed
 
     field = models.FileField(storage=storages["private"])
-    response = protected_file_response(FieldFile(None, field, "b.pdf"))  # type: ignore[arg-type]
+    response = protected_file_response(FieldFile(None, field, "b.pdf"))  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]
     assert response.status_code == HTTPStatus.FOUND
     assert "X-Amz-Signature=" in response["Location"]

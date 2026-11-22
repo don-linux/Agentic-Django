@@ -3,7 +3,6 @@ import os
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
-from typing import cast
 from urllib.parse import quote
 from urllib.parse import urlsplit
 from urllib.parse import urlunsplit
@@ -578,7 +577,7 @@ NINJA_DEFAULT_THROTTLE_RATES = {
     # Scoped rates go here as "<app>.<action>": "5/min".
 }
 # A bad rate is a 500 on every request: refuse it at startup.
-assert_throttle_rates(cast("dict[str, str | None]", NINJA_DEFAULT_THROTTLE_RATES))
+assert_throttle_rates(NINJA_DEFAULT_THROTTLE_RATES)
 
 # Deepest page LimitPageNumberPagination serves; deeper pages are a 404.
 # Env var stays DJANGO_API_MAX_PAGE_NUMBER; the setting is framework-neutral.

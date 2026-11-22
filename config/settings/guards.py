@@ -18,6 +18,7 @@ from django.core.exceptions import ImproperlyConfigured
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+    from collections.abc import Mapping
 
 PLACEHOLDER = "change-me"
 PLACEHOLDER_COMPACT = "changeme"
@@ -388,7 +389,7 @@ LOCAL_VALKEY_HOSTS = frozenset({"valkey"})
 _THROTTLE_RATE = re.compile(r"[0-9]+/(?:[0-9]+|[0-9]*(?:s|sec|m|min|h|hour|d|day))")
 
 
-def assert_throttle_rates(rates: dict[str, str | None]) -> None:
+def assert_throttle_rates(rates: Mapping[str, str | None]) -> None:
     """
     Raise ImproperlyConfigured if a throttle rate cannot be parsed.
 

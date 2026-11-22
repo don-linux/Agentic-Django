@@ -19,13 +19,13 @@ class Argon2PasswordHasher(DjangoArgon2PasswordHasher):
     algorithm = "argon2"
 
     @property
-    def time_cost(self) -> int:  # type: ignore[override]
+    def time_cost(self) -> int:  # type: ignore[override]  # pyright: ignore[reportIncompatibleVariableOverride]
         return settings.ARGON2_TIME_COST
 
     @property
-    def memory_cost(self) -> int:  # type: ignore[override]
+    def memory_cost(self) -> int:  # type: ignore[override]  # pyright: ignore[reportIncompatibleVariableOverride]
         return settings.ARGON2_MEMORY_COST_KIB
 
     @property
-    def parallelism(self) -> int:  # type: ignore[override]
+    def parallelism(self) -> int:  # type: ignore[override]  # pyright: ignore[reportIncompatibleVariableOverride]
         return settings.ARGON2_PARALLELISM

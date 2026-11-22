@@ -4,8 +4,6 @@ Test settings: in-memory cache and broker, inline tasks.
 See docs/settings.md#test.
 """
 
-from typing import cast
-
 from .base import *  # noqa: F403
 from .base import INSTALLED_APPS
 from .base import MIDDLEWARE
@@ -64,7 +62,7 @@ MAILERS = {"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend
 # Throttling stays on: global rates out of reach, scoped rates kept.
 # See docs/api.md#throttling.
 NINJA_DEFAULT_THROTTLE_RATES = {
-    **cast("dict[str, str]", NINJA_DEFAULT_THROTTLE_RATES),
+    **NINJA_DEFAULT_THROTTLE_RATES,
     "anon": "10000/min",
     "user": "10000/min",
 }

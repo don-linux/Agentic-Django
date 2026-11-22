@@ -98,8 +98,8 @@ class LimitPageNumberPagination(PageNumberPagination):
     # Ninja declares Input/Output as nested classes and its own CursorPagination
     # swaps them for unrelated schemas (django-ninja 1.8.0 ninja/pagination.py);
     # an alias keeps the published component names. Both checkers flag the swap.
-    Input = PageNumberIn  # type: ignore[assignment]
-    Output = PageNumberOut  # type: ignore[assignment]
+    Input = PageNumberIn  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
+    Output = PageNumberOut  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
 
     def __init__(
         self,

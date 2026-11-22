@@ -127,7 +127,7 @@ class RequestIdMiddleware:
         request_id = (
             incoming if _VALID_REQUEST_ID.fullmatch(incoming) else uuid.uuid4().hex
         )
-        request.request_id = request_id  # type: ignore[attr-defined]
+        request.request_id = request_id  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]
         token = request_id_var.set(request_id)
         try:
             _tag_error_reports(request_id)

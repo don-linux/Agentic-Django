@@ -20,7 +20,7 @@ A new push to a pull request cancels the run still in progress for it; pushes to
 
 ### Lint
 
-pre-commit runs every hook, then `scripts/check.sh lint` runs ruff, the `cache.clear()` guard, mypy, the import contracts (`lint-imports`), `django-upgrade --check`, the OpenAPI export (`export_openapi_schema`, its stdout redirected to a temporary file) and a diff against the committed `docs/openapi.json`.
+pre-commit runs every hook, then `scripts/check.sh lint` runs ruff, the `cache.clear()` guard, mypy, stubtest on `typings/`, pyright, the import contracts (`lint-imports`), `django-upgrade --check`, the OpenAPI export (`export_openapi_schema`, its stdout redirected to a temporary file) and a diff against the committed `docs/openapi.json`.
 
 ### Secrets
 
