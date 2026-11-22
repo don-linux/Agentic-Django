@@ -133,7 +133,14 @@ jobs:
             # Temporary: the first migration PR still diffs OpenAPI 3.1 JSON
             # against the 3.0.3 YAML baseline. Remove --err-ignore in the next
             # pull request (docs/api.md#breaking-changes).
-            BASE_SCHEMA=base/docs/openapi.yaml
+            # Map the drf-spectacular component names onto Ninja's so oasdiff
+            # still compares the PATCH 400 oneOf branches field by field.
+            sed -e "s#schemas/ValidationError'#schemas/ValidationErrorSchema'#g" \
+                -e "s#schemas/Error'#schemas/ErrorSchema'#g" \
+                -e 's#^    ValidationError:#    ValidationErrorSchema:#' \
+                -e 's#^    Error:#    ErrorSchema:#' \
+                base/docs/openapi.yaml > "$RUNNER_TEMP/base-openapi.yaml"
+            BASE_SCHEMA="$RUNNER_TEMP/base-openapi.yaml"
             IGNORE_ARGS=(--err-ignore .github/oasdiff-yaml-baseline-err-ignore.txt)
           fi
           # Ninja 1.8.0 wraps an optional body $ref in a one-item allOf
