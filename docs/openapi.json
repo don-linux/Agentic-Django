@@ -60,7 +60,63 @@
             }
           },
           "401": {
-            "description": "Unauthorized",
+            "description": "Not authenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Authentication scheme (`X-Session-Token`)."
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied, or CSRF failed on a cookie-authenticated write. Hidden objects are 404, not 403.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          },
+          "406": {
+            "description": "The Accept header cannot be satisfied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Throttled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds until the client may retry."
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, not visible, or an invalid page number.",
             "content": {
               "application/json": {
                 "schema": {
@@ -100,12 +156,58 @@
             }
           },
           "401": {
-            "description": "Unauthorized",
+            "description": "Not authenticated.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorSchema"
                 }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Authentication scheme (`X-Session-Token`)."
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied, or CSRF failed on a cookie-authenticated write. Hidden objects are 404, not 403.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          },
+          "406": {
+            "description": "The Accept header cannot be satisfied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Throttled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds until the client may retry."
               }
             }
           }
@@ -137,8 +239,64 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Authentication scheme (`X-Session-Token`)."
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied, or CSRF failed on a cookie-authenticated write. Hidden objects are 404, not 403.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          },
+          "406": {
+            "description": "The Accept header cannot be satisfied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Throttled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds until the client may retry."
+              }
+            }
+          },
           "400": {
-            "description": "Bad Request",
+            "description": "Validation error (`fields` present) or parse error (no `fields`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -155,8 +313,8 @@
               }
             }
           },
-          "401": {
-            "description": "Unauthorized",
+          "415": {
+            "description": "The request Content-Type is not accepted.",
             "content": {
               "application/json": {
                 "schema": {
@@ -221,7 +379,25 @@
             }
           },
           "401": {
-            "description": "Unauthorized",
+            "description": "Not authenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Authentication scheme (`X-Session-Token`)."
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied, or CSRF failed on a cookie-authenticated write. Hidden objects are 404, not 403.",
             "content": {
               "application/json": {
                 "schema": {
@@ -230,8 +406,36 @@
               }
             }
           },
+          "406": {
+            "description": "The Accept header cannot be satisfied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Throttled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds until the client may retry."
+              }
+            }
+          },
           "404": {
-            "description": "Not Found",
+            "description": "Not found, not visible, or an invalid page number.",
             "content": {
               "application/json": {
                 "schema": {
@@ -279,8 +483,74 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            },
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Authentication scheme (`X-Session-Token`)."
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied, or CSRF failed on a cookie-authenticated write. Hidden objects are 404, not 403.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          },
+          "406": {
+            "description": "The Accept header cannot be satisfied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Throttled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds until the client may retry."
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, not visible, or an invalid page number.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          },
           "400": {
-            "description": "Bad Request",
+            "description": "Validation error (`fields` present) or parse error (no `fields`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -297,18 +567,8 @@
               }
             }
           },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorSchema"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
+          "415": {
+            "description": "The request Content-Type is not accepted.",
             "content": {
               "application/json": {
                 "schema": {
@@ -429,6 +689,7 @@
         "properties": {
           "id": {
             "format": "uuid",
+            "readOnly": true,
             "title": "Id",
             "type": "string"
           },
@@ -439,6 +700,7 @@
           },
           "url": {
             "format": "uri",
+            "readOnly": true,
             "title": "Url",
             "type": "string"
           }
@@ -503,16 +765,9 @@
         "additionalProperties": false,
         "properties": {
           "name": {
-            "anyOf": [
-              {
-                "maxLength": 255,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
+            "maxLength": 255,
+            "title": "Name",
+            "type": "string"
           }
         },
         "title": "UserUpdateIn",

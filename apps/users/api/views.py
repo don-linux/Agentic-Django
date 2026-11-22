@@ -27,28 +27,15 @@ from apps.users.models import User
 from apps.users.selectors import user_list
 from apps.users.services import user_update
 from core.api.pagination import LimitPageNumberPagination
+from core.api.responses import LIST_ERRORS
+from core.api.responses import LOOKUP_ERRORS
+from core.api.responses import READ_ERRORS
+from core.api.responses import WRITE_ERRORS
+from core.api.responses import response_docs
 from core.api.schemas import BaseSchema
-from core.api.schemas import ErrorSchema
 from core.api.schemas import InputSchema
-from core.api.schemas import ValidationErrorSchema
 
 router = Router(tags=["users"])
-
-
-def _one_of(schema: dict[str, Any]) -> None:
-    # Field json_schema_extra callable (Pydantic "JSON Schema" docs): the two
-    # bodies are alternatives, as the published contract says (oneOf, not anyOf).
-    if "anyOf" in schema:
-        schema["oneOf"] = schema.pop("anyOf")
-
-
-ERROR_401 = {401: ErrorSchema}
-ERROR_400 = {
-    400: Annotated[
-        ValidationErrorSchema | ErrorSchema, Field(json_schema_extra=_one_of)
-    ]
-}
-ERROR_404 = {404: ErrorSchema}
 
 
 # DRF CharField's codes and messages for the same input (ADR 0006).
@@ -59,9 +46,9 @@ NUL_CHAR_DETAIL = "Null characters are not allowed."
 
 
 class UserOut(BaseSchema):
-    id: UUID
+    id: UUID = Field(json_schema_extra={"readOnly": True})
     name: str = Field(max_length=255)
-    url: str = Field(json_schema_extra={"format": "uri"})
+    url: str = Field(json_schema_extra={"format": "uri", "readOnly": True})
 
     @staticmethod
     def resolve_id(obj: User) -> UUID:
@@ -79,7 +66,13 @@ class UserOut(BaseSchema):
 
 
 class UserUpdateIn(InputSchema):
-    name: str | None = Field(default=None, max_length=255)
+    # Optional but not nullable: null is a 400 "null" (coerce_and_reject_null),
+    # so the published request schema must not offer it. WithJsonSchema only
+    # changes the schema; SkipJsonSchema[None] would turn the Optional into a
+    # union and nest its errors under name.str / name.none.
+    name: Annotated[
+        str | None, WithJsonSchema({"type": "string", "maxLength": 255})
+    ] = Field(default=None, max_length=255)
 
     @model_validator(mode="before")
     @classmethod
@@ -183,7 +176,8 @@ def _apply_update(user: User, data: dict[str, Any]) -> User:
 
 @router.get(
     "/",
-    response={200: list[UserOut], **ERROR_401},
+    response={200: list[UserOut], **LIST_ERRORS},
+    openapi_extra=response_docs(LIST_ERRORS),
     operation_id="users_list",
     url_name="user-list",
     summary="List users",
@@ -202,7 +196,8 @@ def users_list(request: HttpRequest) -> Any:
 
 @router.get(
     "/me/",
-    response={200: UserOut, **ERROR_401},
+    response={200: UserOut, **READ_ERRORS},
+    openapi_extra=response_docs(READ_ERRORS),
     operation_id="users_me_retrieve",
     url_name="user-me",
     summary="Retrieve the current user",
@@ -217,7 +212,8 @@ def users_me_retrieve(request: HttpRequest) -> User:
 
 @router.patch(
     "/me/",
-    response={200: UserOut, **ERROR_400, **ERROR_401},
+    response={200: UserOut, **WRITE_ERRORS},
+    openapi_extra=response_docs(WRITE_ERRORS),
     operation_id="users_me_partial_update",
     url_name="user-me",
     summary="Partially update the current user",
@@ -232,7 +228,8 @@ def users_me_partial_update(request: HttpRequest, body: UserPatchBody) -> User:
 
 @router.get(
     "/{public_id:id}/",
-    response={200: UserOut, **ERROR_401, **ERROR_404},
+    response={200: UserOut, **LOOKUP_ERRORS},
+    openapi_extra=response_docs(LOOKUP_ERRORS),
     operation_id="users_retrieve",
     url_name="user-detail",
     summary="Retrieve a user",
@@ -243,7 +240,8 @@ def users_retrieve(request: HttpRequest, user_id: UserIdPath) -> User:
 
 @router.patch(
     "/{public_id:id}/",
-    response={200: UserOut, **ERROR_400, **ERROR_401, **ERROR_404},
+    response={200: UserOut, **LOOKUP_ERRORS, **WRITE_ERRORS},
+    openapi_extra=response_docs({**LOOKUP_ERRORS, **WRITE_ERRORS}),
     operation_id="users_partial_update",
     url_name="user-detail",
     summary="Partially update a user",

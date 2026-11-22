@@ -160,7 +160,7 @@ An operation overrides one of them by declaring that status in its `response` ma
 
 Operation names follow Ninja's defaults from the path and method (for example `users_me_retrieve` under the `users` tag). When `/api/v2/` opens, serve one schema per version instead of one schema with both.
 
-The schema is Ninja 1.8.0's own output; nothing rewrites it afterwards. Contract details come from documented options: `response=` maps, Pydantic `WithJsonSchema` for the path `id` pattern and `json_schema_extra` for the 400 `oneOf`. An optional body (`Body(default_factory=...)`) is a one-item `allOf` around its `$ref`, so the `api-contract` job runs oasdiff with `--flatten-allof` ([Breaking changes](#breaking-changes)).
+The schema is Ninja 1.8.0's own output; nothing rewrites it afterwards. Contract details come from documented options: `response=` maps (`core.api.responses`), `openapi_extra` for descriptions and headers, Pydantic `WithJsonSchema` for the path `id` pattern and `json_schema_extra` for `readOnly` and the 400 `oneOf`. An optional body (`Body(default_factory=...)`) is a one-item `allOf` around its `$ref`, so the `api-contract` job runs oasdiff with `--flatten-allof` ([Breaking changes](#breaking-changes)).
 
 ## Throttling
 
