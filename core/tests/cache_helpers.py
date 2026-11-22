@@ -9,13 +9,13 @@ from django.test import Client
 
 from apps.users.tests.factories import UserFactory
 from core.cache_backend import ValkeyCache
+from core.tests.credentials import PASSWORD
 
 # A closed port: building the backend opens no connection, and every call to it
 # fails at once, as when Valkey is down.
 LOCATION = "redis://127.0.0.1:1/15"
 MAX_TTL = 3600
 ONE_MINUTE = 60
-PASSWORD = "Correct-H0rse-Battery"  # noqa: S105
 LOGIN_URL = "/_allauth/app/v1/auth/login"
 SESSION_URL = "/_allauth/app/v1/auth/session"
 # The default cache of the outage tests: a closed port with short timeouts.

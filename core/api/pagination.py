@@ -199,7 +199,7 @@ class CachedCountPaginatorCount:
         except EmptyResultSet:
             return 0
         return read_through(
-            queryset.model._meta.label_lower,  # noqa: SLF001
+            queryset.model._meta.label_lower,
             "count",
             sql,
             ttl=COUNT_TTL,

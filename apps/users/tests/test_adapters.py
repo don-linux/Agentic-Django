@@ -14,7 +14,8 @@ if TYPE_CHECKING:
 @pytest.mark.parametrize("allowed", [True, False])
 def test_account_signup_follows_registration_setting(
     rf: RequestFactory,
-    allowed: bool,  # noqa: FBT001
+    *,
+    allowed: bool,
 ) -> None:
     with override_settings(ACCOUNT_ALLOW_REGISTRATION=allowed):
         assert AccountAdapter().is_open_for_signup(rf.get("/")) is allowed

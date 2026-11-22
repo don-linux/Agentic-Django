@@ -15,6 +15,7 @@ from apps.users.adapters import HeadlessAdapter
 from apps.users.models import User
 from apps.users.selectors import user_get
 from apps.users.tests.factories import UserFactory
+from core.tests.credentials import PASSWORD
 
 if TYPE_CHECKING:
     from django.test import Client
@@ -55,15 +56,15 @@ def test_user_get_ignores_entries_from_an_older_cache_version(
 def test_create_superuser_stores_the_given_password() -> None:
     user = User.objects.create_superuser(
         email="Admin@Example.com",
-        password="something-r@nd0m!",  # noqa: S106
+        password=PASSWORD,
     )
-    assert user.check_password("something-r@nd0m!")
+    assert user.check_password(PASSWORD)
 
 
 def test_create_user_honors_extra_fields() -> None:
     user = User.objects.create_user(
         email="staff@example.com",
-        password="something-r@nd0m!",  # noqa: S106
+        password=PASSWORD,
         name="Ada",
         is_staff=True,
     )

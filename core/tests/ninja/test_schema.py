@@ -14,8 +14,8 @@ from django.urls import reverse
 
 from apps.users.tests.factories import UserFactory
 from core.api.negotiation import render_schema
+from core.tests.credentials import PASSWORD
 
-PASSWORD = "My_R@ndom-P@ssw0rd"  # noqa: S105
 LOGIN_URL = "/_allauth/app/v1/auth/login"
 NOT_AUTHENTICATED = {
     "code": "not_authenticated",

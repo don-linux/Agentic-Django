@@ -54,6 +54,7 @@ from core.tests.cache_helpers import DEAD_VALKEY
 from core.tests.cache_helpers import SESSION_URL
 from core.tests.cache_helpers import _login
 from core.tests.cache_helpers import _root_cause
+from core.tests.credentials import PASSWORD
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -67,7 +68,6 @@ if TYPE_CHECKING:
     from conftest import ThrottleRates
     from conftest import TrustedProxies
 
-PASSWORD = "Correct-H0rse-Battery"  # noqa: S105
 LOGIN_URL = "/_allauth/app/v1/auth/login"
 SIGNUP_URL = "/_allauth/app/v1/auth/signup"
 VERIFY_URL = "/_allauth/app/v1/auth/email/verify"

@@ -12,6 +12,7 @@ from django.test import Client
 from django.urls import reverse
 
 from apps.users.tests.factories import UserFactory
+from core.tests.credentials import PASSWORD
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -20,7 +21,6 @@ if TYPE_CHECKING:
 
 pytestmark = pytest.mark.django_db
 
-PASSWORD = "Correct-H0rse-Battery"  # noqa: S105
 WRONG_PASSWORD = "Wrong-H0rse-Battery"  # noqa: S105
 HEADLESS_LOGIN = "/_allauth/app/v1/auth/login"
 

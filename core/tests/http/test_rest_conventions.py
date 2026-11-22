@@ -64,7 +64,8 @@ def test_admin_paths_still_redirect_to_the_trailing_slash(admin_client: Client) 
 def test_api_responses_are_not_cacheable_by_default(
     client: Client,
     user: User,
-    authenticated: bool,  # noqa: FBT001
+    *,
+    authenticated: bool,
 ) -> None:
     if authenticated:
         client.force_login(user)

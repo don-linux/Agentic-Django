@@ -11,10 +11,10 @@ from django.conf import settings
 from django.test import Client
 
 from apps.users.tests.factories import UserFactory
+from core.tests.credentials import PASSWORD
 
 pytestmark = pytest.mark.django_db
 
-PASSWORD = "Correct-H0rse-Battery"  # noqa: S105
 BASE = "/_allauth/app/v1"
 UNMOUNTED = [
     ("get", "/account/authenticators/totp"),
@@ -55,7 +55,8 @@ def test_no_authenticator_type_is_offered() -> None:
 def test_totp_and_recovery_code_routes_are_not_mounted(
     method: str,
     route: str,
-    authenticated: bool,  # noqa: FBT001
+    *,
+    authenticated: bool,
 ) -> None:
     response = _call(method, route, _login() if authenticated else None)
 

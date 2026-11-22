@@ -10,6 +10,7 @@ from apps.users.models import User
 from apps.users.selectors import user_get
 from apps.users.services import user_reactivate
 from apps.users.tests.factories import UserFactory
+from core.tests.credentials import PASSWORD
 
 pytestmark = pytest.mark.django_db
 
@@ -49,13 +50,13 @@ class TestUserAdmin:
             data={
                 "email": "New-Admin@Example.com",
                 "usable_password": "true",
-                "password1": "My_R@ndom-P@ssw0rd",
-                "password2": "My_R@ndom-P@ssw0rd",
+                "password1": PASSWORD,
+                "password2": PASSWORD,
             },
         )
         assert response.status_code == HTTPStatus.FOUND
         created = User.objects.get(email="new-admin@example.com")
-        assert created.check_password("My_R@ndom-P@ssw0rd")
+        assert created.check_password(PASSWORD)
         assert EmailAddress.objects.filter(
             user=created,
             email="new-admin@example.com",
@@ -408,7 +409,7 @@ class TestAdminActiveFlag:
     def test_unticking_is_active_signs_the_user_out_for_good(
         self, admin_client
     ) -> None:
-        password = "Correct-H0rse-Battery"  # noqa: S105
+        password = PASSWORD
         target = UserFactory(email="form-deactivated@example.com", password=password)
         EmailAddress.objects.create(
             user=target, email=target.email, primary=True, verified=True

@@ -18,13 +18,13 @@ from apps.users.models import User
 from apps.users.selectors import user_get
 from apps.users.services import user_anonymize
 from apps.users.tests.factories import UserFactory
+from core.tests.credentials import PASSWORD
 
 if TYPE_CHECKING:
     from conftest import CacheWrites
 
 pytestmark = pytest.mark.django_db
 
-PASSWORD = "Correct-H0rse-Battery"  # noqa: S105
 EMAIL = "erase-me@example.com"
 
 

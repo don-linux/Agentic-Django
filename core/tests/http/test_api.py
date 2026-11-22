@@ -9,11 +9,12 @@ from allauth.account.models import EmailAddress
 from django.test import Client
 
 from apps.users.tests.factories import UserFactory
+from core.tests.credentials import PASSWORD
 
 
 @pytest.mark.django_db
 def test_x_session_token_takes_precedence_over_csrf_enforced_session_cookie() -> None:
-    password = "My_R@ndom-P@ssw0rd"  # noqa: S105
+    password = PASSWORD
     token_user = UserFactory(email="token-owner@example.com", password=password)
     EmailAddress.objects.create(
         user=token_user,

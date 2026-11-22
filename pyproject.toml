@@ -125,6 +125,10 @@ lint.ignore = [
   "ANN401", # Any is allowed outside the strict modules; mypy's disallow_any_explicit guards those
 ]
 lint.isort.force-single-line = true
+# Django documents these underscored names as public API: Model._meta (the
+# "Model _meta API") and Model._default_manager ("Default managers"). Ruff's
+# docs give this setting for Django.
+lint.flake8-self.extend-ignore-names = [ "_default_manager", "_meta" ]
 # Pydantic and Ninja read these annotations at run time: their imports stay
 # outside TYPE_CHECKING (TC001-TC003 would otherwise move them).
 lint.flake8-type-checking.runtime-evaluated-base-classes = [

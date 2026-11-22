@@ -43,8 +43,7 @@ class BaseQuerySet[M: models.Model](models.QuerySet[M]):
     """
 
     def update(self, **kwargs: Any) -> int:
-        # Model._meta is Django's documented Meta API.
-        fields = {field.name for field in self.model._meta.concrete_fields}  # noqa: SLF001
+        fields = {field.name for field in self.model._meta.concrete_fields}
         if "updated_at" in fields and "updated_at" not in kwargs:
             kwargs["updated_at"] = Now()
         return super().update(**kwargs)

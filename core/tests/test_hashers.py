@@ -7,8 +7,8 @@ from django.test import override_settings
 
 from config.settings import base as base_settings
 from core.hashers import Argon2PasswordHasher
+from core.tests.credentials import PASSWORD
 
-PASSWORD = "Correct-H0rse-Battery"  # noqa: S105
 # Small costs keep the tests fast.
 CHEAP = {"ARGON2_TIME_COST": 1, "ARGON2_MEMORY_COST_KIB": 8, "ARGON2_PARALLELISM": 1}
 

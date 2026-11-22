@@ -13,6 +13,7 @@ from apps.users.selectors import user_get
 from apps.users.selectors import user_list
 from apps.users.services import user_update
 from apps.users.tests.factories import UserFactory
+from core.tests.credentials import PASSWORD
 
 if TYPE_CHECKING:
     from conftest import CacheWrites
@@ -85,7 +86,7 @@ def test_a_rolled_back_write_leaves_the_cached_user_untouched(
 def test_the_cached_user_never_holds_the_password_hash(
     cache_writes: CacheWrites,
 ) -> None:
-    user = UserFactory(password="Correct-H0rse-Battery")  # noqa: S106
+    user = UserFactory(password=PASSWORD)
     with cache_writes():
         user_get(public_id=user.public_id)
 
@@ -94,7 +95,7 @@ def test_the_cached_user_never_holds_the_password_hash(
     assert "password" in cached.get_deferred_fields()
     assert user.password.encode() not in pickle.dumps(cached)
     # The field still loads when something needs it.
-    assert cached.check_password("Correct-H0rse-Battery")
+    assert cached.check_password(PASSWORD)
 
 
 def test_a_missing_user_is_not_cached(

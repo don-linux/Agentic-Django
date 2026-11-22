@@ -7,6 +7,7 @@ import pytest
 from apps.users.forms import UserAdminChangeForm
 from apps.users.forms import UserAdminCreationForm
 from apps.users.tests.factories import UserFactory
+from core.tests.credentials import PASSWORD
 
 if TYPE_CHECKING:
     from apps.users.models import User
@@ -25,8 +26,8 @@ class TestUserAdminCreationForm:
             {
                 "email": transform(user.email),
                 "usable_password": "true",
-                "password1": "My_R@ndom-P@ssw0rd",
-                "password2": "My_R@ndom-P@ssw0rd",
+                "password1": PASSWORD,
+                "password2": PASSWORD,
             },
         )
 
@@ -40,8 +41,8 @@ class TestUserAdminCreationForm:
             {
                 "email": "  New.Admin@Example.COM  ",
                 "usable_password": "true",
-                "password1": "My_R@ndom-P@ssw0rd",
-                "password2": "My_R@ndom-P@ssw0rd",
+                "password1": PASSWORD,
+                "password2": PASSWORD,
             },
         )
 

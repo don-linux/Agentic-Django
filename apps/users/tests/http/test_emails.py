@@ -16,6 +16,7 @@ from django.test import Client
 
 from apps.users.models import User
 from apps.users.tests.factories import UserFactory
+from core.tests.credentials import PASSWORD
 from core.tests.production_settings import load_production_settings
 
 pytestmark = pytest.mark.django_db
@@ -24,7 +25,6 @@ SIGNUP_URL = "/_allauth/app/v1/auth/signup"
 RESET_REQUEST_URL = "/_allauth/app/v1/auth/password/request"
 RESEND_URL = "/_allauth/app/v1/auth/email/verify/resend"
 LOGIN_URL = "/_allauth/app/v1/auth/login"
-PASSWORD = "My_R@ndom-P@ssw0rd"  # noqa: S105
 
 
 def _assert_identity(message: mail.EmailMessage) -> None:

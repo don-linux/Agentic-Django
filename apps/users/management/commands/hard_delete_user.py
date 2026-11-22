@@ -94,7 +94,7 @@ class Command(BaseCommand):
 def _cascade_counts(collector: Collector) -> Counter[str]:
     counts: Counter[str] = Counter()
     for model, instances in collector.data.items():
-        counts[model._meta.label] += len(instances)  # noqa: SLF001
+        counts[model._meta.label] += len(instances)
     for queryset in collector.fast_deletes:
-        counts[queryset.model._meta.label] += queryset.count()  # noqa: SLF001
+        counts[queryset.model._meta.label] += queryset.count()
     return counts

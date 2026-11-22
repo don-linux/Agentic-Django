@@ -16,13 +16,13 @@ from django.test import Client
 
 from apps.users.models import User
 from apps.users.tests.factories import UserFactory
+from core.tests.credentials import PASSWORD
 
 if TYPE_CHECKING:
     from conftest import ConstantQueriesCheck
 
 pytestmark = pytest.mark.django_db
 
-PASSWORD = "My_R@ndom-P@ssw0rd"  # noqa: S105
 LOGIN_URL = "/_allauth/app/v1/auth/login"
 
 

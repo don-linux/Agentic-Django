@@ -1,5 +1,5 @@
-# SLF001: Model._meta is Django's documented Meta API. DJ008: test-only models.
-# ruff: noqa: SLF001, DJ008
+# DJ008: test-only models.
+# ruff: noqa: DJ008
 """Every list endpoint orders by an indexed column (docs/ARCHITECTURE.md#indexes)."""
 
 from __future__ import annotations
