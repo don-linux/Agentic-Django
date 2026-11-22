@@ -8,7 +8,7 @@ Each domain app under `apps/` splits its code by what it does, following the [Ha
 
 ```mermaid
 flowchart LR
-  Client --> Api["api/: serializers and views"]
+  Client --> Api["api/: schemas and operations"]
   Api -->|writes| Services["services.py"]
   Api -->|reads| Selectors["selectors.py"]
   Services --> Models["models.py"]
@@ -31,7 +31,7 @@ Tests mirror that split under `tests/`: `services/` and `selectors/` for the fra
 The rules that keep business logic out of the API layer, so another API framework only replaces `api/` ([HackSoft Django Styleguide](https://github.com/HackSoftware/Django-Styleguide)):
 
 - **Names.** `<entity>_<verb>`, entity first: services `user_create`, `user_update`, `user_deactivate`; selectors `user_get`, `user_list`. One module per layer (`services.py`, `selectors.py`); a large app may turn either into a package of the same name.
-- **Signatures.** Keyword-only arguments (`def user_update(*, user: User, name: str) -> User`), fully typed ([Strict typing](#strict-typing)). Arguments are plain values and model instances: never a `request`, a serializer, its `validated_data`, or a response. The view reads `request.user` and the validated fields and passes them by name.
+- **Signatures.** Keyword-only arguments (`def user_update(*, user: User, name: str) -> User`), fully typed ([Strict typing](#strict-typing)). Arguments are plain values and model instances: never a `request`, a Ninja schema, or a response. The operation reads `request.user` and the validated schema fields and passes them by name.
 - **Writes.** `@transaction.atomic`, `full_clean()` before `save(update_fields=[...])`, side effects on commit (`core.cache.invalidate`, `core.tasks.enqueue_on_commit`), `select_for_update()` for read-modify-write. A service returns the instance it wrote.
 - **Errors.** `full_clean()` raises Django's `ValidationError`; a broken business rule raises `core.exceptions.ApplicationError` or `ConflictError` with a code from [api.md#error-codes](api.md#error-codes). Never an HTTP status by hand or a Ninja HTTP exception for a domain rule: the API layer maps them ([api.md#domain-errors](api.md#domain-errors)).
 - **Reads.** A selector returns a `QuerySet` (lists, so the view can paginate) or one instance, and owns `select_related()`, `prefetch_related()`, ordering and caching.
@@ -43,7 +43,7 @@ The rules that keep business logic out of the API layer, so another API framewor
 
 ### Strict typing
 
-`mypy` checks every module with `disallow_untyped_defs`. Services, selectors, `core.exceptions` and `core.errors` also get the rest of `--strict` plus `disallow_any_explicit` (`[[tool.mypy.overrides]]` in `pyproject.toml`): no `Any`, no bare `list` or `dict`, no call into untyped code, no `Any` returned. They are what another API framework would call, so their signatures are the contract; a wrong argument fails `mypy` before any test runs. When a library returns `Any` (a cache `get()`, `Session.get_decoded()`), narrow it with `cast()` or a typed variable at that line, never with `# type: ignore`.
+pyright and mypy check every module ([typing.md](typing.md)); mypy requires annotations everywhere (`disallow_untyped_defs`). Services, selectors, `core.exceptions` and `core.errors` also get the rest of `--strict` plus `disallow_any_explicit` (`[[tool.mypy.overrides]]` in `pyproject.toml`): no `Any`, no bare `list` or `dict`, no call into untyped code, no `Any` returned. They are what another API framework would call, so their signatures are the contract; a wrong argument fails `mypy` before any test runs. When a library returns `Any` (a cache `get()`, `Session.get_decoded()`), narrow it with `cast()` or a typed variable at that line, never with a suppression comment ([typing.md#suppressions](typing.md#suppressions)).
 
 ### Import contracts
 
@@ -64,9 +64,9 @@ Model details that the code relies on:
 
 ## Performance
 
-- Selectors own the query shape. A list selector (`<resource>_list(*, user, filters=None) -> QuerySet`) returns a queryset with `select_related()` for every FK or one-to-one the serializer reads, and `prefetch_related()` (or `Prefetch(..., queryset=...)`) for every reverse FK or M2M. Views call it from `get_queryset()`; they never declare relations themselves. Example: `apps.users.selectors.user_list`.
-- Serializers never trigger queries: no `source="fk.field"`, nested serializer, or `SerializerMethodField` over a relation the selector did not preload. Counts and sums come from `annotate()` in the selector (`items_count=Count("items")`), never `obj.items.count()` per row.
-- Use `exists()` for existence checks, `bulk_create`/`bulk_update`/`queryset.update()` for batches, and `iterator(chunk_size=2000)` for exports. Use `only()`/`defer()` only to skip wide columns (large text or JSON), and never on fields the serializer reads.
+- Selectors own the query shape. A list selector (`<resource>_list(*, user, filters=None) -> QuerySet`) returns a queryset with `select_related()` for every FK or one-to-one the output schema reads, and `prefetch_related()` (or `Prefetch(..., queryset=...)`) for every reverse FK or M2M. Operations call it and return its queryset; they never declare relations themselves. Example: `apps.users.selectors.user_list`.
+- Output schemas never trigger queries: no dotted `Field(alias="fk.field")`, `resolve_*` method or nested schema over a relation the selector did not preload ([Ninja: aliases](https://django-ninja.dev/guide/schemas/#aliases), [resolvers](https://django-ninja.dev/guide/schemas/#resolvers)). Counts and sums come from `annotate()` in the selector (`items_count=Count("items")`), never `obj.items.count()` per row.
+- Use `exists()` for existence checks, `bulk_create`/`bulk_update`/`queryset.update()` for batches, and `iterator(chunk_size=2000)` for exports. Use `only()`/`defer()` only to skip wide columns (large text or JSON), and never on fields the output schema reads.
 - `request.user` is already loaded by authentication: do not query it again.
 - `full_clean()` in services also runs the unique and constraint checks (one indexed query each). Keep it: the database constraints are the backstop, but `full_clean()` turns a violation into a `400` with a field error.
 - Admin for tables that can grow: `list_select_related` for FKs in `list_display`, `show_full_result_count = False`, `raw_id_fields` or `autocomplete_fields` for FKs to large tables (the default `<select>` loads every row), and `search_fields` with `=`/`^` prefixes or a trigram index instead of a plain `icontains` on large tables.
@@ -74,7 +74,7 @@ Model details that the code relies on:
 
 ### Indexes
 
-- Default list ordering is the primary key (`"id"`/`"-id"`, or `"-public_id"`). Any other default ordering, every `ordering_fields` entry, and every filter used on a list must be backed by an index. `core/tests/ninja/test_list_indexes.py` enforces it for ordering.
+- Default list ordering is the primary key (`"id"`/`"-id"`, or `"-public_id"`). Any other default ordering, every ordering a client may choose, and every filter used on a list must be backed by an index. `core/tests/ninja/test_list_indexes.py` enforces it for ordering.
 - Composite indexes follow the query: equality filters first, then the ordering columns in the same direction, then `id` as tie-breaker, e.g. `models.Index(fields=["owner", "-created_at", "-id"], name="inventory_item_owner_crt_idx")`. Name indexes `<app>_<model>_<cols>_idx`, abbreviating columns to stay within Django's 30-character limit.
 - `BaseModel` does not index `created_at`; add an index per model only when a list orders or filters by it.
 - On large tables, add indexes with `AddIndexConcurrently` in a migration with `atomic = False`, so the table is not locked while the index builds.

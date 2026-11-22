@@ -6,26 +6,36 @@ Rules every endpoint under `/api/v1/` follows. Clients branch on `code`, never o
 
 ### Paths
 
-- Plural nouns, lowercase, with kebab-case static segments: an extra action is `@action(detail=False, url_path="change-password")`, never `change_password`. At most one level of nesting (`/projects/{id}/members/`), and `/users/me/` for the current user. Query parameters and JSON keys are `snake_case`. `core/tests/http/test_rest_conventions.py` fails on a route that breaks the naming.
+- Plural nouns, lowercase, with kebab-case static segments: an extra action is a path segment such as `"/{public_id:id}/change-password/"`, never `change_password`. At most one level of nesting (`/projects/{id}/members/`), and `/users/me/` for the current user. Query parameters and JSON keys are `snake_case`. `core/tests/http/test_rest_conventions.py` fails on a route that breaks the naming.
+- A detail path is `"/{public_id:id}/"`. The view takes it as `<model>_id: PathEx[UUID, P(alias="id")]`: the alias keeps the contract's `id` without an argument that shadows the builtin `id` ([Ninja: path parameters](https://django-ninja.dev/guide/path-params/); `apps/users/api/views.py`).
 - Paths always end with `/`. A path without the trailing slash returns 404; it is never redirected. A 301 would make most HTTP clients repeat a `POST` as a `GET` and report success without creating anything (`core.middleware.ApiCommonMiddleware`). Other paths, such as the admin, keep Django's slash redirect.
 
-With `DEBUG=True`, Django raises `RuntimeError` (a 500) for a POST, PUT, PATCH or DELETE without the trailing slash instead of redirecting; `ApiCommonMiddleware` makes it a 404 everywhere. The API uses `SimpleRouter` (no root view, no format suffixes) in every environment. A viewset still declares a class-level `queryset` so the router can derive the basename; `get_queryset()` is what a request sees.
+With `DEBUG=True`, Django raises `RuntimeError` (a 500) for a POST, PUT, PATCH or DELETE without the trailing slash instead of redirecting; `ApiCommonMiddleware` makes it a 404 everywhere. Each app exposes a Ninja `Router` mounted on the one `NinjaAPI` in `config/api.py`, which `config/urls.py` serves under `/api/v1/` ([Ninja: routers](https://django-ninja.dev/guide/routers/)); there is no API root view and no format suffix.
 
 ### Methods and status codes
 
 | Method | Success | Notes |
 | --- | --- | --- |
 | `GET` | 200 | |
-| `HEAD`, `OPTIONS` | 200 | Automatic; `OPTIONS` lists the methods in `Allow` |
+| `HEAD`, `OPTIONS` | 200 | Automatic on every route ([below](#head-options-and-405)); `OPTIONS` lists the methods in `Allow` |
 | `POST` (create) | 201 | `Location` points to the new resource. Set it from the output schema's `url` field |
 | `POST` (action) | 200, or 202 | 202 when the work continues asynchronously |
 | `PATCH` | 200 | Partial update; returns the updated resource |
-| `PUT` | 200 | Only for a full replacement with every writable field required; otherwise leave it out with `http_method_names` |
+| `PUT` | 200 | Only for a full replacement with every writable field required; otherwise do not declare it, and `PUT` answers 405 |
 | `DELETE` | 204 | No body |
 
 Errors use the [error body](#error-body): 400, 401 (with `WWW-Authenticate`), 403, 404 (also for another user's object), 405 (with `Allow`), 406, 409, 415, and 429 (with `Retry-After`).
 
-`XSessionTokenAuth.authenticate_header` advertises `WWW-Authenticate: X-Session-Token`, so the API answers 401, not 403, when the header is missing.
+A request without valid credentials gets 401 with `WWW-Authenticate: X-Session-Token`, never 403: the `AuthenticationError` handler in `core.api.exceptions` sets the header. `core.api.auth.API_AUTH` tries the `X-Session-Token` first and the staff session cookie second ([Ninja: multiple authenticators](https://django-ninja.dev/guide/authentication/#multiple-authenticators)); a cookie write without a CSRF token is 403 `permission_denied`.
+
+#### HEAD, OPTIONS and 405
+
+`core.api.negotiation.ApiContractMiddleware` answers these for every route under `/api/v1/`, so an operation declares only its real method. Ninja's guide adds them with `api_operation(["HEAD", "OPTIONS"], ...)` per route ([Ninja: handling multiple methods](https://django-ninja.dev/guide/operations/#handling-multiple-methods)), which would repeat every route and publish duplicate `operationId`s.
+
+- The methods come from the operations registered on the API (its OpenAPI document), so a new router needs no entry anywhere. `Allow` lists them in the order `GET, POST, PUT, PATCH, DELETE`, then `HEAD` when there is a `GET`, then `OPTIONS`, and is sent on every response of the route.
+- A method the route does not declare is 405 `method_not_allowed` with `Allow`, before authentication. A path that matches no route is 404.
+- `HEAD` runs the `GET` operation without a body.
+- `OPTIONS` is 401 without credentials, else 200 with `{"name", "description", "renders", "parses"}`. On `docs/` and `schema/` it keeps the staff check.
 
 ### Representation
 
@@ -34,9 +44,9 @@ Errors use the [error body](#error-body): 400, 401 (with `WWW-Authenticate`), 40
 - Datetimes are ISO 8601 in UTC with a `Z` suffix, whatever `TIME_ZONE` is. A naive datetime in a request is read as UTC. Declare datetime fields as `core.api.schemas.UTCDateTime`; a plain `datetime` keeps the offset it was given and loses microseconds in the JSON encoder. Dates are `YYYY-MM-DD`. Clients convert to local time; `TIME_ZONE` only drives date boundaries and reports.
 - Decimals are strings, and declared fields are always present (`null`, never omitted).
 - `Content-Type: application/json`, without a charset parameter: JSON is UTF-8 by definition.
-- Request bodies are `application/json` only (`DEFAULT_PARSER_CLASSES`): a form or multipart body is a 415 `unsupported_media_type`, and the schema advertises only JSON. Upload views opt in with `parser_classes = [MultiPartParser]` ([files.md](files.md)).
-- A request body key that is not a field of the endpoint is a 400 `validation_error` whose `fields` entry has the code `unknown_field`, not a silently ignored key. Read-only fields (`id`, `url`) are fields, so a client can send a `GET` body back in a `PATCH`.
-- Content negotiation uses the `Accept` header only. `?format=` is ignored (`URL_FORMAT_OVERRIDE = None`), so it never changes a response or leaks into hyperlinks. The schema at `/api/v1/schema/` is YAML by default; request JSON with `Accept: application/json`, or generate it with `python manage.py export_openapi_schema --api config.api.api`.
+- Request bodies are `application/json` only: `core.api.parsers.JSONParser.parse_body` answers a non-empty body with another `Content-Type` with 415 `unsupported_media_type` (Ninja itself does not inspect it, [Ninja: request parsers](https://django-ninja.dev/guide/parsers/)), and the schema advertises only JSON. An upload operation takes `File`/`Form` parameters instead of a body, so it accepts multipart ([files.md](files.md#endpoint)).
+- A request body key that is not a field of the endpoint is a 400 `validation_error` whose `fields` entry has the code `unknown_field`, not a silently ignored key. Read-only fields (`id`, `url`) are dropped only where the input schema drops them before validation (`UserUpdateIn.drop_read_only` in `apps/users/api/views.py`), so a client can send a `GET` body back in that `PATCH`; any other input schema answers them with `unknown_field`.
+- Content negotiation uses the `Accept` header only: `ApiContractMiddleware` answers an `Accept` the API cannot produce with 406 `not_acceptable`. As in DRF, that comes first on a route that exists, before the 405, `OPTIONS` and authentication; a path that is not a route is 404 whatever the `Accept`. The most specific media range wins, then the route's own order. q values are ignored, except `q=0`, "not acceptable" (RFC 9110, section 12.4.2): a media type is not acceptable when the most specific ranges that cover it (`type/subtype` with parameters, then `type/subtype`, `type/*` and `*/*`; section 12.5.1) all have `q=0`, so `*/*, application/json;q=0` is 406 on a JSON resource, and a range with `q=0` never chooses the response. A range with `q=0` and parameters other than `q` refuses only the variant with those parameters (section 12.5.1, table 5, as Django's `MediaType.match`), so `application/json, application/json;indent=2;q=0` is JSON; above 0, as in DRF's matching, a range covers a media type whatever its parameters. Of two ranges equally specific, one above 0 and one with `q=0`, the media type is acceptable: RFC 9110 does not define that case. `q="0"` and `q = 0` are `q=0` too; `q=00` is not a valid qvalue and, like other weights, is ignored. As in DRF 3.18.3, only the first 64 members of the `Accept` header count, a member longer than 256 characters is skipped, and a header longer than 8192 characters is cut at its last comma before that length. A present but empty `Accept` is 406, and so is a range like `*/json`, which RFC 9110 (section 12.5.1) does not allow. `?format=` is ignored, so it never changes a response or leaks into hyperlinks. The schema at `/api/v1/schema/` is YAML by default (`application/vnd.oai.openapi`); `application/yaml`, `application/vnd.oai.openapi+json` and `application/json` answer with that same `Content-Type`, the JSON indented 4 (or `; indent=N`, at most 8), as drf-spectacular rendered it, but without its `Content-Disposition` header. The resources' JSON is always compact: unlike DRF's `JSONRenderer`, they ignore `; indent=N`. Staff `OPTIONS` on the schema returns its metadata in that format; on `/api/v1/docs/` it is JSON metadata. Generate the schema file with `python manage.py export_openapi_schema --api config.api.api`.
 
 `apps.users.adapters.HeadlessAdapter` overrides `get_user_dataclass` and `user_as_dataclass` (not `serialize_user`), so allauth's user payload carries the public UUID as `"id"` and its schema stays in sync. The schema and Swagger UI at `/api/v1/docs/` are staff-only, and production fills the schema's `servers` from `ALLOWED_HOSTS`.
 
@@ -55,7 +65,7 @@ The API keeps `{"code", "detail"}` with `application/json`. `detail` already has
 ## Pagination
 
 - Default: `core.api.pagination.LimitPageNumberPagination`. `?page=` and `?page_size=` (20 by default, at most 100); the response is `count`, `next`, `previous`, `results`. Every page runs `COUNT(*)` plus `OFFSET`, which slows down with depth, so pages deeper than `DJANGO_API_MAX_PAGE_NUMBER` (1000) are a `404 not_found`, like any page past the end. Use it for admin-like lists where the total matters.
-- Opt-in: `core.api.pagination.LimitCursorPagination` (`pagination_class = LimitCursorPagination`) for large or append-heavy tables, feeds, and infinite scroll. Clients follow the `next`/`previous` links (`?cursor=`); there is no `count`, and every page costs the same at any depth. It orders by `-public_id`; a custom `ordering` must be unique and indexed. An invalid page number (`?page=abc`, `0`, or `-1`) on a page-number list is a `404` with detail `Invalid page.`, like a page past the end. An invalid cursor (`?cursor=not-a-cursor`) on a cursor-paginated endpoint is Ninja's `400` validation error; it is not mapped to `404`, and `/api/v1/users/` does not use cursor pagination.
+- Opt-in: `@paginate(LimitCursorPagination)` from `core.api.pagination` ([Ninja: CursorPagination](https://django-ninja.dev/guide/pagination/#cursorpagination)) for large or append-heavy tables, feeds, and infinite scroll. Clients follow the `next`/`previous` links (`?cursor=`); there is no `count`, and every page costs the same at any depth. It orders by `-public_id`; a custom `ordering` must be unique and indexed. An invalid page number (`?page=abc`, `0`, or `-1`) on a page-number list is a `404` with detail `Invalid page.`, like a page past the end. An invalid cursor (`?cursor=not-a-cursor`) on a cursor-paginated endpoint is Ninja's `400` validation error; it is not mapped to `404`, and `/api/v1/users/` does not use cursor pagination.
 - Opt-in: `core.api.pagination.CachedCountPageNumberPagination` for page-number lists over a large table, where `COUNT(*)` is the expensive query of every page. It caches the total of each query in Valkey for 60 seconds, so `count` and the last page number may lag by up to a minute, or less when the service that writes the model calls `core.cache.invalidate()`. The key is the SQL of the queryset, so each user's or tenant's list has its own total. The rows of a page are never cached, and cursor pages have no count to cache.
 
 ## Idempotent retries
@@ -80,7 +90,7 @@ Every error response from an API view has this JSON body:
 - `detail`: an English message for humans. It can change between releases.
 - `extra` (optional): structured context for a domain error, for example `{"available": 2}`.
 
-Validation errors (`400`) add `fields`, with one list of `{code, detail}` items per field. Nested serializers keep their nesting, list items are keyed by index, and errors that belong to no single field go under `non_field_errors`:
+Validation errors (`400`) add `fields`, with one list of `{code, detail}` items per field. Nested schemas keep their nesting, list items are keyed by index, and errors that belong to no single field go under `non_field_errors`:
 
 ```json
 {
@@ -128,13 +138,13 @@ Every new code is added to this table in the same PR. Codes are never renamed on
 | --- | --- | --- | --- |
 | `validation_error` | 400 | The body failed validation; see `fields` | Pydantic request schemas, Django `ValidationError` |
 | `unknown_field` | 400 | Field-level code inside the `fields` of a `validation_error`: the body has a key that is not a field of this endpoint | Pydantic request schemas with `extra="forbid"` |
-| `parse_error` | 400 | The body is not valid for its content type (for example malformed JSON, or JSON nested too deeply to decode) | Ninja parsers |
-| `not_authenticated` | 401 | No valid credentials were sent (none, or an invalid or expired token) | Ninja authentication |
-| `permission_denied` | 403 | Authenticated, but not allowed | Ninja permissions, Django `PermissionDenied` (also `handler403`) |
+| `parse_error` | 400 | The body is not valid for its content type (for example malformed JSON, or JSON nested too deeply to decode) | `core.api.parsers.JSONParser` |
+| `not_authenticated` | 401 | No valid credentials were sent (none, an unknown or expired token, or no session) | Ninja authentication (`core.api.auth`) |
+| `permission_denied` | 403 | Authenticated, but not allowed, or a cookie-authenticated write without a valid CSRF token | Ninja `AuthorizationError`, Django `PermissionDenied`, Ninja's CSRF check (also `handler403`) |
 | `not_found` | 404 | The resource does not exist or is not visible to the caller | `Http404`, `ObjectDoesNotExist`, pagination, unknown routes (`handler404`) |
-| `method_not_allowed` | 405 | The HTTP method is not supported on this route | Ninja operations |
-| `not_acceptable` | 406 | The `Accept` header asks for a format the API does not produce | Ninja content negotiation |
-| `unsupported_media_type` | 415 | The request `Content-Type` is not accepted | Ninja parsers |
+| `method_not_allowed` | 405 | The HTTP method is not supported on this route | `core.api.negotiation.ApiContractMiddleware` |
+| `not_acceptable` | 406 | The `Accept` header asks for a format the API does not produce | `core.api.negotiation.ApiContractMiddleware` |
+| `unsupported_media_type` | 415 | The request `Content-Type` is not accepted | `core.api.parsers.JSONParser` |
 | `throttled` | 429 | Too many requests; retry after `Retry-After` seconds | Ninja throttling |
 | `idempotency_key_reused` | 409 | The `Idempotency-Key` was already used with a different payload | Create endpoints that follow [Idempotent retries](#idempotent-retries) |
 | `protected` | 409 | The resource has dependent records and cannot be deleted | `ProtectedError`, `RestrictedError` |
@@ -155,23 +165,23 @@ The schema documents error responses with the `ErrorSchema` and `ValidationError
 
 `405` is not listed on every operation: the allowed methods are the operation keys themselves, and a wrong method still returns `method_not_allowed` with `Allow`.
 
-An operation overrides one of them by declaring that status in its `response` map; the other documented defaults stay. Request and response bodies are separate components: `UserUpdateIn` carries only writable fields, while `UserOut` also has the read-only `id` and `url`. The Swagger UI at `/api/v1/docs/` is staff-only and is not itself an entry in the committed contract.
+Nothing adds them automatically: each operation spreads the error map that fits it into `response=` ([Ninja: multiple response schemas](https://django-ninja.dev/guide/responses/#multiple-response-schemas)) and passes the same map to `openapi_extra=response_docs(...)` ([Ninja: openapi_extra](https://django-ninja.dev/guide/operations/#openapi_extra)), which adds the descriptions and the headers. The maps live in `core/api/responses.py`: `READ_ERRORS` (401, 403, 406, 429), `LOOKUP_ERRORS` and `LIST_ERRORS` (plus 404), and `WRITE_ERRORS` (plus 400 and 415); combine them, for example `response={200: ThingOut, **LOOKUP_ERRORS, **WRITE_ERRORS}`. `core/tests/ninja/test_openapi_responses.py` fails when an operation leaves out the common ones. Request and response bodies are separate components: `UserUpdateIn` carries only writable fields, while `UserOut` also has the read-only `id` and `url`. The Swagger UI at `/api/v1/docs/` is staff-only and is not itself an entry in the committed contract.
 
-Operation names follow Ninja's defaults from the path and method (for example `users_me_retrieve` under the `users` tag). When `/api/v2/` opens, serve one schema per version instead of one schema with both.
+Every operation sets `operation_id` explicitly, `<app>_<resource>_<action>` (for example `users_me_retrieve` under the `users` tag), so a renamed function never changes the contract ([Ninja: operation_id](https://django-ninja.dev/guide/operations/#operation_id)). When `/api/v2/` opens, serve one schema per version instead of one schema with both.
 
-The schema is Ninja 1.8.0's own output; nothing rewrites it afterwards. Contract details come from documented options: `response=` maps (`core.api.responses`), `openapi_extra` for descriptions and headers, Pydantic `WithJsonSchema` for the path `id` pattern and `json_schema_extra` for `readOnly` and the 400 `oneOf`. An optional body (`Body(default_factory=...)`) is a one-item `allOf` around its `$ref`, so the `api-contract` job runs oasdiff with `--flatten-allof` ([Breaking changes](#breaking-changes)).
+The schema is Ninja 1.8.0's own output; nothing rewrites it afterwards. Contract details come from documented options: `response=` maps (`core.api.responses`), `openapi_extra` for descriptions and headers, Pydantic `WithJsonSchema` for the path `id` pattern and `json_schema_extra` for `readOnly` and the 400 `oneOf`. An optional body (`BodyEx[T, P(default_factory=T)]`, the type-checker spelling of `Body(default_factory=...)`, [Ninja: request body](https://django-ninja.dev/guide/body/)) is a one-item `allOf` around its `$ref`, so the `api-contract` job runs oasdiff with `--flatten-allof` ([Breaking changes](#breaking-changes)).
 
 ## Throttling
 
 Global limits are always on: `anon` per client IP (`DJANGO_THROTTLE_ANON_RATE`, default `60/min`) and `user` per authenticated user (`DJANGO_THROTTLE_USER_RATE`, default `600/min`). The defaults are a starting point, not a standard; tune them per project through the environment. A rate is `<number>/<s|m|h|d>` (`60/min`, `1000/hour`), with a count and window above zero; `config.settings.guards.assert_throttle_rates` refuses any other value at startup, in every environment, because a typo would otherwise be a 500 on the first request. A throttled request gets `429` with `Retry-After` and `code` `throttled`.
 
-- Sensitive or expensive endpoints use a scoped Ninja `SimpleRateThrottle` (for example `"orders.checkout"`) and register its rate in `NINJA_DEFAULT_THROTTLE_RATES`. An unregistered scope raises `ImproperlyConfigured` on the first request.
-- Never set `throttle_classes` on a view unless it includes the global classes: it replaces the defaults instead of adding to them.
+- Sensitive or expensive operations add a scope: `throttle=[AnonThrottle(), UserThrottle(), ScopedThrottle(scope="orders.checkout")]` from `core.api.throttling`, with the rate registered in `NINJA_DEFAULT_THROTTLE_RATES`. `ScopedThrottle` counts per user, or per client IP when anonymous. An unregistered scope raises `ImproperlyConfigured` when the throttle is built, that is, when the module that declares the operation is imported.
+- `throttle=` on a router or operation replaces the API-level throttles instead of adding to them ([Ninja: router and operation level](https://django-ninja.dev/guide/throttling/#router-and-operation-level)), so always list `AnonThrottle()` and `UserThrottle()` with the scoped one.
 - Every scoped endpoint has a test that the N+1th call returns `429` `throttled`. A test sets rates with the `throttle_rates` fixture, which patches `SimpleRateThrottle.THROTTLE_RATES` (`core/tests/ninja/adapters.py`). The test settings keep every scoped rate of `base.py` and only raise `anon` and `user` out of reach, so a scoped endpoint has its real rate under pytest.
 - The client IP comes from `REMOTE_ADDR` unless a proxy is trusted. In production, `DJANGO_TRUSTED_PROXY_COUNT` (default `1`) sets `TRUSTED_PROXY_COUNT` and allauth's `ALLAUTH_TRUSTED_PROXY_COUNT`, and must equal the number of proxies that append to `X-Forwarded-For`.
 - Counters live in the default cache, which is Valkey, shared by every gunicorn worker. While Valkey is unreachable they stop counting instead of failing requests ([security.md](security.md#valkey-outages)).
 
-The client is the `X-Forwarded-For` entry that many trusted proxies from the end (`DJANGO_TRUSTED_PROXY_COUNT`, read from `ALLAUTH_TRUSTED_PROXY_COUNT` when unset). `core.net.get_client_ip` applies that rule for django-axes (`AXES_CLIENT_IP_CALLABLE`) and for Ninja throttles (`core.net.get_ident`). Both read the Django setting `TRUSTED_PROXY_COUNT`. `core.net` skips blank entries, so a trailing comma (`X-Forwarded-For: 6.6.6.6,`) never yields an empty IP there; with no trusted proxy, or no address in the header, the client is `REMOTE_ADDR`. Behind nginx a trailing comma cannot happen, since `$proxy_add_x_forwarded_for` appends the real address last ([NEXT-STEPS.md](NEXT-STEPS.md)); only a request that reaches Gunicorn directly can send it, and `DOCKER_PROD_DJANGO_BIND=127.0.0.1` keeps Gunicorn off the network.
+The client is the `X-Forwarded-For` entry that many trusted proxies from the end (`DJANGO_TRUSTED_PROXY_COUNT`, read from `ALLAUTH_TRUSTED_PROXY_COUNT` when unset). `core.net.get_client_ip` applies that rule for django-axes (`AXES_CLIENT_IP_CALLABLE`) and for Ninja throttles (`IdentMixin.get_ident` in `core/api/throttling.py`). Both read the Django setting `TRUSTED_PROXY_COUNT`. `core.net` skips blank entries, so a trailing comma (`X-Forwarded-For: 6.6.6.6,`) never yields an empty IP there; with no trusted proxy, or no address in the header, the client is `REMOTE_ADDR`. Behind nginx a trailing comma cannot happen, since `$proxy_add_x_forwarded_for` appends the real address last ([NEXT-STEPS.md](NEXT-STEPS.md)); only a request that reaches Gunicorn directly can send it, and `DOCKER_PROD_DJANGO_BIND=127.0.0.1` keeps Gunicorn off the network.
 
 ## Breaking changes
 
@@ -191,15 +201,7 @@ The first pull request that introduces `docs/openapi.json` still compares agains
 
 Mobile apps keep calling an endpoint for months after a release replaces it, so a v1 endpoint or field is deprecated before it is removed, and clients learn it two ways. This is a recipe; nothing is deprecated today.
 
-**In the schema**, so generated clients flag it at compile time:
-
-```python
-@router.get("/legacy-export/", deprecated=True)
-@deprecated(since=..., link="https://example.com/docs/api#legacy-export")
-def legacy_export(request: HttpRequest) -> ...: ...
-```
-
-Mark a removed field in the input or output schema (for example drop it from the model and document the replacement in the operation description). The `@deprecated` decorator below attaches the response headers; it is a recipe (`core/api/deprecation.py`) and is not required until the first deprecation.
+**In the schema**, so generated clients flag it at compile time: `deprecated=True` on the route decorator ([Ninja: deprecated](https://django-ninja.dev/guide/operations/#deprecated)). Mark a removed field in the input or output schema (for example drop it from the model and document the replacement in the operation description).
 
 **In the response**, while the endpoint is deprecated:
 
@@ -207,39 +209,54 @@ Mark a removed field in the input or output schema (for example drop it from the
 - `Sunset: <HTTP date>` ([RFC 8594](https://www.rfc-editor.org/rfc/rfc8594)): when it stops working, once that date is decided.
 - `Link: <https://.../docs/api#...>; rel="deprecation"`: where the replacement is explained.
 
+The operation takes Ninja's temporal `response: HttpResponse` argument and sets the headers on it ([Ninja: setting headers](https://django-ninja.dev/guide/temporal-response/#setting-headers)). This helper is a recipe, not shipped; add it as `core/api/deprecation.py` with the first deprecation:
+
 ```python
 # core/api/deprecation.py
-import functools
-from collections.abc import Callable
+from __future__ import annotations
+
 from datetime import UTC
-from datetime import datetime
 from email.utils import format_datetime
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
+    from django.http import HttpResponse
 
 
-def deprecated(
-    *, since: datetime, link: str, sunset: datetime | None = None
-) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Add Deprecation, Sunset and Link headers to a view method's responses."""
-
-    def decorator(method: Callable[..., Any]) -> Callable[..., Any]:
-        @functools.wraps(method)
-        def wrapper(self: Any, request: Any, *args: Any, **kwargs: Any) -> Any:
-            response = method(self, request, *args, **kwargs)
-            response["Deprecation"] = f"@{int(since.timestamp())}"
-            if sunset is not None:
-                response["Sunset"] = format_datetime(
-                    sunset.astimezone(UTC), usegmt=True
-                )
-            response["Link"] = f'<{link}>; rel="deprecation"'
-            return response
-
-        return wrapper
-
-    return decorator
+def set_deprecation_headers(
+    response: HttpResponse,
+    *,
+    since: datetime,
+    link: str,
+    sunset: datetime | None = None,
+) -> None:
+    """Add the Deprecation, Sunset and Link headers (RFC 9745, RFC 8594)."""
+    response["Deprecation"] = f"@{int(since.timestamp())}"
+    if sunset is not None:
+        response["Sunset"] = format_datetime(sunset.astimezone(UTC), usegmt=True)
+    response["Link"] = f'<{link}>; rel="deprecation"'
 ```
 
-Put it on the Ninja operation, with `deprecated=True` on the route decorator. Browsers expose these headers to JavaScript only when they are listed in `CORS_EXPOSE_HEADERS` (django-cors-headers), so add `["Deprecation", "Sunset", "Link"]` there with the first deprecation.
+```python
+@router.get(
+    "/legacy-export/",
+    response={200: ExportOut, **READ_ERRORS},
+    openapi_extra=response_docs(READ_ERRORS),
+    operation_id="exports_legacy_retrieve",
+    deprecated=True,
+)
+def exports_legacy_retrieve(request: HttpRequest, response: HttpResponse) -> Export:
+    set_deprecation_headers(
+        response,
+        since=datetime(2027, 1, 1, tzinfo=UTC),
+        link="https://example.com/docs/api#legacy-export",
+    )
+    return export_latest()
+```
+
+Browsers expose these headers to JavaScript only when they are listed in `CORS_EXPOSE_HEADERS` (django-cors-headers), so add `["Deprecation", "Sunset", "Link"]` there with the first deprecation.
 
 After the sunset date the endpoint answers `410 Gone` with the code `gone` (register it in [Error codes](#error-codes) when it is first used), for example `raise ApplicationError("This endpoint was removed; use /api/v1/exports/.", code="gone", status_code=410)`. An incompatible replacement goes to `/api/v2/`, following the versioning rule in AGENTS.md.
 
@@ -289,26 +306,41 @@ def item_update(*, item: Item, if_match: str | None, name: str) -> Item:
 
 ```python
 # apps/items/api/views.py
-class ItemViewSet(RetrieveModelMixin, GenericViewSet):
-    def retrieve(self, request: Request, *args: Any, **kwargs: Any) -> Response:
-        item = self.get_object()
-        return Response(self.get_serializer(item).data, headers=_etag(item))
-
-    def partial_update(self, request: Request, *args: Any, **kwargs: Any) -> Response:
-        serializer = self.get_serializer(
-            self.get_object(), data=request.data, partial=True
-        )
-        serializer.is_valid(raise_exception=True)
-        item = item_update(
-            item=serializer.instance,
-            if_match=request.headers.get("If-Match"),
-            name=serializer.validated_data["name"],
-        )
-        return Response(self.get_serializer(item).data, headers=_etag(item))
+ItemIdPath = PathEx[UUID, P(alias="id")]  # see Paths above
 
 
-def _etag(item: Item) -> dict[str, str]:
-    return {"ETag": item_etag(item)}
+@router.get(
+    "/{public_id:id}/",
+    response={200: ItemOut, **LOOKUP_ERRORS},
+    openapi_extra=response_docs(LOOKUP_ERRORS),
+    operation_id="items_retrieve",
+)
+def items_retrieve(
+    request: HttpRequest, response: HttpResponse, item_id: ItemIdPath
+) -> Item:
+    item = get_object_or_404(item_list(user=_owner(request)), public_id=item_id)
+    response["ETag"] = item_etag(item)
+    return item
+
+
+@router.patch(
+    "/{public_id:id}/",
+    response={200: ItemOut, **LOOKUP_ERRORS, **WRITE_ERRORS},
+    openapi_extra=response_docs({**LOOKUP_ERRORS, **WRITE_ERRORS}),
+    operation_id="items_partial_update",
+)
+def items_partial_update(
+    request: HttpRequest,
+    response: HttpResponse,
+    item_id: ItemIdPath,
+    body: ItemUpdateIn,
+) -> Item:
+    item = get_object_or_404(item_list(user=_owner(request)), public_id=item_id)
+    item = item_update(
+        item=item, if_match=request.headers.get("If-Match"), name=body.name
+    )
+    response["ETag"] = item_etag(item)
+    return item
 ```
 
 ```python

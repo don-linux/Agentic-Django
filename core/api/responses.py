@@ -1,7 +1,7 @@
 """Error responses every operation declares, so docs/openapi.json lists them.
 
 Spread them into `response=` (Ninja's documented way to declare several status
-codes: https://django-ninja.dev/guides/responses/#multiple-response-schemas):
+codes: https://django-ninja.dev/guide/responses/#multiple-response-schemas):
 
     @router.get("/", response={200: list[ThingOut], **LIST_ERRORS})
     @router.get("/{id}/", response={200: ThingOut, **LOOKUP_ERRORS})

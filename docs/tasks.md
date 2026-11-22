@@ -212,42 +212,69 @@ The view answers `202` with the address to poll:
 # apps/reports/api/views.py
 from __future__ import annotations
 
-from http import HTTPStatus
+from typing import TYPE_CHECKING
+from typing import Any
 
+from django.http import Http404
 from django.http import HttpRequest
+from django.http import HttpResponse
 from ninja import Router
-from ninja.responses import Response
+from ninja import Status
+from ninja.pagination import paginate
 
-from apps.reports.models import ReportRun
 from apps.reports.selectors import report_run_list
 from apps.reports.services import report_request
-from core.api.schemas import ErrorSchema
+from apps.users.models import User
+from core.api.pagination import LimitPageNumberPagination
+from core.api.responses import LIST_ERRORS
+from core.api.responses import WRITE_ERRORS
+from core.api.responses import response_docs
 
-from .schemas import ReportRunIn
-from .schemas import ReportRunOut
+if TYPE_CHECKING:
+    from django.db.models import QuerySet
+
+    from apps.reports.models import ReportRun
 
 router = Router(tags=["reports"])
 
 
-@router.get("/", response=list[ReportRunOut])
-def report_run_list_view(request: HttpRequest) -> list[ReportRun]:
-    if not request.user.is_authenticated or request.user.pk is None:
-        return ReportRun.objects.none()
-    return list(report_run_list(user=request.user))
+def _owner(request: HttpRequest) -> User:
+    # API_AUTH lets only authenticated users through; narrow AnonymousUser away.
+    if not isinstance(request.user, User):
+        raise Http404
+    return request.user
 
 
-@router.post("/", response={202: ReportRunOut, 400: ErrorSchema, 401: ErrorSchema})
-def report_run_create(request: HttpRequest, payload: ReportRunIn) -> Response:
-    report = report_request(user=request.user, month=payload.month)
-    body = ReportRunOut.model_validate(report)
+@router.get(
+    "/",
+    response={200: list[ReportRunOut], **LIST_ERRORS},
+    openapi_extra=response_docs(LIST_ERRORS),
+    operation_id="reports_list",
+)
+@paginate(LimitPageNumberPagination)
+def reports_list(request: HttpRequest) -> QuerySet[ReportRun]:
+    return report_run_list(user=_owner(request))
+
+
+@router.post(
+    "/",
+    response={202: ReportRunOut, **WRITE_ERRORS},
+    openapi_extra=response_docs(WRITE_ERRORS),
+    operation_id="reports_create",
+)
+def reports_create(
+    request: HttpRequest, response: HttpResponse, body: ReportRunIn
+) -> Any:
+    report = report_request(user=_owner(request), month=body.month)
     # 202: accepted, not done. The client polls Location until the status is
     # "done" or "failed".
-    return Response(
-        body.model_dump(mode="json"),
-        status=HTTPStatus.ACCEPTED,
-        headers={"Location": body.url},
+    response["Location"] = request.build_absolute_uri(
+        f"/api/v1/reports/{report.public_id}/"
     )
+    return Status(202, report)
 ```
+
+`ReportRunIn` and `ReportRunOut` are schemas declared in the same module, as in `apps/users/api/views.py`. `Status(202, ...)` picks the response schema ([Ninja: multiple response schemas](https://django-ninja.dev/guide/responses/#multiple-response-schemas)) and the temporal `response` argument carries the header ([Ninja: setting headers](https://django-ninja.dev/guide/temporal-response/#setting-headers)).
 
 What the client sees:
 
