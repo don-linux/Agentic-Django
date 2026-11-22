@@ -1,4 +1,5 @@
 import uuid
+from typing import TYPE_CHECKING
 from typing import Any
 from typing import ClassVar
 
@@ -13,6 +14,12 @@ from django.db.models.functions import Lower
 from .managers import USER_DELETE_BLOCKED
 from .managers import UserManager
 
+if TYPE_CHECKING:
+    from allauth.account.models import EmailAddress
+    from allauth.mfa.models import Authenticator
+    from django.contrib.admin.models import LogEntry
+    from django_stubs_ext.db.models.manager import RelatedManager
+
 
 class User(AbstractUser):
     """Email-login user. Signup goes through allauth headless."""
@@ -26,6 +33,13 @@ class User(AbstractUser):
     # The API identifier, declared here: User subclasses AbstractUser, so it cannot
     # inherit core.models.PublicIdModel. The integer pk stays internal.
     public_id = UUIDField(default=uuid.uuid7, unique=True, editable=False)
+
+    # Reverse accessors. The django-stubs mypy plugin declares them; pyright does
+    # not run the plugin, so they are declared here (django-stubs README, "Do I
+    # need to annotate reverse relations?"). Annotations only: no runtime effect.
+    emailaddress_set: RelatedManager[EmailAddress]
+    authenticator_set: RelatedManager[Authenticator]
+    logentry_set: RelatedManager[LogEntry]
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
