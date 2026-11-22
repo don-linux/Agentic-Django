@@ -38,6 +38,7 @@ from core.exceptions import ApplicationError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from collections.abc import Sequence
 
     from ninja import NinjaAPI
 
@@ -46,47 +47,102 @@ def _field_item(message: str, code: str = "invalid") -> dict[str, str]:
     return {"code": code, "detail": message}
 
 
+# Ninja's loc starts with the parameter source; a body loc also carries the
+# body parameter's name (ninja/params/models.py BodyModel, __read_from_single_attr__).
+_SOURCES = frozenset({"query", "path", "header", "cookie", "form", "file"})
+
+# Pydantic error type -> (code, detail) in DRF's wording. Clients branch on
+# `code` (docs/api.md#error-body); `detail` stays readable and close to the old text.
+_MESSAGES: dict[str, tuple[str, str]] = {
+    "missing": ("required", "This field is required."),
+    "string_type": ("invalid", "Not a valid string."),
+    "int_type": ("invalid", "A valid integer is required."),
+    "int_parsing": ("invalid", "A valid integer is required."),
+    "int_from_float": ("invalid", "A valid integer is required."),
+    "bool_type": ("invalid", "Must be a valid boolean."),
+    "bool_parsing": ("invalid", "Must be a valid boolean."),
+    "uuid_type": ("invalid", "Must be a valid UUID."),
+    "uuid_parsing": ("invalid", "Must be a valid UUID."),
+    "decimal_type": ("invalid", "A valid number is required."),
+    "decimal_parsing": ("invalid", "A valid number is required."),
+    "float_type": ("invalid", "A valid number is required."),
+    "float_parsing": ("invalid", "A valid number is required."),
+    "list_type": ("not_a_list", "Expected a list of items."),
+}
+_NOT_AN_OBJECT = frozenset({"model_type", "model_attributes_type", "dict_type"})
+_UNKNOWN_FIELD = frozenset({"extra_forbidden", "unexpected_keyword_argument"})
+
+
+def _error_path(loc: Sequence[object]) -> list[str]:
+    parts = [str(part) for part in loc]
+    if parts[:1] == ["body"]:
+        return parts[2:]
+    if parts[:1] and parts[0] in _SOURCES:
+        return parts[1:]
+    return parts
+
+
+_LENGTH = frozenset({"string_too_long", "too_long", "string_too_short", "too_short"})
+
+
+def _length(typ: str, msg: str, ctx: Mapping[str, Any]) -> tuple[str, str]:
+    if typ == "string_too_long" and ctx.get("max_length") is not None:
+        msg = f"Ensure this field has no more than {ctx['max_length']} characters."
+    elif typ == "string_too_short" and ctx.get("min_length") is not None:
+        msg = f"Ensure this field has at least {ctx['min_length']} characters."
+    return ("max_length" if "long" in typ else "min_length"), msg
+
+
+def _code_and_detail(err: Mapping[str, Any]) -> tuple[str, str]:
+    typ = str(err.get("type") or "invalid")
+    msg = str(err.get("msg") or "Invalid input.")
+    # extra="forbid" -> unknown_field, same wording as the previous serializer.
+    if typ in _UNKNOWN_FIELD:
+        return "unknown_field", "Unknown field."
+    # input_type comes from ContractAPI.validation_error_from_error_contexts
+    # (Ninja drops the raw input): a None sent to a non-nullable field is "null".
+    input_type = err.get("input_type")
+    if typ == "value_error" and "null" in msg.lower():
+        return "null", msg
+    if input_type == "NoneType" and typ != "missing":
+        return "null", "This field may not be null."
+    return _code_and_detail_by_type(typ, msg, err.get("ctx") or {}, input_type)
+
+
+def _code_and_detail_by_type(
+    typ: str, msg: str, ctx: Mapping[str, Any], input_type: object
+) -> tuple[str, str]:
+    if typ == "null_characters_not_allowed":
+        return typ, msg
+    if typ in _LENGTH:
+        return _length(typ, msg, ctx)
+    if typ in _NOT_AN_OBJECT:
+        got = input_type or "another type"
+        return "invalid", f"Invalid data. Expected a dictionary, but got {got}."
+    return _MESSAGES.get(typ, ("invalid", msg))
+
+
 def _ninja_validation_fields(errors: list[dict[str, Any]]) -> dict[str, Any]:
     """Turn Ninja/Pydantic error dicts into the nested {code, detail} tree."""
     fields: dict[str, Any] = {}
     for err in errors:
-        loc = [
-            part
-            for part in err.get("loc", ())
-            if part not in {"body", "query", "path", "header", "form"}
-        ]
-        if not loc:
-            loc = ["non_field_errors"]
-        typ = str(err.get("type") or "invalid")
-        msg = str(err.get("msg") or "Invalid input.")
-        # extra="forbid" → unknown_field, same wording as the previous serializer.
-        if typ in {"extra_forbidden", "unexpected_keyword_argument"}:
-            code = "unknown_field"
-            msg = "Unknown field."
-        elif (
-            typ in {"none_required", "none_type", "null"}
-            or (typ == "string_type" and "input" in err and err.get("input") is None)
-            or (typ == "value_error" and "null" in msg.lower())
-        ):
-            code = "null"
-        elif typ == "null_characters_not_allowed":
-            code = typ
-        elif typ in {"string_too_long", "too_long"}:
-            code = "max_length"
-        elif typ in {"string_too_short", "too_short"}:
-            code = "min_length"
-        else:
-            code = "invalid"
+        if "loc" not in err and len(err) == 1:
+            # ninja.pagination: ValidationError([{"cursor": "Invalid Cursor"}]).
+            ((name, _message),) = err.items()
+            fields.setdefault(str(name), []).append(
+                _field_item(f"Invalid {name}.", "invalid")
+            )
+            continue
+        loc = _error_path(err.get("loc", ())) or ["non_field_errors"]
+        code, msg = _code_and_detail(err)
         cursor: dict[str, Any] = fields
-        for part in loc[:-1]:
-            key = str(part)
+        for key in loc[:-1]:
             nxt = cursor.setdefault(key, {})
             if not isinstance(nxt, dict):
                 nxt = {}
                 cursor[key] = nxt
             cursor = nxt
-        leaf = str(loc[-1])
-        cursor.setdefault(leaf, []).append(_field_item(msg, code))
+        cursor.setdefault(loc[-1], []).append(_field_item(msg, code))
     return fields
 
 
@@ -158,7 +214,8 @@ class _ErrorHandlers:
     ) -> HttpResponse:
         for err in exc.errors:
             loc = [str(part) for part in err.get("loc", ())]
-            if "page" in loc or "page_size" in loc:
+            # Only the page/page_size query parameters; a body field may be "page".
+            if loc[:1] == ["query"] and ("page" in loc or "page_size" in loc):
                 return self.on_404(request, Http404(INVALID_PAGE))
         return self._json(
             request,

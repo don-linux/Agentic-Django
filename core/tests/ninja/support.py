@@ -8,13 +8,15 @@ from ninja import NinjaAPI
 from ninja import Router
 from ninja.testing import TestClient
 
+from core.api.api import ContractAPI
 from core.api.exceptions import register_exception_handlers
 from core.api.throttling import AnonThrottle
 from core.api.throttling import UserThrottle
 
 
 def make_api(*, throttle=None, auth=None) -> NinjaAPI:
-    api = NinjaAPI(
+    # The project's API class, so tests see its error mapping (core.api.api).
+    api = ContractAPI(
         urls_namespace=f"ninja-test-{id(object())}",
         auth=auth,
         throttle=throttle or [AnonThrottle(), UserThrottle()],

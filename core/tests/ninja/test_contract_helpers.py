@@ -80,7 +80,7 @@ def test_ninja_validation_fields_nests_and_maps_min_length() -> None:
     fields = _ninja_validation_fields(
         [
             {
-                "loc": ("body", "address", "street"),
+                "loc": ("body", "body", "address", "street"),
                 "type": "string_too_short",
                 "msg": "too short",
             }
