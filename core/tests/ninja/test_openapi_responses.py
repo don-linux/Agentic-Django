@@ -20,7 +20,7 @@ from core.api.api import api
 if TYPE_CHECKING:
     from apps.users.models import User
 
-COMMON = {"200", "401", "403", "406", "429"}
+COMMON = {"401", "403", "406", "429"}
 WRITE = {"400", "415"}
 
 
@@ -32,6 +32,8 @@ def _operations() -> dict[tuple[str, str], dict[str, Any]]:
 def test_every_operation_declares_the_shared_error_responses() -> None:
     for (path, method), op in _operations().items():
         codes = {str(code) for code in op["responses"]}
+        # The success status depends on the operation: 200, 201 (create), 202, 204.
+        assert any(code.startswith("2") for code in codes), (path, method)
         expected = set(COMMON)
         if method in {"POST", "PUT", "PATCH"}:
             expected |= WRITE
