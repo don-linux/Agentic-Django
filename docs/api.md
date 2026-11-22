@@ -164,7 +164,7 @@ The schema is Ninja 1.8.0's own output; nothing rewrites it afterwards. Contract
 
 ## Throttling
 
-Global limits are always on: `anon` per client IP (`DJANGO_THROTTLE_ANON_RATE`, default `60/min`) and `user` per authenticated user (`DJANGO_THROTTLE_USER_RATE`, default `600/min`). The defaults are a starting point, not a standard; tune them per project through the environment. A rate is `<number>/<s|m|h|d>` (`60/min`, `1000/hour`); `config.settings.guards.assert_throttle_rates` refuses any other value at startup, in every environment, because a typo would otherwise be a 500 on the first request. A throttled request gets `429` with `Retry-After` and `code` `throttled`.
+Global limits are always on: `anon` per client IP (`DJANGO_THROTTLE_ANON_RATE`, default `60/min`) and `user` per authenticated user (`DJANGO_THROTTLE_USER_RATE`, default `600/min`). The defaults are a starting point, not a standard; tune them per project through the environment. A rate is `<number>/<s|m|h|d>` (`60/min`, `1000/hour`), with a count and window above zero; `config.settings.guards.assert_throttle_rates` refuses any other value at startup, in every environment, because a typo would otherwise be a 500 on the first request. A throttled request gets `429` with `Retry-After` and `code` `throttled`.
 
 - Sensitive or expensive endpoints use a scoped Ninja `SimpleRateThrottle` (for example `"orders.checkout"`) and register its rate in `NINJA_DEFAULT_THROTTLE_RATES`. An unregistered scope raises `ImproperlyConfigured` on the first request.
 - Never set `throttle_classes` on a view unless it includes the global classes: it replaces the defaults instead of adding to them.

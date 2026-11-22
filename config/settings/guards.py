@@ -385,8 +385,13 @@ LOCAL_VALKEY_HOSTS = frozenset({"valkey"})
 # Ninja 1.8.0 SimpleRateThrottle.parse_rate: "<int>/[<int>]<unit>" with unit s, sec,
 # m, min, h, hour, d or day, or "<int>/<seconds>". "60/minute" or "60/hours" raise
 # ValueError when core/api/api.py builds the throttles: every URL would be a 500.
-# Source: ninja/throttling.py; https://django-ninja.dev/guides/throttling
-_THROTTLE_RATE = re.compile(r"[0-9]+/(?:[0-9]+|[0-9]*(?:s|sec|m|min|h|hour|d|day))")
+# Ninja also parses "0/min" (every request is a 429) and "5/0" or "5/0s" (a zero
+# window); the guard refuses a zero count or window too.
+# Source: ninja/throttling.py; https://django-ninja.dev/guide/throttling/
+_POSITIVE = r"0*[1-9][0-9]*"
+_THROTTLE_RATE = re.compile(
+    rf"{_POSITIVE}/(?:{_POSITIVE}|(?:{_POSITIVE})?(?:s|sec|m|min|h|hour|d|day))"
+)
 
 
 def assert_throttle_rates(rates: Mapping[str, str | None]) -> None:
@@ -397,7 +402,8 @@ def assert_throttle_rates(rates: Mapping[str, str | None]) -> None:
     Every environment runs this. See docs/api.md#throttling.
     """
     problems = [
-        f"Throttle rate {scope!r} must be <number>/<s|m|h|d>, like 60/min "
+        f"Throttle rate {scope!r} must be <number>/<s|m|h|d>, like 60/min, "
+        "with a count and window above zero "
         "(anon and user come from DJANGO_THROTTLE_ANON_RATE and "
         "DJANGO_THROTTLE_USER_RATE)."
         for scope, rate in rates.items()

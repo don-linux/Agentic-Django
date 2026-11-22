@@ -189,6 +189,16 @@ def test_ninja_rate_formats_are_accepted(rate: str) -> None:
     assert (throttle.num_requests, throttle.duration) == PARSED_RATES[rate]
 
 
+ZERO_RATES = ["0/min", "00/s", "5/0", "5/0s"]
+
+
+@pytest.mark.parametrize("rate", ZERO_RATES)
+def test_a_zero_rate_or_window_is_refused(rate: str) -> None:
+    # Ninja parses "0/min" (every request is a 429) and "5/0" (a zero window).
+    with pytest.raises(ImproperlyConfigured, match="above zero"):
+        assert_throttle_rates({"anon": rate})
+
+
 @pytest.mark.parametrize("rate", MALFORMED_RATES[5:])
 def test_rates_ninja_cannot_parse_are_refused(rate: str) -> None:
     with pytest.raises(ValueError, match="Invalid rate format"):
