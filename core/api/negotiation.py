@@ -296,6 +296,20 @@ def _options_name(operations: dict[str, Any]) -> str:
     return str(operation.get("summary") or "")
 
 
+def _parses(operations: dict[str, Any]) -> list[str]:
+    """DRF's "parses": every request body media type the route's operations take.
+
+    Ninja declares them in the operation's requestBody (application/json for a
+    Body, multipart/form-data for File/Form). Without a body, JSON, as DRF's
+    default parser list.
+    """
+    found: list[str] = []
+    for operation in operations.values():
+        content = operation.get("requestBody", {}).get("content", {})
+        found += [media for media in content if media not in found]
+    return found or [JSON]
+
+
 class ApiContractMiddleware:
     """406 / 415 / 405 {code, detail} on /api/v1/ before and after Ninja."""
 
@@ -384,7 +398,7 @@ class ApiContractMiddleware:
             "name": _options_name(operations),
             "description": "",
             "renders": [JSON],
-            "parses": [JSON],
+            "parses": _parses(operations),
         }
         response = JsonResponse(body, json_dumps_params=_COMPACT)
         response["Allow"] = allow

@@ -28,6 +28,7 @@ from pydantic import ValidationInfo
 from apps.users.tests.factories import UserFactory
 from core.api.exceptions import _code_and_detail
 from core.api.exceptions import _ninja_validation_fields
+from core.api.negotiation import _parses
 from core.api.throttling import AnonThrottle
 from core.api.throttling import ScopedThrottle
 from core.tests.ninja.support import make_api
@@ -366,3 +367,22 @@ def test_the_staff_gate_refusal_on_options_carries_no_metadata(
     for caller in (client, user_client):
         body = caller.options(url).json()
         assert set(body) == {"code", "detail"}
+
+
+def test_options_parses_lists_each_request_body_media_type() -> None:
+    # An upload operation (ninja File/Form) takes multipart/form-data; OPTIONS
+    # must not advertise JSON only (DRF listed the view's parser classes).
+    upload: dict[str, Any] = {
+        "summary": "Upload a file",
+        "requestBody": {"content": {"multipart/form-data": {"schema": {}}}},
+    }
+    patch: dict[str, Any] = {
+        "requestBody": {"content": {"application/json": {"schema": {}}}}
+    }
+    assert _parses({"POST": upload}) == ["multipart/form-data"]
+    assert _parses({"PATCH": patch, "POST": upload}) == [
+        "application/json",
+        "multipart/form-data",
+    ]
+    # A route without a request body keeps DRF's default JSON parser.
+    assert _parses({"GET": {"summary": "List users"}}) == ["application/json"]
