@@ -70,6 +70,7 @@ extend-exclude = [
 
 lint.select = [
   "A",
+  "ANN",
   "ASYNC",
   "B",
   "BLE",
@@ -121,13 +122,27 @@ lint.select = [
 lint.ignore = [
   "COM812", # Conflicts with the formatter https://docs.astral.sh/ruff/formatter/#conflicting-lint-rules
   "RUF012", # Mutable class attributes should be annotated with `typing.ClassVar`
+  "ANN401", # Any is allowed outside the strict modules; mypy's disallow_any_explicit guards those
 ]
 lint.isort.force-single-line = true
+# Pydantic and Ninja read these annotations at run time: their imports stay
+# outside TYPE_CHECKING (TC001-TC003 would otherwise move them).
+lint.flake8-type-checking.runtime-evaluated-base-classes = [
+  "pydantic.BaseModel",
+  "ninja.Schema",
+  "core.api.schemas.BaseSchema",
+  "core.api.schemas.InputSchema",
+]
 
 [tool.ruff.lint.per-file-ignores]
 # pytest asserts; everywhere else an assert is stripped under python -O.
-"conftest.py" = [ "S101" ]
-"**/tests/**" = [ "S101" ]
+# Tests may leave annotations to pytest, as in [tool.mypy] (ANN).
+"conftest.py" = [ "S101", "ANN" ]
+"**/tests/**" = [ "S101", "ANN" ]
+# Django Ninja evaluates view signatures and schemas at import time, so an import
+# used only in an annotation is still a runtime import in the API layer.
+"apps/*/api/**" = [ "TC001", "TC002", "TC003" ]
+"core/api/**" = [ "TC001", "TC002", "TC003" ]
 
 # Responses are never cached on the server: X-Session-Token is not part of the
 # key. cache_control and never_cache stay allowed. See docs/api.md#caching.
