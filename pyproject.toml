@@ -25,7 +25,7 @@ dependencies = [
   # version as django-stubs in the dev group (django-stubs README, FAQ).
   "django-stubs-ext==6.1.2",
   "gunicorn==27.0.1",
-  "pydantic==2.14.3",
+  "pydantic==2.14.4",
   "pyyaml==6.0.3",
   "kombu==5.7.0",
   "psycopg[c]==3.3.9",
