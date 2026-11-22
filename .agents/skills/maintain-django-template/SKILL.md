@@ -60,7 +60,7 @@ The pins in `pyproject.toml` are also the minimum versions. For each direct pack
 
 - `requires-python`, the Python classifier, ruff `target-version` and mypy `python_version` for a Python minor release.
 - django-upgrade `--target-version` (`.pre-commit-config.yaml` and `scripts/check.sh`), `django-stubs` and the "Django X.Y" mentions in `AGENTS.md` and `README.md` for a Django feature release.
-- Which Django versions the new django-allauth, djangorestframework, drf-spectacular, django-axes and django-cors-headers support, and the reverse.
+- Which Django versions the new django-allauth, django-ninja, django-axes and django-cors-headers support, and the reverse.
 - `djangorestframework-stubs`, `celery-types` and `kombu` move with the package they type or pair with.
 
 ### Docker images
@@ -189,13 +189,13 @@ Add the open Dependabot pull requests, and anything you could not check and why.
 
    ```bash
    scripts/check.sh                 # lint, migrations check, pytest with coverage
-   python manage.py spectacular --settings config.settings.test --file docs/openapi.yaml --validate --fail-on-warn
-   git diff --exit-code docs/openapi.yaml
+   python manage.py export_openapi_schema --settings config.settings.test --api config.api.api --indent 2 > docs/openapi.json
+   git diff --exit-code docs/openapi.json
    ```
 
-   A schema diff after a DRF, drf-spectacular or django-allauth bump is a change in the API: commit it with that upgrade and say so in the report. A DRF or drf-spectacular bump may need changes under `tests/drf/` only; a failure under `tests/http/` is a change in the HTTP contract: report it and never edit the assertion to make it pass ([docs/development.md](../../../docs/development.md#test-layout)). After a Django or PostgreSQL bump, also run `scripts/check.sh reversible` against a throwaway database ([docs/ci.md](../../../docs/ci.md#reversible-migrations)).
+   A schema diff after a django-ninja, pydantic or django-allauth bump is a change in the API: commit it with that upgrade and say so in the report. A django-ninja bump may need changes under `tests/ninja/` only; a failure under `tests/http/` is a change in the HTTP contract: report it and never edit the assertion to make it pass ([docs/development.md](../../../docs/development.md#test-layout)). After a Django or PostgreSQL bump, also run `scripts/check.sh reversible` against a throwaway database ([docs/ci.md](../../../docs/ci.md#reversible-migrations)).
 7. A deprecation warning fails the suite (`filterwarnings = ["error"]`). Fix the call; add a narrow `ignore:` entry only for a third-party warning, with a link to the issue.
-8. Run the Bruno smoke ([docs/development.md](../../../docs/development.md#bruno)) after any bump of Django, DRF, django-allauth or the images.
+8. Run the Bruno smoke ([docs/development.md](../../../docs/development.md#bruno)) after any bump of Django, django-ninja, django-allauth or the images.
 9. Push, open the pull request and wait for every CI job, `audit` included. Report per commit: component, from → to, what you read, and what changed besides the pin.
 
 ### Python minor release

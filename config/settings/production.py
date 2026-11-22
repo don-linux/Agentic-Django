@@ -54,7 +54,7 @@ VALKEY_URL = env("VALKEY_URL")
 VALKEY_PASSWORD = env("VALKEY_PASSWORD")
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-# Proxies that append to X-Forwarded-For; one value for allauth and DRF, with
+# Proxies that append to X-Forwarded-For; one value for allauth and Ninja, with
 # ALLAUTH_TRUSTED_PROXY_COUNT as a fallback. See docs/api.md#throttling.
 TRUSTED_PROXY_COUNT = env.int(
     "DJANGO_TRUSTED_PROXY_COUNT",

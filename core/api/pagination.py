@@ -1,5 +1,6 @@
 """
-List pagination on Ninja's PageNumberPagination, with the DRF envelope.
+List pagination on Ninja's PageNumberPagination, with the
+count/next/previous/results envelope.
 
 Native Ninja 1.8.0 returns {items, count}, defaults to 100 per page, and does
 not 404 past the last page. This class keeps count/next/previous/results,

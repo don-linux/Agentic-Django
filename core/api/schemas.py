@@ -1,4 +1,4 @@
-"""Shared Pydantic schemas for the Ninja API (no DRF)."""
+"""Shared Pydantic schemas for the Ninja API."""
 
 from __future__ import annotations
 

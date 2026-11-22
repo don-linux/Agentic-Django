@@ -1,7 +1,7 @@
 """
 Django's handler400/403/404/500 answer with the API's JSON error body.
 
-See docs/api.md#errors-outside-drf-views.
+See docs/api.md#errors-outside-api-views.
 """
 
 from __future__ import annotations

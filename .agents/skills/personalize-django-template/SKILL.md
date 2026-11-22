@@ -20,7 +20,7 @@ Todo lo que identifica a un backend usa uno de estos valores, y el plan los sust
 | Placeholder | Qué es | Dónde aparece |
 | --- | --- | --- |
 | `project` | Slug Python | `pyproject.toml`, Bruno, el default de `DJANGO_CACHE_KEY_PREFIX` |
-| `Project` | Nombre visible | título y descripción de la API (`SPECTACULAR_SETTINGS`) |
+| `Project` | Nombre visible | título y descripción de la API (`NINJA_TITLE`, `NINJA_DESCRIPTION`) |
 | `project-name` | Nombre de Docker y ruta de uploads | `PROJECT_NAME` de dev y prod, `devcontainer.json`, `DOCKER_PROD_DJANGO_UPLOADS_PATH=/srv/project-name/uploads` y los ejemplos `/srv/project-name` en compose, `docs/NEXT-STEPS.md`, `docs/ARCHITECTURE.md`, `docs/files.md`, `docs/deploy.md` |
 | `example.com` | Dominio en *ejemplos y docs* | `docker/prod/.env.example`, `docs/NEXT-STEPS.md`. **No** es placeholder en el código de denylist (ver más abajo) |
 | `project_db` | Base de datos | `.env.example`, `docker/prod/.env.example`, `docs/NEXT-STEPS.md` y `docs/ci.md` |
@@ -34,7 +34,7 @@ Lo que es igual en todos los backends no es placeholder y no se toca: el paquete
 - `config/settings/base.py`: `DEFAULT_FROM_EMAIL` default `Project <noreply@example.com>`, `EMAIL_SUBJECT_PREFIX` default `[Project]` (con un espacio al final), `EMAIL_SIGNATURE_NAME` default `Project`
 - `config/settings/guards.py`: `EXAMPLE_DOMAINS` y las comprobaciones `endswith("example.com")`
 
-Los valores reales del proyecto van en `docker/prod/.env.example` (y en `.env.example` para lo local). Sí se cambian en código: `SPECTACULAR_SETTINGS` (`TITLE`, `DESCRIPTION`) y el default de `DJANGO_CACHE_KEY_PREFIX` (el slug: dos proyectos no deben compartir claves en Valkey).
+Los valores reales del proyecto van en `docker/prod/.env.example` (y en `.env.example` para lo local). Sí se cambian en código: `NINJA_TITLE` y `NINJA_DESCRIPTION`, y el default de `DJANGO_CACHE_KEY_PREFIX` (el slug: dos proyectos no deben compartir claves en Valkey).
 
 ## Preguntar
 
@@ -58,7 +58,7 @@ Muestra estos valores, ya resueltos, antes del plan:
 - From (solo en ejemplos de entorno, no en defaults de código): `{Nombre} <noreply@{dominio}>`
 - Prefijo de asunto (comentado en el ejemplo de prod): `[{Nombre}]` seguido de un espacio
 - Título de la API: `{Nombre} API`
-- Descripción de Spectacular: `The {Nombre} JSON API. Account endpoints under /_allauth/ belong to django-allauth and keep its own format (docs/api.md).`
+- Descripción de la API (`NINJA_DESCRIPTION`): `The {Nombre} JSON API. Account endpoints under /_allauth/ belong to django-allauth and keep its own format (docs/api.md).`
 - Descripción de `pyproject` y del README: `Backend for {dominio}`, o `Backend for {Nombre}` si el dominio está pendiente. El texto actual de `pyproject.toml` es `description = "Django project template"`.
 - Producción (solo `docker/prod/.env.example`): `DJANGO_ALLOWED_HOSTS={dominio}`, `DJANGO_CSRF_TRUSTED_ORIGINS=https://app.{dominio}` y `FRONTEND_URL=https://app.{dominio}`
 
@@ -68,7 +68,7 @@ El plan actualiza solo estas rutas.
 
 ### Django
 
-- `config/settings/base.py`: `SPECTACULAR_SETTINGS` (`TITLE`, `DESCRIPTION`) y el default de `DJANGO_CACHE_KEY_PREFIX` (`{slug}`). **No** cambies `DEFAULT_FROM_EMAIL`, `EMAIL_SUBJECT_PREFIX` ni `EMAIL_SIGNATURE_NAME`.
+- `config/settings/base.py`: `NINJA_TITLE`, `NINJA_DESCRIPTION` y el default de `DJANGO_CACHE_KEY_PREFIX` (`{slug}`). **No** cambies `DEFAULT_FROM_EMAIL`, `EMAIL_SUBJECT_PREFIX` ni `EMAIL_SIGNATURE_NAME`.
 - `config/settings/production.py`: no se toca (los defaults de denylist se quedan).
 
 ### Proyecto
@@ -87,7 +87,7 @@ El plan actualiza solo estas rutas.
 - `docs/NEXT-STEPS.md`: `example.com` pasa a `{dominio}`, `project_db` a `{db}` y `/srv/project-name` a `/srv/{docker}`
 - `docs/ci.md`: en «Reversible migrations», la base de dev de ejemplo (`project_db`) pasa a `{db}`
 - `docs/ARCHITECTURE.md`, `docs/files.md` y `docs/deploy.md`: el ejemplo `/srv/project-name` pasa a `/srv/{docker}`
-- `docs/openapi.yaml`: no se edita a mano. Es generado y lleva el `TITLE` y la `DESCRIPTION` de `SPECTACULAR_SETTINGS`, así que se regenera en el Cierre; si no, falla `test_committed_schema_matches_the_code`
+- `docs/openapi.json`: no se edita a mano. Es generado y lleva `NINJA_TITLE` y `NINJA_DESCRIPTION`, así que se regenera en el Cierre; si no, `scripts/check.sh lint` falla al comparar el export con el archivo comprometido.
 
 ## Docker y Dev Container
 
@@ -110,7 +110,7 @@ Después de editar, en este orden:
 2. Barrido de placeholders:
 
    ```bash
-   rg -n --hidden -g '!.git' -g '!.venv' -g '!.agents/skills/**' -g '!uv.lock' -g '!docs/openapi.yaml' \
+   rg -n --hidden -g '!.git' -g '!.venv' -g '!.agents/skills/**' -g '!uv.lock' -g '!docs/openapi.json' \
      -e 'project-name' -e 'project_db' -e 'example\.com' -e '\bProject\b' \
      -e '"project' -e 'name: project$' .
    ```
@@ -140,7 +140,7 @@ Después de editar, en este orden:
    [ -f .env ] || cp .env.example .env
    [ -f docker/dev/.env ] || cp docker/dev/.env.example docker/dev/.env
    docker compose -f docker/dev/compose.yaml up -d --build
-   docker compose -f docker/dev/compose.yaml exec -T django python manage.py spectacular --settings config.settings.test --validate --fail-on-warn > docs/openapi.yaml
+   docker compose -f docker/dev/compose.yaml exec -T django python manage.py export_openapi_schema --settings config.settings.test --api config.api.api --indent 2 > docs/openapi.json
    docker compose -f docker/dev/compose.yaml exec django scripts/check.sh
    if [ ! -f docker/prod/.env ]; then
      cp docker/prod/.env.example docker/prod/.env
@@ -159,11 +159,11 @@ Después de editar, en este orden:
 
    ```bash
    [ -f .env ] || cp .env.example .env
-   uv run --env-file .env python manage.py spectacular --settings config.settings.test --file docs/openapi.yaml --validate --fail-on-warn
+   uv run --env-file .env python manage.py export_openapi_schema --settings config.settings.test --api config.api.api --indent 2 > docs/openapi.json
    uv run --env-file .env scripts/check.sh
    ```
 
-   `docs/openapi.yaml` se regenera con una redirección en el host cuando se usa `compose exec`, para que el archivo no quede con dueño root. `docs/openapi.yaml` no entra en el barrido del paso 2 porque es generado.
+   `docs/openapi.json` se regenera en el host (o con `compose exec` de forma que el archivo no quede con dueño root). `docs/openapi.json` no entra en el barrido del paso 2 porque es generado.
 
 ## Pendientes
 

@@ -1,11 +1,11 @@
 """
 The only framework-aware fixtures that framework-neutral tests use.
 
-A test outside tests/drf/ that needs a throttle rate or a trusted proxy count
+A test outside tests/ninja/ that needs a throttle rate or a trusted proxy count
 asks for these fixtures and never patches Ninja itself. The root conftest.py
 loads it with pytest_plugins.
 
-Re-pointed from DRF's SimpleRateThrottle to Ninja 1.8.0's
+Patches Ninja 1.8.0's
 ninja.throttling.SimpleRateThrottle and NINJA_NUM_PROXIES.
 """
 

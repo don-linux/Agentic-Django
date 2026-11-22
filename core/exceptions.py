@@ -1,7 +1,7 @@
 """
 Domain errors raised by services.
 
-No DRF import here: `core.api.exceptions.api_exception_handler` alone turns these
+No API-framework import here: `core.api.exceptions` alone turns these
 errors into HTTP responses, with the body from `core.errors`. See
 docs/api.md#domain-errors.
 """

@@ -381,16 +381,16 @@ LOCAL_DATABASE_HOSTS = frozenset({"postgres_db", "postgres", "db"})
 LOCAL_VALKEY_HOSTS = frozenset({"valkey"})
 
 
-# DRF's SimpleRateThrottle.parse_rate reads "<int>/<period>" and only the first
+# Ninja's SimpleRateThrottle.parse_rate reads "<int>/<period>" and only the first
 # letter of the period (s, m, h or d), so "60/min" and "60/minute" both work.
 _THROTTLE_RATE = re.compile(r"[0-9]+/[smhd][a-z]*")
 
 
 def assert_throttle_rates(rates: dict[str, str | None]) -> None:
     """
-    Raise ImproperlyConfigured if a DRF throttle rate cannot be parsed.
+    Raise ImproperlyConfigured if a throttle rate cannot be parsed.
 
-    DRF parses rates on each request, so a typo would be a 500 on every call.
+    A typo would otherwise be a 500 on the first request.
     Every environment runs this. See docs/api.md#throttling.
     """
     problems = [

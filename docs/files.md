@@ -60,7 +60,7 @@ Django writes uploaded files with mode `0o644` and directories with `0o755` (`FI
 ## Endpoint
 
 - The API accepts `application/json` only (`DEFAULT_PARSER_CLASSES`), so an upload is a dedicated view or action that opts in with `parser_classes = [MultiPartParser]`. Every other endpoint answers a multipart body with 415, so Django never spools it to disk.
-- The serializer returns the file's absolute URL, which DRF builds when `request` is in the serializer context.
+- The output schema returns the file's absolute URL, built from the request when the view has one.
 
 ## Images
 

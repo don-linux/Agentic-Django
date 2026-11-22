@@ -260,7 +260,7 @@ def test_a_throttled_request_is_served_during_an_outage(
 ) -> None:
     # user_client logs in with a saved session: start the outage after it.
     request.getfixturevalue("valkey_outage")
-    # An authenticated request: DRF runs its throttles after the permissions.
+    # An authenticated request: Ninja runs its throttles after the permissions.
     with caplog.at_level(logging.WARNING, logger="core.cache"):
         response = user_client.get(ME_URL)
 

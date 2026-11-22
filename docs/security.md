@@ -79,7 +79,7 @@ Valkey holds the sessions, which are credentials, and values that Django reads b
 
 ## Valkey outages
 
-Valkey holds the DRF throttles, the allauth rate limits and the django-axes counters. `core.cache_backend.ValkeyCache` decides what happens while it is unreachable:
+Valkey holds the API throttles, the allauth rate limits and the django-axes counters. `core.cache_backend.ValkeyCache` decides what happens while it is unreachable:
 
 - **Reads and writes fail open.** The cache behaves as if it were empty, so a throttle or a rate limit stops counting instead of answering 500 on every request. Until Valkey is back, brute force is slowed only by Argon2, where each guess costs a full hash. Treat an outage as urgent.
 - **It is loud.** Each process logs a WARNING on the `core.cache` logger, at most one every 30 seconds, and Sentry keeps it as a breadcrumb.
@@ -300,11 +300,11 @@ Option A keeps dedicated keys, so `SECRET_KEY` rotation never touches encrypted 
 Django's built-in CSP (`django.middleware.csp.ContentSecurityPolicyMiddleware` and `SECURE_CSP` in `config/settings/base.py`) protects the HTML pages that run with staff sessions: the admin and Swagger UI at `/api/v1/docs/`. JSON responses carry the header too, where it is harmless.
 
 - Scripts load only from the site (`script-src 'self'`), with no plugins (`object-src 'none'`), no `<base>` tag, forms posting only to the site, and no framing (`frame-ancestors 'none'`).
-- Swagger UI's files come from `STATIC_URL` (drf-spectacular-sidecar), not a CDN, so a compromised CDN cannot run code in a staff session. `SpectacularSwaggerSplitView` loads Swagger's init script from `?script=`, so the page has no inline script and needs no nonce.
+- Swagger UI at `/api/v1/docs/` is staff-only. Django Ninja 1.8.0 still renders inline style and script on that page, so `SECURE_CSP` allows `'unsafe-inline'` for it. A later change should switch the page to hashes or nonces once the upstream template allows it. Do not load Swagger assets from a CDN.
 - Styles allow `'unsafe-inline'`: Swagger's template has an inline `<style>`, and the admin uses `style` attributes.
 - A view that needs another policy uses `django.views.decorators.csp.csp_override({...})`, which replaces the whole policy for that view. To allow one inline script instead, add `CSP.NONCE` to `script-src`, the `django.template.context_processors.csp` context processor, and `nonce="{{ csp_nonce }}"` on the tag.
-- `core/tests/http/test_csp.py` fails if the admin gains an inline script, and `core/tests/drf/test_csp.py` if Swagger gains one or goes back to the CDN.
+- `core/tests/http/test_csp.py` fails if the admin gains an inline script. `core/tests/ninja/test_csp.py` pins the docs page to `frame-ancestors 'none'` and `object-src 'none'`, and records the current `'unsafe-inline'` allowance until hashes or nonces are in place.
 
 nginx sets its own, stricter policy for `/media/` and `/protected-media/` ([NEXT-STEPS.md](NEXT-STEPS.md)).
 
-Swagger UI uses the split view (no inline script) and serves its assets from `drf-spectacular-sidecar`, not a CDN, so it works under the strict policy.
+Swagger UI is staff-only and served by the application, not a CDN. The current policy still allows `'unsafe-inline'` for Ninja's docs page (see above); tightening that is a follow-up, not a blocker for this contract.

@@ -24,7 +24,7 @@ It also runs `uv lock`, because the lock file stores the project name. Secrets, 
 Without an agent, follow the same order by hand ([the skill](../.agents/skills/personalize-django-template/SKILL.md) lists every file):
 
 1. `project`: the Python slug in `pyproject.toml` (`name`), `bruno/opencollection.yml` (`info.name`) and the `DJANGO_CACHE_KEY_PREFIX` default in `config/settings/base.py`.
-2. `Project`: `SPECTACULAR_SETTINGS` (`TITLE`, `DESCRIPTION`) in `config/settings/base.py`, and the email variables of `.env.example` and `docker/prod/.env.example`. Leave the code defaults in `config/settings/base.py` and `config/settings/test.py` as they are.
+2. `Project`: `NINJA_TITLE` and `NINJA_DESCRIPTION` in `config/settings/base.py`, and the email variables of `.env.example` and `docker/prod/.env.example`. Leave the code defaults in `config/settings/base.py` and `config/settings/test.py` as they are.
 3. `project-name`, `project_db` and `example.com`: `PROJECT_NAME` in `docker/dev/.env.example` and `docker/prod/.env.example`, `.devcontainer/devcontainer.json`, the `/srv/project-name` paths, `POSTGRES_DB`, and the hosts and origins in `docker/prod/.env.example` and `docs/NEXT-STEPS.md`.
 4. Run `uv lock`, then regenerate `docs/openapi.json` ([without-docker.md](development/without-docker.md#checks) has the command).
 5. Run the placeholder sweep and the checks from the skill's closing section ([Cierre](../.agents/skills/personalize-django-template/SKILL.md#cierre)).
@@ -104,7 +104,7 @@ Query budgets (`django_assert_num_queries`) are measured with the test cache (Lo
 
 Tests are grouped by what they depend on, so the API framework can change without touching the contract tests:
 
-- `apps/<app>/tests/http/` and `core/tests/http/`: the HTTP contract. Each test calls a literal path (`/api/v1/...`, `/_allauth/...`, `/admin/...`, `/health/...`) with `django.test.Client` and asserts the status, the headers and the body. These modules never import `rest_framework` or `drf_spectacular`. The root fixtures `client`, `user_client` (logged in with `force_login()`) and `admin_client` authenticate; `throttle_rates` and `trusted_proxies` set the throttle rates and the trusted proxy count. Never change an assertion here to make a test pass after a framework change: only the client or the setup may change.
+- `apps/<app>/tests/http/` and `core/tests/http/`: the HTTP contract. Each test calls a literal path (`/api/v1/...`, `/_allauth/...`, `/admin/...`, `/health/...`) with `django.test.Client` and asserts the status, the headers and the body. These modules never import `ninja`. The root fixtures `client`, `user_client` (logged in with `force_login()`) and `admin_client` authenticate; `throttle_rates` and `trusted_proxies` set the throttle rates and the trusted proxy count. Never change an assertion here to make a test pass after a framework change: only the client or the setup may change.
 - `apps/<app>/tests/ninja/` and `core/tests/ninja/`: tests of Django Ninja itself, such as schemas, routers, exception handlers, paginators, throttle classes, parsers and the OpenAPI schema. `core/tests/ninja/adapters.py` implements `throttle_rates` and `trusted_proxies`.
 - `apps/<app>/tests/services/`, `apps/<app>/tests/selectors/` and the rest of `apps/<app>/tests/` and `core/tests/`: framework-neutral tests of models, services, selectors, settings, the cache, tasks and tooling.
 
@@ -142,7 +142,7 @@ with django_assert_num_queries(0):
 
 ### Production settings loader
 
-Tests that need `config.settings.production` import it in a subprocess (`core/tests/production_settings.py`): `production.py` mutates dicts it shares with `base.py` (`REST_FRAMEWORK`, `SPECTACULAR_SETTINGS`), so importing it in the test process would change the settings the run is using. The subprocess starts without any `DJANGO_*`, `POSTGRES_*`, `ALLAUTH_*`, `SENTRY_*`, `VALKEY_*`, `CELERY_*` or `CORS_*` variable, `FRONTEND_URL` or `DATABASE_URL`, so nothing inherited leaks in.
+Tests that need `config.settings.production` import it in a subprocess (`core/tests/production_settings.py`): `production.py` mutates dicts it shares with `base.py` (for example `DATABASES` and `CACHES`), so importing it in the test process would change the settings the run is using. The subprocess starts without any `DJANGO_*`, `POSTGRES_*`, `ALLAUTH_*`, `SENTRY_*`, `VALKEY_*`, `CELERY_*` or `CORS_*` variable, `FRONTEND_URL` or `DATABASE_URL`, so nothing inherited leaks in.
 
 ## Packaging
 

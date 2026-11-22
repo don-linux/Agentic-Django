@@ -22,9 +22,9 @@ flowchart LR
 - `services.py`: every write. Keyword-only arguments, `transaction.atomic`, `full_clean()` before `save()`. Side effects (email, Celery tasks, cache invalidation, webhooks, files) run in `transaction.on_commit(...)`, never directly inside `atomic` (`core.tasks.enqueue_on_commit` and `core.cache.invalidate` already do); read-modify-write on the same row takes `select_for_update()` inside the transaction. A business-rule rejection raises `core.exceptions.ApplicationError` (or `ConflictError`) with a code from [docs/api.md](api.md). Example: `apps.users.services.user_update`.
 - `selectors.py`: every read that is more than a plain lookup. A hot or expensive read is cached here, never in a view ([Caching](#caching)). Example: `apps.users.selectors.user_get`.
 - `tasks.py`, only in an app that needs one: Celery tasks. A task is thin: it loads rows by id, calls a service and handles retries ([Background tasks](#background-tasks)).
-- `api/`: DRF serializers and views. Views validate input, call one service or selector and serialize the result. `core.api` returns every error as `{"code", "detail"}` ([docs/api.md](api.md)): it converts Django `ValidationError` to `400`, `ObjectDoesNotExist` to `404`, `ProtectedError`/`RestrictedError` and `ApplicationError` to their status, returns `401` on unauthenticated calls, and paginates list endpoints (`page_size = 20`). Views are registered in `config/api_router.py` under `/api/v1/`. APIs never expose integer pks; use `public_id` (UUIDv7, `core.models.PublicIdModel`). Every viewset scopes `get_queryset()` to the requesting user or tenant, and has a test that another user's object returns 404.
+- `api/`: Django Ninja routers, operations and Pydantic schemas. Views validate input, call one service or selector and return a schema. `core.api` returns every error as `{"code", "detail"}` ([docs/api.md](api.md)): it converts Django `ValidationError` to `400`, `ObjectDoesNotExist` to `404`, `ProtectedError`/`RestrictedError` and `ApplicationError` to their status, returns `401` on unauthenticated calls, and paginates list endpoints (`page_size = 20`). Routers are mounted in `config/api.py` and served under `/api/v1/`. APIs never expose integer pks; use `public_id` (UUIDv7, `core.models.PublicIdModel`). Every list or detail operation scopes its lookup to the requesting user or tenant, and has a test that another user's object returns 404.
 
-Tests mirror that split under `tests/`: `services/` and `selectors/` for the framework-neutral layers, `http/` for the HTTP contract and `drf/` for tests of DRF itself ([development.md#test-layout](development.md#test-layout)).
+Tests mirror that split under `tests/`: `services/` and `selectors/` for the framework-neutral layers, `http/` for the HTTP contract and `ninja/` for tests of Django Ninja itself ([development.md#test-layout](development.md#test-layout)).
 
 ### Services and selectors
 
@@ -33,13 +33,13 @@ The rules that keep business logic out of the API layer, so another API framewor
 - **Names.** `<entity>_<verb>`, entity first: services `user_create`, `user_update`, `user_deactivate`; selectors `user_get`, `user_list`. One module per layer (`services.py`, `selectors.py`); a large app may turn either into a package of the same name.
 - **Signatures.** Keyword-only arguments (`def user_update(*, user: User, name: str) -> User`), fully typed ([Strict typing](#strict-typing)). Arguments are plain values and model instances: never a `request`, a serializer, its `validated_data`, or a response. The view reads `request.user` and the validated fields and passes them by name.
 - **Writes.** `@transaction.atomic`, `full_clean()` before `save(update_fields=[...])`, side effects on commit (`core.cache.invalidate`, `core.tasks.enqueue_on_commit`), `select_for_update()` for read-modify-write. A service returns the instance it wrote.
-- **Errors.** `full_clean()` raises Django's `ValidationError`; a broken business rule raises `core.exceptions.ApplicationError` or `ConflictError` with a code from [api.md#error-codes](api.md#error-codes). Never an HTTP status by hand or a DRF exception: the API layer maps them ([api.md#domain-errors](api.md#domain-errors)).
+- **Errors.** `full_clean()` raises Django's `ValidationError`; a broken business rule raises `core.exceptions.ApplicationError` or `ConflictError` with a code from [api.md#error-codes](api.md#error-codes). Never an HTTP status by hand or a Ninja HTTP exception for a domain rule: the API layer maps them ([api.md#domain-errors](api.md#domain-errors)).
 - **Reads.** A selector returns a `QuerySet` (lists, so the view can paginate) or one instance, and owns `select_related()`, `prefetch_related()`, ordering and caching.
 - **Callers.** Views, the admin, management commands and Celery tasks write through services. A rule that more than one caller needs lives in the service, not in a view, an admin method or a command.
 - **Accounts.** django-allauth headless owns signup, login, email verification, password reset and change, sessions and MFA. Do not write services for them; customize through `apps/users/adapters.py`.
 - **Tests.** `apps/<app>/tests/services/test_<function>.py` and `tests/selectors/`, framework-neutral: they call the function, never an HTTP client ([development.md#test-layout](development.md#test-layout)).
 
-`core/tests/test_layer_conventions.py` fails on a public service or selector that takes a positional argument or a transport object, or that imports `django.http`, DRF or another API framework.
+`core/tests/test_layer_conventions.py` fails on a public service or selector that takes a positional argument or a transport object, or that imports `django.http`, Django Ninja or another API framework.
 
 ### Strict typing
 
@@ -49,7 +49,7 @@ The rules that keep business logic out of the API layer, so another API framewor
 
 `lint-imports` (import-linter, in `scripts/check.sh lint`) enforces the layers above with the contracts in `[tool.importlinter]` of `pyproject.toml`:
 
-- Only the API layer imports DRF and drf-spectacular: `apps/<app>/api/`, `core/api/` and `config/api_router.py`, plus the tests under `tests/drf/`. Everything else, including `core.net` and the error handlers, works without them, so another API framework replaces the API layer and nothing else.
+- Only the API layer imports Django Ninja: `apps/<app>/api/` and `core/api/`, plus the tests under `tests/ninja/`. Routers are mounted in `config/api.py`. Everything else, including `core.net` and the error handlers, works without Ninja, so another API framework replaces the API layer and nothing else.
 - Domain code (`models`, `managers`, `services`, `selectors`, `signals`, `tasks`, and `core.models`, `core.exceptions`, `core.errors`, `core.cache`, `core.tasks`) never imports the API layer or `config`.
 - `core` never imports an app, so shared code stays reusable when apps change. A command that writes app data lives in that app (`seed_dev` is in `apps/users/management/commands/` and uses `user_update` and `user_primary_email_sync`). Only `core/tests/` and the `config` it loads are exempt.
 - Inside an app, imports go down `api` → `admin` | `management` | `views` | `adapters` → `services` : `tasks` → `signals` → `selectors` → `models` → `managers`. Modules on one line with `|` never import each other; `services` and `tasks` may (docs/tasks.md). Every layer is optional, and modules outside the list (`apps.py`, `forms.py`, `tests/`) are not checked.
@@ -74,7 +74,7 @@ Model details that the code relies on:
 
 ### Indexes
 
-- Default list ordering is the primary key (`"id"`/`"-id"`, or `"-public_id"`). Any other default ordering, every `ordering_fields` entry, and every filter used on a list must be backed by an index. `core/tests/drf/test_list_indexes.py` enforces it for ordering.
+- Default list ordering is the primary key (`"id"`/`"-id"`, or `"-public_id"`). Any other default ordering, every `ordering_fields` entry, and every filter used on a list must be backed by an index. `core/tests/ninja/test_list_indexes.py` enforces it for ordering.
 - Composite indexes follow the query: equality filters first, then the ordering columns in the same direction, then `id` as tie-breaker, e.g. `models.Index(fields=["owner", "-created_at", "-id"], name="inventory_item_owner_crt_idx")`. Name indexes `<app>_<model>_<cols>_idx`, abbreviating columns to stay within Django's 30-character limit.
 - `BaseModel` does not index `created_at`; add an index per model only when a list orders or filters by it.
 - On large tables, add indexes with `AddIndexConcurrently` in a migration with `atomic = False`, so the table is not locked while the index builds.
@@ -86,10 +86,10 @@ Valkey is the cache in every environment except tests, which use LocMem. The bac
 
 | Database | Use |
 | --- | --- |
-| 0 | The cache: DRF throttles, allauth rate limits, django-axes counters, the cached copy of each session, and cached reads |
+| 0 | The cache: API throttles, allauth rate limits, django-axes counters, the cached copy of each session, and cached reads |
 | 1 | The Celery broker: the task queue |
 | 2 | Reserved for a Celery result backend, which the template does not use ([NEXT-STEPS.md](NEXT-STEPS.md#per-project-options)) |
-| 14, 15 | The integration tests (`core/tests/test_valkey_integration.py` and `core/tests/drf/test_valkey_integration.py`) |
+| 14, 15 | The integration tests (`core/tests/test_valkey_integration.py` and `core/tests/ninja/test_valkey_integration.py`) |
 
 ```mermaid
 sequenceDiagram
@@ -180,7 +180,7 @@ sequenceDiagram
 
 - Email is sent synchronously inside the request (on purpose: the code never sits in the broker; see [email.md](email.md)). If SMTP fails, `apps.users.adapters.AccountAdapter.send_mail` logs the error and the request still returns the normal pending flow, because the user or reset request already exists; the client can ask for a new code at `/_allauth/app/v1/auth/email/verify/resend`.
 - Login is by email; there is no username. Verification and password reset use codes, while `FRONTEND_URL` populates `HEADLESS_FRONTEND_URLS` for existing-account and unknown-account notification emails.
-- DRF authenticates `X-Session-Token` first (`core.api.authentication.SessionTokenAuthentication`, returning `401` when unauthenticated) and falls back to the Django session for `/admin/` and `/api/v1/docs/`. Sessions are `cached_db`: the session behind a token is read from Valkey, not from PostgreSQL, on every authenticated request.
+- The API authenticates `X-Session-Token` first (`core.api.auth.XSessionTokenAuth`, returning `401` when unauthenticated) and falls back to the Django session (`core.api.auth.cookieAuth`) for `/admin/` and `/api/v1/docs/`. Sessions are `cached_db`: the session behind a token is read from Valkey, not from PostgreSQL, on every authenticated request.
 - `CORS_URLS_REGEX` (`^/(api|_allauth)/.*$`) covers `/api/v1/` and `/_allauth/`. Allowed origins come from `CORS_ALLOWED_ORIGINS`.
 - allauth rate limits signup, login and code attempts through the cache: Valkey, which every gunicorn worker shares.
 

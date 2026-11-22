@@ -9,7 +9,7 @@ How the GitHub Actions workflows check the template. Local commands are in [deve
 - `secrets`: scans the whole Git history with gitleaks ([Secrets](#secrets)).
 - `lint`: pre-commit, then `scripts/check.sh lint`.
 - `links`: internal Markdown links and heading anchors, offline ([Docs lint](#docs-lint)).
-- `api-contract`: pull requests only. oasdiff compares `docs/openapi.json` with the base branch's copy and fails on a breaking change ([api.md#breaking-changes](api.md#breaking-changes)).
+- `api-contract`: pull requests only. oasdiff compares `docs/openapi.json` with the base branch's copy and fails on a breaking change ([api.md#breaking-changes](api.md#breaking-changes)). The first pull request still finds `docs/openapi.yaml` on `main` and applies a temporary `--err-ignore` for four classified document-version and component-rename findings; the next pull request must delete `.github/oasdiff-yaml-baseline-err-ignore.txt` and the ignore branch in `ci.yml`.
 - `test`: `scripts/check.sh test` against PostgreSQL (the tests marked `valkey` also use a Valkey service), then `scripts/check.sh reversible`.
 - `docker`: validates the production and development Compose files with the example values, builds the production image, scans it with Trivy, runs `manage.py check --deploy`, and smoke-tests it against a password-protected Valkey.
 - `bruno`: the Bruno smoke requests against `runserver` ([Bruno smoke](#bruno-smoke)).

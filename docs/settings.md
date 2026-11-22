@@ -33,7 +33,7 @@ A variable already set in the process environment always wins over the file, so 
 
 `config/settings/test.py`:
 
-- Caches are in memory (`LocMemCache`, key prefix `test`), and `conftest.py` empties them before each test. Tests never reach a real Valkey, except the suite marked `valkey` (`core/tests/test_valkey_integration.py` and `core/tests/drf/test_valkey_integration.py`), which uses the Valkey at `VALKEY_URL` on its own databases and key prefix.
+- Caches are in memory (`LocMemCache`, key prefix `test`), and `conftest.py` empties them before each test. Tests never reach a real Valkey, except the suite marked `valkey` (`core/tests/test_valkey_integration.py` and `core/tests/ninja/test_valkey_integration.py`), which uses the Valkey at `VALKEY_URL` on its own databases and key prefix.
 - Tasks run inline (`CELERY_TASK_ALWAYS_EAGER`, errors propagate) and the broker is `memory://`. Eager mode exists only here; production refuses it.
 - `axes.W001` is silenced: `LocMemCache` is per process, which is fine for one test process. Every other environment uses Valkey, where the check stays on.
 - Passwords hash with MD5 for speed, mail uses the in-memory backend, and `WHITENOISE_AUTOREFRESH` is on.

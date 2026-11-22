@@ -5,7 +5,7 @@ A Django Ninja template by don-linux, based on the [HackSoft Django Styleguide](
 ## What it ships
 
 - **Python 3.14** and **Django 6.1**, installed and locked with **uv**
-- **Django REST Framework**, with an OpenAPI schema and Swagger UI from **drf-spectacular** (staff session at `/api/v1/docs/`)
+- **Django Ninja**, with an OpenAPI 3.1 schema (`docs/openapi.json`) and Swagger UI (staff session at `/api/v1/docs/`)
 - **django-allauth** in headless mode: signup, login, email verification by code, and password reset over JSON
 - **PostgreSQL 18**
 - **Valkey**, on by default: cache, session cache (`cached_db`), and the Celery broker

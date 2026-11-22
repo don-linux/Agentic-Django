@@ -128,14 +128,19 @@ jobs:
         run: |
           if [ -f base/docs/openapi.json ]; then
             BASE_SCHEMA=base/docs/openapi.json
+            IGNORE_ARGS=()
           else
+            # Temporary: the first migration PR still diffs OpenAPI 3.1 JSON
+            # against the 3.0.3 YAML baseline. Remove --err-ignore in the next
+            # pull request (docs/api.md#breaking-changes).
             BASE_SCHEMA=base/docs/openapi.yaml
+            IGNORE_ARGS=(--err-ignore .github/oasdiff-yaml-baseline-err-ignore.txt)
           fi
           # Ninja 1.8.0 wraps an optional body $ref in a one-item allOf
           # (NinjaGenerateJsonSchema.default_schema); compare the merged schema.
           "$RUNNER_TEMP/oasdiff" breaking "$BASE_SCHEMA" docs/openapi.json \
             --fail-on ERR --severity-levels .github/oasdiff-levels.txt \
-            --flatten-allof --format githubactions
+            --flatten-allof --format githubactions "${IGNORE_ARGS[@]}"
 
   test:
     runs-on: ubuntu-latest

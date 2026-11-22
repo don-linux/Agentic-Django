@@ -1,6 +1,6 @@
 # 0005. Business logic lives in services and selectors; DRF stays in api/
 
-- Status: Accepted
+- Status: Superseded by 0013
 - Date: 2026-11-18
 
 ## Context

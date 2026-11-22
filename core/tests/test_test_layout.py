@@ -163,7 +163,7 @@ def test_every_test_carries_the_marker_of_its_directory(
         ("core/tests/ninja/test_schema.py", "ninja"),
         ("core/tests/ninja/adapters.py", "ninja"),
         ("core/tests/test_net.py", None),
-        # An app or a module that is only named http or drf is no layer.
+        # An app or a module that is only named http or ninja is no layer.
         ("apps/http/tests/test_views.py", None),
         ("core/tests/ninja_helpers.py", None),
     ],
@@ -192,7 +192,7 @@ def test_the_framework_check_flags_every_way_of_importing_it(source: str) -> Non
     "source",
     [
         "from django.test import Client\n",
-        # Project code may use DRF; only what the test module imports counts.
+        # Project code may use Ninja; only what the test module imports counts.
         "from apps.users.api.views import users_list\n",
         "from .ninja import helper\n",
         'NINJA_DEFAULT_THROTTLE_RATES = {"anon": "60/min"}\n',

@@ -1,0 +1,4 @@
+GET /api/v1/users/ response property `next` list-of-types was widened by adding types `null` to media type `application/json` of response `200`
+GET /api/v1/users/ response property `previous` list-of-types was widened by adding types `null` to media type `application/json` of response `200`
+PATCH /api/v1/users/me/ added `#/components/schemas/ValidationErrorSchema, #/components/schemas/ErrorSchema` to the response body `oneOf` list for the response status `400`
+PATCH /api/v1/users/{id}/ added `#/components/schemas/ValidationErrorSchema, #/components/schemas/ErrorSchema` to the response body `oneOf` list for the response status `400`

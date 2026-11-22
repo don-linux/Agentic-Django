@@ -33,7 +33,7 @@ urlpatterns += [
     path("api/v1/docs/", staff_docs_required(docs_view), name="api-docs"),
 ]
 
-# Same JSON body as the API. See docs/api.md#errors-outside-drf-views.
+# Same JSON body as the API. See docs/api.md#errors-outside-api-views.
 handler400 = "core.errors.bad_request"
 handler403 = "core.errors.permission_denied"
 handler404 = "core.errors.page_not_found"

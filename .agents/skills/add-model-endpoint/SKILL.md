@@ -7,7 +7,7 @@ description: Add a domain model and its /api/v1 endpoint using this template's l
 
 Follow this checklist in order. Mandatory rules stay in [AGENTS.md](../../../AGENTS.md); this skill is the recipe. The "why" and the numbers (TTLs, page sizes, rates) live in the linked docs — do not copy them back into AGENTS.md or into this file.
 
-Worked example in this template (read it; do not clone User blindly): `apps/users/` — `models.py`, `services.py`, `selectors.py`, `signals.py`, `api/serializers.py`, `api/views.py`, `tests/`, and `config/api_router.py`.
+Worked example in this template (read it; do not clone User blindly): `apps/users/` — `models.py`, `services.py`, `selectors.py`, `signals.py`, `api/schemas.py`, `api/views.py`, `tests/`, and the router mount in `config/urls.py`.
 
 `User` is a special case: it subclasses `AbstractUser` and declares its own `public_id`. **New domain models inherit `core.models.BaseModel`.** They do not copy User's inheritance.
 
@@ -22,7 +22,7 @@ If the work is only a background job, a file upload, or an opt-in recipe (append
 ## Before writing code
 
 1. Translate any Spanish (or other non-English) domain name yourself into an English identifier, consistent with existing models. Example: "documentos casa" → `HouseDocument`, route `/api/v1/house-documents/`, table/app style `house_documents` / a short English plural app such as `documents` — not `DocumentosCasa`. There is no glossary; do not ask the user to pre-register the term, and do not create `docs/glossary.md`. Rule: [AGENTS.md](../../../AGENTS.md) Language and [.agents/rules/only-english-code.md](../../rules/only-english-code.md).
-2. Pick the app (`apps/<app>/`) or create one. Layout: `models.py`, `services.py` (writes), `selectors.py` (reads), `api/serializers.py`, `api/views.py`, `tests/` (`tests/services/`, `tests/selectors/`, `tests/http/` for the HTTP contract, `tests/drf/` only for tests that need DRF itself, plus `test_models.py` when the model has real behaviour), and `tests/factories.py` (one factory-boy factory per model; no JSON fixtures). `AppConfig.name` must be `"apps.<app>"` (never bare `"<app>"`), and `"apps.<app>"` must be listed in `LOCAL_APPS` (`config/settings/base.py`). Import signals from `AppConfig.ready()` when the app has receivers. Shared helpers stay in `core/`; do not put domain code there.
+2. Pick the app (`apps/<app>/`) or create one. Layout: `models.py`, `services.py` (writes), `selectors.py` (reads), `api/schemas.py`, `api/views.py`, `tests/` (`tests/services/`, `tests/selectors/`, `tests/http/` for the HTTP contract, `tests/ninja/` only for tests that need Django Ninja itself, plus `test_models.py` when the model has real behaviour), and `tests/factories.py` (one factory-boy factory per model; no JSON fixtures). `AppConfig.name` must be `"apps.<app>"` (never bare `"<app>"`), and `"apps.<app>"` must be listed in `LOCAL_APPS` (`config/settings/base.py`). Import signals from `AppConfig.ready()` when the app has receivers. Shared helpers stay in `core/`; do not put domain code there.
 3. Read [docs/ARCHITECTURE.md](../../../docs/ARCHITECTURE.md#layers), [performance](../../../docs/ARCHITECTURE.md#performance), [indexes](../../../docs/ARCHITECTURE.md#indexes), [caching](../../../docs/ARCHITECTURE.md#caching), and [docs/api.md](../../../docs/api.md) (`#paths`, `#representation`, `#throttling`, `#error-codes`, `#pagination`).
 4. Show a short plan (English names, model fields, routes, who may see a row, whether the read is cached, whether a write starts a task) and wait for confirmation if the user asked for a plan first. Do not break the Domain invariants listed in `AGENTS.md`.
 
@@ -60,7 +60,7 @@ In `apps/<app>/services.py` (naming and signature rules: [ARCHITECTURE.md#servic
 - Business logic lives here. Views stay thin: validate, call one service or selector, serialize.
 - Side effects (cache invalidation, Celery, email, webhooks, files) run in `transaction.on_commit(...)`. Use `core.cache.invalidate("<app>.<resource>")` and `core.tasks.enqueue_on_commit(task, **kwargs)` — they already defer to commit. Never call `task.delay()`, `apply_async()`, or `delay_on_commit()`.
 - Read-modify-write on the same row uses `select_for_update()` inside the service transaction (counters, balances, single-use codes).
-- Business rejections raise `core.exceptions.ApplicationError` (or `ConflictError` for 409) with a stable `snake_case` code. Register a new code in [api.md#error-codes](../../../docs/api.md#error-codes) when it is first used. Never subclass DRF's `APIException` for domain errors. Do not catch `ValidationError` in the view; `api_exception_handler` already maps it.
+- Business rejections raise `core.exceptions.ApplicationError` (or `ConflictError` for 409) with a stable `snake_case` code. Register a new code in [api.md#error-codes](../../../docs/api.md#error-codes) when it is first used. Never raise a Ninja or Django HTTP exception for a domain rule. Do not catch `ValidationError` in the view; the API exception handlers already map it.
 - `objects.filter(...).update(...)` already bumps `updated_at`. `bulk_update()` does not: include `updated_at` in its fields. After `queryset.update()`, `bulk_create()`, `bulk_update()`, or `RunPython`, call `invalidate()` yourself (no signals fire). If the selector is cached, also add `post_save` / `post_delete` receivers in `apps/<app>/signals.py` for admin and other non-service writes.
 
 ## 4. Selectors (reads)
@@ -68,7 +68,7 @@ In `apps/<app>/services.py` (naming and signature rules: [ARCHITECTURE.md#servic
 In `apps/<app>/selectors.py`:
 
 - Every read that is more than a plain lookup lives here. The selector owns the query shape: `select_related()` / `prefetch_related()` (or `Prefetch(...)`) for everything the serializer reads. Views call the selector from `get_queryset()`. Counts and sums come from `annotate()` in the selector.
-- Order list querysets deterministically, on an indexed column (`core/tests/drf/test_list_indexes.py` enforces this). Why: [ARCHITECTURE.md#performance](../../../docs/ARCHITECTURE.md#performance), [#indexes](../../../docs/ARCHITECTURE.md#indexes).
+- Order list querysets deterministically, on an indexed column (`core/tests/ninja/test_list_indexes.py` enforces this). Why: [ARCHITECTURE.md#performance](../../../docs/ARCHITECTURE.md#performance), [#indexes](../../../docs/ARCHITECTURE.md#indexes).
 - Look objects up by `public_id`, never by integer pk.
 - Scope the queryset to the requesting user or tenant.
 - Do not query `request.user` again; authentication already loaded it.
@@ -104,7 +104,7 @@ In `apps/<app>/api/views.py`:
 - `get_queryset()` calls the selector and is scoped to the requesting user or tenant (unauthenticated → empty queryset). Never trust the class-level `queryset` for authorization (the router may still need it for the basename).
 - After an `is_authenticated` (and `pk is None`) guard, pass `request.user` into a service or selector typed as `User` — that guard narrows the type. Do not add a `cast("User", ...)` after the same guard (`redundant-cast`). In `perform_create` / other writes, repeat the guard; without it mypy reports `User | AnonymousUser`. Worked example: `apps/users/api/views.py`.
 - Set `http_method_names` explicitly when PUT should stay closed (see `UserViewSet`).
-- Register the viewset on the existing `SimpleRouter` in `config/api_router.py`. Every DRF route lives under `/api/v1/` (`config/urls.py` already includes that prefix). Do not add a second router, an API root, or a route under another prefix.
+- Mount the app router in `config/api.py`, next to the users one; `config/urls.py` serves that API under the existing `/api/v1/` prefix. Do not add a second API instance, an API root, or a route under another prefix.
 - Static path segments are kebab-case and end with `/`. Extra actions set `@action(..., url_path="change-password")`, never the default `change_password`. At most one level of nesting. A path without the trailing slash must 404 (not redirect). Enforced by `core/tests/http/test_rest_conventions.py`. Why: [api.md#paths](../../../docs/api.md#paths).
 - Compatible additions stay on `/api/v1/`. Open `/api/v2/` only for an incompatible change. Deprecate before removing ([api.md#deprecating-endpoints-and-fields](../../../docs/api.md#deprecating-endpoints-and-fields)).
 - Create endpoints that clients may retry (mobile, lost response) follow [api.md#idempotent-retries](../../../docs/api.md#idempotent-retries). A first internal POST does not have to implement `Idempotency-Key`; say so in the plan if you skip it.
@@ -114,58 +114,45 @@ In `apps/<app>/api/views.py`:
 
 When the new model has a `FileField` or `ImageField`, also follow [docs/files.md](../../../docs/files.md) — do not stop at the JSON checklist.
 
-- User-sensitive files use `storage=private_storage`, never serialize `.url`, and are downloaded through a kebab-case action (`@action(detail=True, url_path="download")`) that checks the owner-scoped queryset and returns `protected_file_response(...)`.
-- The create/upload action is the only one that opts in to `parser_classes` / `get_parsers()` with `MultiPartParser`. Every other action must still answer a multipart body with 415.
-- DRF's `ViewSetMixin.initialize_request` sets `self.action` *after* `get_parsers()` runs. If you switch parsers on `self.action == "create"`, set `self.action` first and then call `APIView.initialize_request`:
-
-```python
-def initialize_request(self, request, *args, **kwargs):
-    method = request.method.lower() if request.method else "get"
-    if method == "options":
-        self.action = "metadata"
-    else:
-        action = self.action_map.get(method)
-        if action is not None:
-            self.action = action
-    return APIView.initialize_request(self, request, *args, **kwargs)
-```
+- User-sensitive files use `storage=private_storage`, never serialize `.url`, and are downloaded through a kebab-case operation (`/download/`) that checks the owner-scoped queryset and returns `protected_file_response(...)`.
+- The create/upload operation is the only one that accepts `multipart/form-data` (Ninja `File` / `Form` parameters). Every other operation must still answer a multipart body with 415.
 
 - Services that replace or delete a file call `core.files.delete_file_on_commit` before saving or deleting the row.
 - If the story does not name allowed extensions or a size cap, pick a tight allow-list (never unsanitized HTML/SVG) and a cap at or below the proxy `client_max_body_size`, and state the choice. Do not invent a `TextChoices` enum for an unspecified "tipo".
-- After regenerating `docs/openapi.yaml`, `apps/users/tests/drf/test_openapi.py` must allow `multipart/form-data` only on those upload operations (not `== {"application/json"}` for the whole schema).
+- After regenerating `docs/openapi.json`, `apps/users/tests/ninja/test_openapi.py` must allow `multipart/form-data` only on those upload operations (not `== {"application/json"}` for the whole schema).
 
 ## 7. Throttle scope
 
 Global anon/user throttles are already on. For a sensitive or expensive action:
 
 - Set `throttle_scope = "<app>.<action>"` on the view (for example `"orders.checkout"`).
-- Register the rate in `REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"]` in `config/settings/base.py`. An unregistered scope raises `ImproperlyConfigured` on the first request (`core/tests/drf/test_throttling.py`).
+- Register the rate in `NINJA_DEFAULT_THROTTLE_RATES` in `config/settings/base.py`. An unregistered scope raises `ImproperlyConfigured` on the first request (`core/tests/ninja/test_throttling.py`).
 - Do not set `throttle_classes` unless the list still includes the global classes; assigning it replaces the defaults.
 - Why: [api.md#throttling](../../../docs/api.md#throttling).
 
 ## 8. OpenAPI
 
-Annotate views and serializers so drf-spectacular can describe the new paths, error bodies and fields. Follow [api.md#error-responses-in-openapi](../../../docs/api.md#error-responses-in-openapi). Swagger lives at `/api/v1/docs/` (staff). Default 401/403/404/400/429 responses come from `core.api.schema.AutoSchema`. Document any extra error responses as existing endpoints do (`apps/users/tests/drf/test_openapi.py`).
+Declare request and response schemas so Ninja can describe the new paths, error bodies and fields. Follow [api.md#error-responses-in-openapi](../../../docs/api.md#error-responses-in-openapi). Swagger lives at `/api/v1/docs/` (staff). Document any extra error responses as existing endpoints do (`apps/users/tests/ninja/test_openapi.py`).
 
-After any API change, regenerate the committed contract with test settings (never hand-edit `docs/openapi.yaml`).
+After any API change, regenerate the committed contract with test settings (never hand-edit `docs/openapi.json`).
 
-From the host, using the dev compose service (the redirect writes `docs/openapi.yaml` as your host user, whatever `HOST_UID` the container runs with):
+From the host, using the dev compose service (the command writes `docs/openapi.json` as your host user, whatever `HOST_UID` the container runs with):
 
 ```bash
-docker compose -f docker/dev/compose.yaml exec -T django python manage.py spectacular --settings config.settings.test --validate --fail-on-warn > docs/openapi.yaml
+docker compose -f docker/dev/compose.yaml exec -T django python manage.py export_openapi_schema --settings config.settings.test --api config.api.api --indent 2 > docs/openapi.json
 ```
 
 If you are already inside the container, or on a host with the toolchain (`uv run`, as CI does):
 
 ```bash
-python manage.py spectacular --settings config.settings.test --file docs/openapi.yaml --validate --fail-on-warn
+python manage.py export_openapi_schema --settings config.settings.test --api config.api.api --indent 2 > docs/openapi.json
 ```
 
-`scripts/check.sh lint` and `core/tests/drf/test_openapi_contract.py` fail when the file drifts. A diff that removes or renames a path, field, or enum value is a breaking change and needs `/api/v2/`.
+`scripts/check.sh lint` and `core/tests/ninja/test_openapi_contract.py` fail when the file drifts. A diff that removes or renames a path, field, or enum value is a breaking change and needs `/api/v2/`.
 
 ## 9. Tests (including negative paths)
 
-Put them under `apps/<app>/tests/` ([test layout](../../../docs/development.md#test-layout)). API tests go in `apps/<app>/tests/http/`: they hit literal `/api/v1/...` paths with `django.test.Client` (`client`, `user_client`), assert the status, the error `code`, and the body shape, and never import `rest_framework` or `drf_spectacular`. Only a test of a serializer, a viewset hook or the schema goes in `apps/<app>/tests/drf/`. Use the root `conftest.py` fixtures and the model factory. Imports used only as annotations go under `TYPE_CHECKING` (ruff `TC001` / `TC002`).
+Put them under `apps/<app>/tests/` ([test layout](../../../docs/development.md#test-layout)). API tests go in `apps/<app>/tests/http/`: they hit literal `/api/v1/...` paths with `django.test.Client` (`client`, `user_client`), assert the status, the error `code`, and the body shape, and never import `ninja`. Only a test of a schema, a router hook or the OpenAPI document goes in `apps/<app>/tests/ninja/`. Use the root `conftest.py` fixtures and the model factory. Imports used only as annotations go under `TYPE_CHECKING` (ruff `TC001` / `TC002`).
 
 Every new endpoint needs:
 
@@ -174,13 +161,13 @@ Every new endpoint needs:
 - `403` only when a permission other than "must be logged in" applies. Another user's object is `404`, not `403`, when the queryset is scoped.
 - `404` for another user's object, for an unknown `public_id`, and for an integer pk if the detail route uses `public_id`.
 - `400` validation: unknown field, `full_clean()` failure surfaced as JSON, and any domain `ApplicationError`.
-- An exact query budget (`django_assert_num_queries`). Measure it once with a **session-authenticated** client (LocMem cache + `cached_db` sessions, as in `apps/users/tests/http/test_query_budget.py`), pin the number, and comment what each query is — `full_clean()` often adds existence checks, and a `CheckConstraint` can add a savepoint plus a check query. If the assertion does not print the SQL, dump it with `CaptureQueriesContext`. Do not use DRF's `force_authenticate` for the budget.
+- An exact query budget (`django_assert_num_queries`). Measure it once with a **session-authenticated** client (LocMem cache + `cached_db` sessions, as in `apps/users/tests/http/test_query_budget.py`), pin the number, and comment what each query is — `full_clean()` often adds existence checks, and a `CheckConstraint` can add a savepoint plus a check query. If the assertion does not print the SQL, dump it with `CaptureQueriesContext`. Do not use a framework test client helper that bypasses the real authentication path for the budget; use a session-authenticated `user_client`.
 - Every list endpoint also gets `assert_constant_queries` that grows related data.
 - A service test for the `full_clean()` failure.
 
 If the selector is cached, also test: a second read makes zero queries (`cache_writes` + `django_assert_num_queries(0)`), a write through the service returns fresh data, and a rolled-back write leaves the cache untouched. Behaviour that only a real Valkey can show belongs in `core/tests/test_valkey_integration.py` (marker `valkey`).
 
-If the view has `throttle_scope`, test that the N+1th call returns `429` `throttled`. Set the rate with the `throttle_rates` fixture (`core/tests/drf/adapters.py`); a test under `tests/http/` never patches DRF itself.
+If the operation has a scoped throttle, test that the N+1th call returns `429` `throttled`. Set the rate with the `throttle_rates` fixture (`core/tests/ninja/adapters.py`); a test under `tests/http/` never patches Ninja itself.
 
 Fix N+1 queries in the selector (`select_related` / `prefetch_related`); do not widen `ZEAL_ALLOWLIST` except for third-party models (`config/settings/test.py`). Paginated querysets must be ordered (`UnorderedObjectListWarning` is an error). Do not add `pytest` markers without registering them in `pyproject.toml`. Do not change coverage `fail_under`: it stays at 98.
 
@@ -228,14 +215,14 @@ smoke job does not ship.
 From the host (dev container or the running compose service):
 
 ```bash
-docker compose -f docker/dev/compose.yaml exec -T django python manage.py spectacular --settings config.settings.test --validate --fail-on-warn > docs/openapi.yaml
+docker compose -f docker/dev/compose.yaml exec -T django python manage.py export_openapi_schema --settings config.settings.test --api config.api.api --indent 2 > docs/openapi.json
 docker compose -f docker/dev/compose.yaml exec django scripts/check.sh
 ```
 
 Inside the container. On the host, prefix each command with `uv run --env-file .env` so the tests find PostgreSQL and Valkey (`docs/development/without-docker.md#checks`):
 
 ```bash
-python manage.py spectacular --settings config.settings.test --file docs/openapi.yaml --validate --fail-on-warn
+python manage.py export_openapi_schema --settings config.settings.test --api config.api.api --indent 2 > docs/openapi.json
 scripts/check.sh
 ```
 
