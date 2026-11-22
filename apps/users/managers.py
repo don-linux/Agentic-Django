@@ -4,8 +4,8 @@ import unicodedata
 from typing import TYPE_CHECKING
 from typing import Any
 
+from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.hashers import make_password
-from django.contrib.auth.models import UserManager as DjangoUserManager
 from django.db.models import ProtectedError
 from django.db.models import QuerySet
 
@@ -26,7 +26,14 @@ class UserQuerySet(QuerySet["User"]):
         raise ProtectedError(USER_DELETE_BLOCKED, set(self))
 
 
-class UserManager(DjangoUserManager["User"]):
+class UserManager(BaseUserManager["User"]):
+    """
+    The email-login manager that Django's guide writes for a model without username.
+
+    Django's own UserManager expects a `username` field, so its creators, async
+    ones included, cannot build this User (docs/decisions/0014).
+    """
+
     use_in_migrations = True
 
     def get_queryset(self) -> UserQuerySet:
@@ -43,36 +50,65 @@ class UserManager(DjangoUserManager["User"]):
             return ""
         return unicodedata.normalize("NFKC", email).strip().lower()
 
-    def _create_user(
+    def create_user(
+        self, email: str, password: str | None = None, **extra_fields: Any
+    ) -> User:
+        user = self._build_user(email, password, **_regular_flags(extra_fields))
+        user.save(using=self._db)
+        return user
+
+    async def acreate_user(
+        self, email: str, password: str | None = None, **extra_fields: Any
+    ) -> User:
+        user = self._build_user(email, password, **_regular_flags(extra_fields))
+        await user.asave(using=self._db)
+        return user
+
+    def create_superuser(
+        self, email: str, password: str | None = None, **extra_fields: Any
+    ) -> User:
+        user = self._build_user(email, password, **_superuser_flags(extra_fields))
+        user.save(using=self._db)
+        return user
+
+    async def acreate_superuser(
+        self, email: str, password: str | None = None, **extra_fields: Any
+    ) -> User:
+        user = self._build_user(email, password, **_superuser_flags(extra_fields))
+        await user.asave(using=self._db)
+        return user
+
+    def _build_user(
         self, email: str, password: str | None, **extra_fields: Any
     ) -> User:
+        """
+        Return an unsaved user with a normalized email and a hashed password.
+
+        No query here: the async creators run it on the event loop. Hashing blocks
+        the loop for a moment, as it does in Django's own UserManager.
+        """
         email = self.normalize_email(email)
         if not email:
             msg = "The given email must be set"
             raise ValueError(msg)
         user = self.model(email=email, **extra_fields)
         user.password = make_password(password)
-        user.save(using=self._db)
         return user
 
-    def create_user(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]
-        self, email: str, password: str | None = None, **extra_fields: Any
-    ) -> User:
-        extra_fields.setdefault("is_staff", False)
-        extra_fields.setdefault("is_superuser", False)
-        return self._create_user(email, password, **extra_fields)
 
-    def create_superuser(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]
-        self, email: str, password: str | None = None, **extra_fields: Any
-    ) -> User:
-        extra_fields.setdefault("is_staff", True)
-        extra_fields.setdefault("is_superuser", True)
+def _regular_flags(extra_fields: dict[str, Any]) -> dict[str, Any]:
+    extra_fields.setdefault("is_staff", False)
+    extra_fields.setdefault("is_superuser", False)
+    return extra_fields
 
-        if extra_fields.get("is_staff") is not True:
-            msg = "Superuser must have is_staff=True."
-            raise ValueError(msg)
-        if extra_fields.get("is_superuser") is not True:
-            msg = "Superuser must have is_superuser=True."
-            raise ValueError(msg)
 
-        return self._create_user(email, password, **extra_fields)
+def _superuser_flags(extra_fields: dict[str, Any]) -> dict[str, Any]:
+    extra_fields.setdefault("is_staff", True)
+    extra_fields.setdefault("is_superuser", True)
+    if extra_fields.get("is_staff") is not True:
+        msg = "Superuser must have is_staff=True."
+        raise ValueError(msg)
+    if extra_fields.get("is_superuser") is not True:
+        msg = "Superuser must have is_superuser=True."
+        raise ValueError(msg)
+    return extra_fields

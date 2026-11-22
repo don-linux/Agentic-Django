@@ -18,7 +18,7 @@ flowchart LR
   Tasks --> Services
 ```
 
-- `models.py`: fields, constraints and small properties. File fields follow [docs/files.md](files.md) (`core.files.UploadTo`, `MaxFileSizeValidator`). Invariants live in database constraints where possible and are validated again by services through `full_clean()`; records that must persist are deactivated, not deleted. Domain models inherit `core.models.BaseModel` for `public_id`, `created_at` and `updated_at`; `User` keeps `AbstractUser`. Both timestamps come from the database clock (`Now()`), so every worker shares one clock and a new row has `created_at == updated_at`. `save()` sets `updated_at` (also on `save(update_fields=[...])`), and `BaseQuerySet.update()` bumps it on bulk updates; `bulk_update()` does not, so pass `updated_at` explicitly. FKs default to `on_delete=models.PROTECT`. `CASCADE` only for children owned by their parent and listed in `CASCADE_ALLOWED` (`core/tests/test_on_delete_policy.py`). `SET_NULL` only for optional references where losing the link is acceptable. Deleting a protected row returns 409 `protected`. Append-only tables and an admin audit log are opt-in recipes in [data.md](data.md).
+- `models.py`: fields, constraints and small properties. File fields follow [docs/files.md](files.md) (`core.files.UploadTo`, `MaxFileSizeValidator`). Invariants live in database constraints where possible and are validated again by services through `full_clean()`; records that must persist are deactivated, not deleted. Domain models inherit `core.models.BaseModel` for `public_id`, `created_at` and `updated_at`; `User` builds on `AbstractBaseUser` and `PermissionsMixin` ([decisions/0014](decisions/0014-user-extends-abstractbaseuser-and-permissionsmixin.md)). Both timestamps come from the database clock (`Now()`), so every worker shares one clock and a new row has `created_at == updated_at`. `save()` sets `updated_at` (also on `save(update_fields=[...])`), and `BaseQuerySet.update()` bumps it on bulk updates; `bulk_update()` does not, so pass `updated_at` explicitly. FKs default to `on_delete=models.PROTECT`. `CASCADE` only for children owned by their parent and listed in `CASCADE_ALLOWED` (`core/tests/test_on_delete_policy.py`). `SET_NULL` only for optional references where losing the link is acceptable. Deleting a protected row returns 409 `protected`. Append-only tables and an admin audit log are opt-in recipes in [data.md](data.md).
 - `services.py`: every write. Keyword-only arguments, `transaction.atomic`, `full_clean()` before `save()`. Side effects (email, Celery tasks, cache invalidation, webhooks, files) run in `transaction.on_commit(...)`, never directly inside `atomic` (`core.tasks.enqueue_on_commit` and `core.cache.invalidate` already do); read-modify-write on the same row takes `select_for_update()` inside the transaction. A business-rule rejection raises `core.exceptions.ApplicationError` (or `ConflictError`) with a code from [docs/api.md](api.md). Example: `apps.users.services.user_update`.
 - `selectors.py`: every read that is more than a plain lookup. A hot or expensive read is cached here, never in a view ([Caching](#caching)). Example: `apps.users.selectors.user_get`.
 - `tasks.py`, only in an app that needs one: Celery tasks. A task is thin: it loads rows by id, calls a service and handles retries ([Background tasks](#background-tasks)).
@@ -58,9 +58,9 @@ A broken contract names the import and its line. Fix the import; do not add an `
 
 Model details that the code relies on:
 
-- `public_id` is a UUIDv7: time-ordered, and a client can generate one. `User` keeps `AbstractUser` and declares `public_id` itself; it does not inherit `core.models.PublicIdModel`.
+- `public_id` is a UUIDv7: time-ordered, and a client can generate one. `User` builds on `AbstractBaseUser` and `PermissionsMixin` and declares `public_id` itself; it does not inherit `core.models.PublicIdModel`.
 - `Now()` is PostgreSQL's statement timestamp. `save()` reads `updated_at` back through `RETURNING`; `save(update_fields=[])` leaves it untouched. Pass `updated_at` to `QuerySet.update()` when it needs a value other than now.
-- `User` has a single `name` field, because first and last names do not cover names worldwide. `UserManager.normalize_email` NFKC-normalizes, strips and lowercases the whole address, not only the domain.
+- `User` has a single `name` field, because first and last names do not cover names worldwide. `UserManager.normalize_email` NFKC-normalizes, strips and lowercases the whole address, not only the domain. `UserManager` extends `BaseUserManager`; its creators `create_user`, `create_superuser`, `acreate_user` and `acreate_superuser` take the email first, then the password.
 
 ## Performance
 
@@ -128,7 +128,7 @@ Key and cache details:
 - django-axes keeps its counters in the default cache, so every worker shares them.
 - On Valkey, `cache.clear()` is `FLUSHDB`: it wipes sessions, rate limits and throttles whatever the key prefix. Only `conftest.py` may call it, on the in-memory test caches; `scripts/check.sh lint` fails on any other call. The check (`scripts/forbid_cache_clear.py`) parses the code, so a comment or a docstring that names the call passes.
 
-- TTLs: 60 seconds for lists and counts, 300 seconds for single objects, up to 24 hours for reference data. A namespace that caches model instances (`user_get` in `apps/users/selectors.py`) bumps its cache version (`USER_CACHE_VERSION`) when the model changes and defers secret fields such as the password.
+- TTLs: 60 seconds for lists and counts, 300 seconds for single objects, up to 24 hours for reference data. A namespace that caches model instances (`user_get` in `apps/users/selectors.py`) bumps its cache version (`USER_CACHE_VERSION`) when the model's fields change (a cached instance is a pickle of its field values) and defers secret fields such as the password.
 
 ## Background tasks
 

@@ -104,6 +104,18 @@ Set `DJANGO_LOG_SQL=True` to print every query under the local settings. Django'
 
 Query budgets (`django_assert_num_queries`) are measured with the test cache (LocMem) and `cached_db` sessions; in production Valkey serves throttling, rate limits and sessions, so they add no queries. A cached selector is always measured as a miss, because tests never commit.
 
+### Async code
+
+pytest-django runs no `async def` test, and no async pytest plugin is installed. Test async code from a sync test through `asgiref.sync.async_to_sync`, the wrapper Django's own `TestCase` puts around an `async def` test ([Testing asynchronous code](https://docs.djangoproject.com/en/6.1/topics/testing/tools/#testing-asynchronous-code)):
+
+```python
+user = async_to_sync(User.objects.acreate_user)(
+    email="ada@example.com", password=PASSWORD
+)
+```
+
+Called this way, the ORM's `sync_to_async` work runs on the test's own thread and connection, inside the test transaction, so `django_db`, query budgets and `cache_writes` behave as in a sync test. Never call the ORM under `asyncio.run`: it runs that work on another thread with its own connection, which commits outside the test transaction and leaves rows behind under `--reuse-db`. `asyncio.run` stays fine for async code that touches no database. Example: `apps/users/tests/test_managers.py` (`TestAsyncUserManager`).
+
 ### Test layout
 
 Tests are grouped by what they depend on, so the API framework can change without touching the contract tests:

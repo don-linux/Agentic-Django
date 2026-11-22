@@ -15,8 +15,9 @@ if TYPE_CHECKING:
 USER_NAMESPACE = "users.user"
 # Seconds a cached user may stay stale after a write that skipped invalidation.
 USER_TTL = 300
-# Part of the key. A cached model instance is a pickle of its fields: raise this
-# when the User model changes, so copies with the old shape are never read.
+# Part of the key. A cached model instance is a pickle of its field values: raise
+# this when the User model's fields change, so copies with the old shape are never
+# read. A change of base class alone keeps the pickle (docs/decisions/0014).
 USER_CACHE_VERSION = 1
 
 

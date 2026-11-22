@@ -1,12 +1,27 @@
+from __future__ import annotations
+
 from io import StringIO
+from typing import TYPE_CHECKING
 
 import pytest
+from asgiref.sync import async_to_sync
 from django.contrib.auth.hashers import make_password
 from django.core.management import call_command
 from django.db import IntegrityError
 
 from apps.users.adapters import AccountAdapter
 from apps.users.models import User
+from apps.users.selectors import USER_NAMESPACE
+from core.cache import build_key
+
+if TYPE_CHECKING:
+    from conftest import CacheWrites
+
+
+@pytest.mark.parametrize("name", ["username", "first_name", "last_name"])
+def test_user_has_no_username_or_split_name(name: str) -> None:
+    # Login is by email and the name is one `name` field (docs/decisions/0014).
+    assert not hasattr(User, name)
 
 
 @pytest.mark.django_db
@@ -20,7 +35,7 @@ class TestUserManager:
         assert not user.is_staff
         assert not user.is_superuser
         assert user.check_password("something-r@nd0m!")
-        assert user.username is None
+        assert not hasattr(user, "username")
 
     @pytest.mark.parametrize("bad_email", ["", "   "])
     def test_create_user_rejects_empty_email(self, bad_email: str) -> None:
@@ -45,7 +60,7 @@ class TestUserManager:
         assert user.email == "admin@example.com"
         assert user.is_staff
         assert user.is_superuser
-        assert user.username is None
+        assert not hasattr(user, "username")
 
     def test_create_superuser_validates_flags_and_rejects_username(self) -> None:
         with pytest.raises(ValueError, match="is_staff=True"):
@@ -75,6 +90,101 @@ class TestUserManager:
         assert named.get_short_name() == "Ada Lovelace"
         assert unnamed.get_full_name() == ""
         assert unnamed.get_short_name() == ""
+
+
+@pytest.mark.django_db
+class TestAsyncUserManager:
+    """
+    The async creators, called the way Django's TestCase runs an async test.
+
+    pytest-django runs no `async def` test, and `asyncio.run` would save on another
+    thread and connection, outside the test transaction. See
+    docs/development.md#async-code.
+    """
+
+    def test_acreate_user_normalizes_email_and_stores_password(self) -> None:
+        user = async_to_sync(User.objects.acreate_user)(
+            email="  John.Doe@Example.COM  ",
+            password="something-r@nd0m!",  # noqa: S106
+        )
+
+        stored = User.objects.get(pk=user.pk)
+        assert stored.email == "john.doe@example.com"
+        assert not stored.is_staff
+        assert not stored.is_superuser
+        assert stored.check_password("something-r@nd0m!")
+
+    @pytest.mark.parametrize("bad_email", ["", "   "])
+    def test_acreate_user_rejects_empty_email(self, bad_email: str) -> None:
+        with pytest.raises(ValueError, match="The given email must be set"):
+            async_to_sync(User.objects.acreate_user)(
+                email=bad_email,
+                password="something-r@nd0m!",  # noqa: S106
+            )
+
+        assert not User.objects.exists()
+
+    def test_acreate_user_honors_extra_fields(self) -> None:
+        user = async_to_sync(User.objects.acreate_user)(
+            email="staff@example.com",
+            password="something-r@nd0m!",  # noqa: S106
+            name="Ada",
+            is_staff=True,
+        )
+
+        stored = User.objects.get(pk=user.pk)
+        assert stored.name == "Ada"
+        assert stored.is_staff is True
+        assert stored.is_superuser is False
+
+    def test_acreate_superuser_sets_flags_and_password(self) -> None:
+        user = async_to_sync(User.objects.acreate_superuser)(
+            email="Admin@Example.com",
+            password="something-r@nd0m!",  # noqa: S106
+        )
+
+        stored = User.objects.get(pk=user.pk)
+        assert stored.email == "admin@example.com"
+        assert stored.is_staff
+        assert stored.is_superuser
+        assert stored.check_password("something-r@nd0m!")
+
+    def test_acreate_superuser_validates_flags_and_rejects_username(self) -> None:
+        acreate_superuser = async_to_sync(User.objects.acreate_superuser)
+        with pytest.raises(ValueError, match="is_staff=True"):
+            acreate_superuser(
+                email="nostaff@example.com",
+                password="something-r@nd0m!",  # noqa: S106
+                is_staff=False,
+            )
+        with pytest.raises(ValueError, match="is_superuser=True"):
+            acreate_superuser(
+                email="nosuper@example.com",
+                password="something-r@nd0m!",  # noqa: S106
+                is_superuser=False,
+            )
+        with pytest.raises(TypeError):
+            acreate_superuser(
+                email="extra@example.com",
+                password="something-r@nd0m!",  # noqa: S106
+                username="ignored",
+            )
+
+        assert not User.objects.exists()
+
+    def test_acreate_user_invalidates_cached_users(
+        self, cache_writes: CacheWrites
+    ) -> None:
+        # The key of a fixed part changes exactly when the namespace version does.
+        before = build_key(USER_NAMESPACE, "probe")
+
+        with cache_writes():
+            async_to_sync(User.objects.acreate_user)(
+                email="cached@example.com",
+                password="something-r@nd0m!",  # noqa: S106
+            )
+
+        assert build_key(USER_NAMESPACE, "probe") != before
 
 
 @pytest.mark.django_db

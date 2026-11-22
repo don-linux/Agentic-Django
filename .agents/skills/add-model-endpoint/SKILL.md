@@ -9,7 +9,7 @@ Follow this checklist in order. Mandatory rules stay in [AGENTS.md](../../../AGE
 
 Worked example in this template (read it; do not clone User blindly): `apps/users/` — `models.py`, `services.py`, `selectors.py`, `signals.py`, `api/views.py` (schemas and operations), `tests/`, and the router mount in `config/api.py`.
 
-`User` is a special case: it subclasses `AbstractUser` and declares its own `public_id`. **New domain models inherit `core.models.BaseModel`.** They do not copy User's inheritance.
+`User` is a special case: it builds on `AbstractBaseUser` and `PermissionsMixin` (not `AbstractUser`; see `docs/decisions/0014-user-extends-abstractbaseuser-and-permissionsmixin.md`) and declares its own `public_id`. **New domain models inherit `core.models.BaseModel`.** They do not copy User's inheritance.
 
 ## When to run
 
@@ -81,7 +81,7 @@ Wrap the query in `core.cache.read_through("<app>.<resource>", *parts, ttl=..., 
 
 - Every key has a positive `ttl` in seconds (`read_through` has no default and rejects `ttl <= 0`). Pick the value from [ARCHITECTURE.md#caching](../../../docs/ARCHITECTURE.md#caching). Never call the Django cache API with `timeout=None`.
 - Data that depends on the user or tenant includes `user.pk` (or the tenant id) in the key parts. Never cache per-user data under a shared key. Never put raw client input, emails, tokens or other PII in a key.
-- Prefer plain data (dicts, lists, primitives, `Schema.model_dump(mode="json")` output) over model instances. If a namespace caches instances, bump a namespace version when the model changes and defer secret fields. Worked example: `user_get` in `apps/users/selectors.py` (`USER_CACHE_VERSION`, `.defer("password")`).
+- Prefer plain data (dicts, lists, primitives, `Schema.model_dump(mode="json")` output) over model instances. If a namespace caches instances, bump a namespace version when the model's fields change (a cached instance is a pickle of its field values) and defer secret fields. Worked example: `user_get` in `apps/users/selectors.py` (`USER_CACHE_VERSION`, `.defer("password")`).
 - Do not cache `request.user`, authentication, permission checks, or data that must be strictly consistent (balances, stock, single-use codes).
 - If you cache, also add `apps/<app>/signals.py` with `post_save` / `post_delete` receivers that call `invalidate("<app>.<resource>")`. Import the module from `AppConfig.ready()`.
 
