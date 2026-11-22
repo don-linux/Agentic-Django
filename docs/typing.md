@@ -51,6 +51,7 @@ Before you add either comment, try a real type:
 - annotate the variable;
 - declare the reverse accessor (`emailaddress_set: RelatedManager[EmailAddress]`, from `django_stubs_ext.db.models.manager`);
 - use `cast()` for a library that returns `Any`.
+- in a test, build the real object instead of passing `None` or a `SimpleNamespace`: an unsaved model instance, a `FileField` on no model, a hand-built `UploadedFile`. A parsed JSON body is `dict[str, Any]`, and an attribute a logging filter adds is read through a `logging.Formatter`.
 
 A suppression that stays is listed in [Upstream workarounds](#upstream-workarounds).
 
@@ -100,8 +101,7 @@ These are the places where the code works around a limitation of django-stubs, p
 | `# pyright: ignore[reportArgumentType]` on `Collector.collect([...])` | `apps/users/management/commands/hard_delete_user.py`, `apps/users/tests/test_signals.py` | django-stubs types `objs` as the protocol `_IndexableCollection`, whose `__getitem__` also takes `index` by name; typeshed's `list` and `tuple` take it positional-only, so pyright 1.1.414 accepts neither. | django-stubs 6.1.2 `db/models/deletion.pyi` and `utils/datastructures.pyi`; typeshed `stdlib/builtins.pyi` |
 | Both comments on `before_send` and `before_send_transaction` | `core/sentry.py` | sentry-sdk types an event as a `TypedDict`. `scrub_event` walks arbitrary nested data as `dict[str, Any]`. | sentry-sdk 2.75.0 `sentry_sdk/_types.py` (`Event`, `EventProcessor`) |
 | Both comments on `Input = PageNumberIn` and `Output = PageNumberOut` | `core/api/pagination.py` | Ninja declares `Input` and `Output` as nested classes. An alias keeps the published component names. | django-ninja 1.8.0 `ninja/pagination.py`; [Custom pagination classes](https://django-ninja.dev/guide/pagination/#custom-pagination-classes) |
-| `# type: ignore[misc]` on a factory's `__new__` under `TYPE_CHECKING` | `apps/*/tests/factories.py` | factory-boy returns a model instance from the factory class, which mypy rejects as a `__new__` return type. | factory-boy `DjangoModelFactory` |
-| Both comments on calls with deliberately invalid input | `core/tests/test_files.py`, `core/tests/test_storage_settings.py`, `core/tests/test_logging.py`, `core/tests/test_decisions.py`, `apps/users/tests/http/test_emails.py` | The test passes `None` or reads an untyped payload on purpose. | — |
+| `# type: ignore[misc]` on a factory's `__new__` under `TYPE_CHECKING` | `apps/*/tests/factories.py` | Calling a factory class returns a model instance. factory-boy 3.3.3 types `create()` and `build()` as returning the model, but not the metaclass `__call__` behind `UserFactory(...)`, so this `__new__` tells the checkers; mypy rejects a `__new__` that returns another type. | factory-boy 3.3.3 `factory/base.py` (`FactoryMetaClass.__call__`, `BaseFactory.create`) |
 | `typings/environ/` stubs | `typings/` | django-environ 0.14.0 ships no types. `stubtest` checks the stubs against each release. | PyPI wheel `django_environ-0.14.0` (no `py.typed`) |
 
 Django Ninja mechanisms that differ from the example in the Ninja guide, each for a documented reason:

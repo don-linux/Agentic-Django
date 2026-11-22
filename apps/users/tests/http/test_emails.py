@@ -73,8 +73,9 @@ def test_production_reads_the_mailer_timeout_from_env() -> None:
     assert custom["timeout"] == 3  # noqa: PLR2004
 
 
-def _pending(payload: dict[str, object], flow_id: str) -> bool:
-    flows = payload["data"]["flows"]  # type: ignore[index]  # pyright: ignore[reportIndexIssue]
+def _pending(payload: dict[str, Any], flow_id: str) -> bool:
+    # A parsed JSON body (response.json()), so its values are untyped.
+    flows = payload["data"]["flows"]
     return any(flow["id"] == flow_id and flow.get("is_pending") for flow in flows)
 
 

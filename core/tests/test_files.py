@@ -3,22 +3,22 @@ from __future__ import annotations
 import re
 from contextlib import suppress
 from http import HTTPStatus
-from types import SimpleNamespace
 from typing import TYPE_CHECKING
-from typing import Any
-from typing import cast
 
 import pytest
+from django.contrib.auth.models import Group
 from django.core.exceptions import SuspiciousFileOperation
 from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
 from django.core.files.storage import FileSystemStorage
 from django.core.files.storage import InMemoryStorage
 from django.core.files.storage import default_storage
+from django.core.files.uploadedfile import UploadedFile
 from django.db import models
 from django.db import transaction
 from django.db.migrations.writer import MigrationWriter
 from django.db.models.fields.files import FieldFile
+from django.http import FileResponse
 from django.http import HttpResponse
 from django.test import override_settings
 
@@ -32,9 +32,16 @@ from core.files import protected_file_response
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from django.core.files.storage import Storage
     from pytest_django.fixtures import DjangoCaptureOnCommitCallbacks
 
 GENERATED = re.compile(r"invoices/document/[0-9a-f]{32}(\.[a-z0-9]+)?")
+
+
+def _instance() -> models.Model:
+    # Django always passes the model instance that owns the file. UploadTo and
+    # the FieldFile reads here never look at it, so any unsaved instance will do.
+    return Group()
 
 
 @pytest.mark.parametrize(
@@ -52,7 +59,7 @@ def test_upload_to_drops_the_client_name_and_directories(
     client_name: str,
     extension: str,
 ) -> None:
-    name = UploadTo("invoices/document")(None, client_name)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]
+    name = UploadTo("invoices/document")(_instance(), client_name)
 
     assert GENERATED.fullmatch(name)
     assert name.endswith(extension) if extension else "." not in name.rsplit("/", 1)[1]
@@ -63,7 +70,7 @@ def test_upload_to_drops_the_client_name_and_directories(
 def test_upload_to_names_are_unique() -> None:
     upload_to = UploadTo("invoices/document")
 
-    names = {upload_to(None, "same.pdf") for _ in range(50)}  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]
+    names = {upload_to(_instance(), "same.pdf") for _ in range(50)}
 
     assert len(names) == 50  # noqa: PLR2004
 
@@ -90,15 +97,15 @@ def test_max_file_size_validator() -> None:
 
 
 def test_tests_store_uploads_in_memory() -> None:
-    name = default_storage.save(UploadTo("t")(None, "a.txt"), ContentFile(b"hi"))  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]
+    name = default_storage.save(UploadTo("t")(_instance(), "a.txt"), ContentFile(b"hi"))
 
     assert default_storage.__class__.__name__ == "InMemoryStorage"
     assert default_storage.open(name).read() == b"hi"
 
 
-def _field_file(storage: Any, name: str) -> FieldFile:
-    # FieldFile only needs field.storage to open the file.
-    return FieldFile(None, SimpleNamespace(storage=storage), name)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]
+def _field_file(storage: Storage, name: str) -> FieldFile:
+    # A FileField on no model: FieldFile only reads field.storage here.
+    return FieldFile(_instance(), models.FileField(storage=storage), name)
 
 
 @override_settings(PRIVATE_MEDIA_ACCEL_REDIRECT_PREFIX="/protected-media/")
@@ -151,7 +158,9 @@ def test_without_a_proxy_django_streams_the_private_file() -> None:
     response = protected_file_response(_field_file(storage, name))
 
     assert response["Content-Disposition"] == 'attachment; filename="abc.txt"'
-    assert b"".join(response.streaming_content) == b"secret"  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]
+    # Iterating the response is how Django documents reading a streamed body.
+    assert isinstance(response, FileResponse)
+    assert b"".join(response) == b"secret"
 
 
 def test_signed_url_storages_redirect() -> None:
@@ -229,7 +238,7 @@ class _FailingStorage(InMemoryStorage):
         raise OSError(msg)
 
 
-def _stored(storage: Any = None) -> tuple[FieldFile, str]:
+def _stored(storage: Storage | None = None) -> tuple[FieldFile, str]:
     storage = storage or default_storage
     name = storage.save("uploads/old.txt", ContentFile(b"old"))
     return _field_file(storage, name), name
@@ -290,6 +299,6 @@ def test_storage_errors_are_logged_not_raised(
 
 
 def test_a_file_of_unknown_size_is_not_refused() -> None:
-    # Django's upload handlers always set a size; only a hand-built File may
+    # Django's upload handlers always set a size; only a hand-built file may
     # have none, and the validator lets it through rather than guess.
-    MaxFileSizeValidator(10)(cast("Any", SimpleNamespace(size=None, name="x.bin")))
+    MaxFileSizeValidator(10)(UploadedFile(name="x.bin"))
