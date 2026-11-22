@@ -487,7 +487,7 @@ def docs_view(request: HttpRequest) -> HttpResponse:
     """Staff Swagger UI without an inline script (CSP). ?script= returns the init JS."""
     if "script" in request.GET:
         js = (
-            "/* Agentic Django Swagger init (split, no inline script) */\n"
+            "/* Swagger UI init (split, no inline script) */\n"
             "window.ui = SwaggerUIBundle({\n"
             "  url: '/api/v1/schema/',\n"
             "  dom_id: '#swagger-ui',\n"
