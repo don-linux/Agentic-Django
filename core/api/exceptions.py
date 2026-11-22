@@ -18,6 +18,7 @@ from django.core.exceptions import NON_FIELD_ERRORS
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.exceptions import PermissionDenied
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import connections
 from django.db.models import ProtectedError
 from django.db.models import RestrictedError
 from django.http import Http404
@@ -41,6 +42,14 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from ninja import NinjaAPI
+
+
+def _set_rollback() -> None:
+    # DRF's exception handler (rest_framework.views.set_rollback): with
+    # ATOMIC_REQUESTS, a handled error must not commit the view's earlier writes.
+    for connection in connections.all(initialized_only=True):
+        if connection.settings_dict["ATOMIC_REQUESTS"] and connection.in_atomic_block:
+            connection.set_rollback(True)
 
 
 def _field_item(message: str, code: str = "invalid") -> dict[str, str]:
@@ -190,6 +199,7 @@ class _ErrorHandlers:
     def _json(
         self, request: HttpRequest, body: Mapping[str, Any], status: int
     ) -> HttpResponse:
+        _set_rollback()
         return self.api.create_response(request, body, status=status)
 
     def on_application_error(
