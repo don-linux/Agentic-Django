@@ -2,11 +2,39 @@
 
 from __future__ import annotations
 
+import datetime as dt
+from typing import Annotated
 from typing import Any
 
 from ninja import Schema
+from pydantic import AfterValidator
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import PlainSerializer
+from pydantic import WithJsonSchema
+
+
+def _as_utc(value: dt.datetime) -> dt.datetime:
+    # A naive datetime in a request is UTC, whatever TIME_ZONE is (DRF
+    # DateTimeField(default_timezone=UTC) in the previous UTCDateTimeField).
+    if value.tzinfo is None:
+        return value.replace(tzinfo=dt.UTC)
+    return value.astimezone(dt.UTC)
+
+
+def _iso_z(value: dt.datetime) -> str:
+    # DRF ISO_8601 output: isoformat() with "Z"; microseconds kept, which
+    # DjangoJSONEncoder (Ninja's renderer) would cut to milliseconds.
+    return _as_utc(value).isoformat().replace("+00:00", "Z")
+
+
+# Use for every datetime field of /api/v1/ (docs/api.md#representation).
+UTCDateTime = Annotated[
+    dt.datetime,
+    AfterValidator(_as_utc),
+    PlainSerializer(_iso_z, return_type=str),
+    WithJsonSchema({"type": "string", "format": "date-time"}),
+]
 
 
 class BaseSchema(Schema):

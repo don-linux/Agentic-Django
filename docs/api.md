@@ -31,7 +31,7 @@ Errors use the [error body](#error-body): 400, 401 (with `WWW-Authenticate`), 40
 
 - One resource is a bare JSON object; a list is the pagination envelope (`count`, `next`, `previous`, `results`, with absolute links).
 - Every resource exposes its public UUID as `id` (a string). Integer primary keys never leave the server, including `/_allauth/` payloads (`apps.users.adapters.HeadlessAdapter`). Detail URLs use the same UUID (`/api/v1/users/{id}/`); an integer in that position is a plain 404.
-- Datetimes are ISO 8601 in UTC with a `Z` suffix, whatever `TIME_ZONE` is. A naive datetime in a request is read as UTC. Dates are `YYYY-MM-DD`. Clients convert to local time; `TIME_ZONE` only drives date boundaries and reports.
+- Datetimes are ISO 8601 in UTC with a `Z` suffix, whatever `TIME_ZONE` is. A naive datetime in a request is read as UTC. Declare datetime fields as `core.api.schemas.UTCDateTime`; a plain `datetime` keeps the offset it was given and loses microseconds in the JSON encoder. Dates are `YYYY-MM-DD`. Clients convert to local time; `TIME_ZONE` only drives date boundaries and reports.
 - Decimals are strings, and declared fields are always present (`null`, never omitted).
 - `Content-Type: application/json`, without a charset parameter: JSON is UTF-8 by definition.
 - Request bodies are `application/json` only (`DEFAULT_PARSER_CLASSES`): a form or multipart body is a 415 `unsupported_media_type`, and the schema advertises only JSON. Upload views opt in with `parser_classes = [MultiPartParser]` ([files.md](files.md)).
