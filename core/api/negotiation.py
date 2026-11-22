@@ -340,6 +340,19 @@ class ApiContractMiddleware:
         if allow is not None and method not in {m.strip() for m in allow.split(",")}:
             return self._not_allowed(method, allow)
         if method == "OPTIONS" and operations is not None:
+            if subpath in {"docs/", "schema/"}:
+                # These routes are staff-only even for metadata requests.
+                # The early OPTIONS response must not bypass their view guard.
+                # The schema answers as SpectacularAPIView did: its own metadata
+                # in the negotiated schema format.
+                protected = staff_docs_required(
+                    lambda req: (
+                        schema_options_view(req)
+                        if subpath == "schema/"
+                        else self._options(req, operations, allow or "")
+                    )
+                )
+                return protected(request)
             return self._options(request, operations, allow or "")
         return None
 
@@ -453,6 +466,21 @@ def render_schema(request: HttpRequest, data: dict[str, Any]) -> HttpResponse:
 def schema_view(request: HttpRequest) -> HttpResponse:
     """OpenAPI document: YAML by default, JSON when Accept asks for it."""
     return render_schema(request, api.get_openapi_schema())
+
+
+# SpectacularAPIView's OPTIONS (DRF SimpleMetadata) in the previous contract:
+# SchemaView's name and docstring, its four renderers and the JSON parser.
+SCHEMA_METADATA: dict[str, Any] = {
+    "name": "Schema",
+    "description": "Staff-only OpenAPI schema; errors stay application/json.",
+    "renders": list(SCHEMA_MEDIA_TYPES),
+    "parses": [JSON],
+}
+
+
+def schema_options_view(request: HttpRequest) -> HttpResponse:
+    """Staff OPTIONS on the schema: its metadata, in the negotiated schema format."""
+    return render_schema(request, SCHEMA_METADATA)
 
 
 def docs_view(request: HttpRequest) -> HttpResponse:
