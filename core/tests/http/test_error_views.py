@@ -73,7 +73,7 @@ def test_unhandled_exception_is_json_500_without_exception_text() -> None:
 
 
 @override_settings(ROOT_URLCONF=__name__)
-def test_permission_denied_outside_drf_is_json_403(client: Client) -> None:
+def test_permission_denied_outside_the_api_is_json_403(client: Client) -> None:
     _assert_json_error(
         client.get("/forbidden/"), HTTPStatus.FORBIDDEN, "permission_denied"
     )
