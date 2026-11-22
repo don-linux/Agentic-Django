@@ -54,6 +54,11 @@ class Command(BaseCommand):
             msg = "No user has that public id."
             raise CommandError(msg) from None
 
+        # Collector is not in Django's documentation. Django's admin builds its
+        # delete confirmation on it (django.contrib.admin.utils.NestedObjects),
+        # because it lists the cascade without deleting or sending signals.
+        # _cascade_counts reads its data and fast_deletes, and
+        # test_hard_delete_user pins both (docs/user-deletion/hard-delete.md).
         collector = Collector(using=router.db_for_write(User))
         try:
             # django-stubs 6.1.2 types collect() as
