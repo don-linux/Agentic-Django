@@ -24,7 +24,7 @@ dependencies = [
   # Runtime: config/settings/base.py calls django_stubs_ext.monkeypatch(). Same
   # version as django-stubs in the dev group (django-stubs README, FAQ).
   "django-stubs-ext==6.1.2",
-  "gunicorn==27.0.0",
+  "gunicorn==27.0.1",
   "pydantic==2.14.3",
   "pyyaml==6.0.3",
   "kombu==5.7.0",
