@@ -16,6 +16,8 @@ import pytest
 from axes.handlers.proxy import AxesProxyHandler
 from django.conf import settings as django_settings
 from django.core.cache import caches
+from redis import ConnectionPool
+from redis import Redis
 from redis.exceptions import RedisError
 
 from config.settings.base import build_valkey_cache
@@ -52,14 +54,37 @@ def run_prefix() -> str:
 
 
 @pytest.fixture
-def cache_config(server_url: str, run_prefix: str) -> dict[str, Any]:
-    config = build_valkey_cache(
-        url=server_url,
-        db=CACHE_DB,
-        username=django_settings.VALKEY_USERNAME,
-        password=django_settings.VALKEY_PASSWORD,
-    )
-    return {**config, "KEY_PREFIX": run_prefix}
+def cache_config(server_url: str, run_prefix: str) -> Iterator[dict[str, Any]]:
+    """The CACHES entry of one test; the pools its backends open close after it."""
+    pools: list[ConnectionPool] = []
+
+    class ClosedAfterTheTest(ConnectionPool):
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__(**kwargs)
+            pools.append(self)
+
+    config = _server_config(server_url)
+    # Django's Redis backend opens its pools with OPTIONS["pool_class"]
+    # (docs/topics/cache, "Cache arguments"): one pool per server it reaches.
+    options = {**config["OPTIONS"], "pool_class": ClosedAfterTheTest}
+    yield {**config, "KEY_PREFIX": run_prefix, "OPTIONS": options}
+    # Close their sockets instead of leaving them to the garbage collector.
+    for pool in pools:
+        pool.disconnect()
+
+
+@pytest.fixture
+def valkey_client(server_url: str) -> Iterator[Redis]:
+    """
+    A redis-py client of the tests' own, on the database of the cache.
+
+    Django's cache API has no TTL, SCAN or ACL command: the tests read and clean
+    the server through this client, never through the backend's own.
+    """
+    config = _server_config(server_url)
+    client = Redis.from_url(config["LOCATION"], **config["OPTIONS"])
+    yield client
+    client.close()
 
 
 @pytest.fixture
@@ -67,6 +92,7 @@ def valkey(
     settings: Settings,
     monkeypatch: pytest.MonkeyPatch,
     cache_config: dict[str, Any],
+    valkey_client: Redis,
     run_prefix: str,
 ) -> Iterator[ValkeyCache]:
     """Make the default cache a real Valkey for one test, then remove its keys."""
@@ -83,40 +109,32 @@ def valkey(
             f"{HOW_TO_START}",
         )
     yield backend
-    client = _client(backend)
-    for key in _run_keys(backend, run_prefix):
-        client.delete(key)
-    _disconnect(backend)
+    for key in _run_keys(valkey_client, run_prefix):
+        valkey_client.delete(key)
 
 
 @pytest.fixture
-def second_worker(cache_config: dict[str, Any]) -> Iterator[Callable[[], ValkeyCache]]:
+def second_worker(cache_config: dict[str, Any]) -> Callable[[], ValkeyCache]:
     """Build another backend with its own connections, as another gunicorn process."""
-    backends: list[ValkeyCache] = []
 
     def build() -> ValkeyCache:
         # As django.core.cache builds one from a CACHES entry.
         params = dict(cache_config)
         params.pop("BACKEND")
-        backends.append(ValkeyCache(params.pop("LOCATION"), params))
-        return backends[-1]
+        return ValkeyCache(params.pop("LOCATION"), params)
 
-    yield build
-    for backend in backends:
-        _disconnect(backend)
+    return build
 
 
-def _client(backend: ValkeyCache) -> Any:
-    # The redis-py client behind the backend: the cache API has no TTL or SCAN.
-    return backend._cache.get_client(write=True)  # noqa: SLF001
+def _server_config(url: str) -> dict[str, Any]:
+    """The CACHES entry the settings build for the database of the cache."""
+    return build_valkey_cache(
+        url=url,
+        db=CACHE_DB,
+        username=django_settings.VALKEY_USERNAME,
+        password=django_settings.VALKEY_PASSWORD,
+    )
 
 
-def _disconnect(backend: ValkeyCache) -> None:
-    # One server, so one pool: close its sockets instead of leaving them to the
-    # garbage collector.
-    _client(backend).connection_pool.disconnect()
-
-
-def _run_keys(backend: ValkeyCache, run_prefix: str) -> list[str]:
-    client = _client(backend)
+def _run_keys(client: Redis, run_prefix: str) -> list[str]:
     return [key.decode() for key in client.scan_iter(match=f"{run_prefix}:*")]

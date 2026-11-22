@@ -3,12 +3,10 @@ from __future__ import annotations
 import logging
 import time
 from http import HTTPStatus
-from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest import mock
 
 import pytest
-from allauth.core.internal import ratelimit
 from axes.handlers.proxy import AxesProxyHandler
 from django.contrib.sessions.backends.base import UpdateError
 from django.contrib.sessions.backends.cached_db import KEY_PREFIX as SESSION_PREFIX
@@ -33,8 +31,6 @@ from core.tests.cache_helpers import _login
 from core.tests.cache_helpers import _root_cause
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
-
     from pytest_django.fixtures import Settings
 
 DEAD_OPTIONS = {"socket_connect_timeout": 0.05, "socket_timeout": 0.05}
@@ -49,13 +45,6 @@ CACHED_DB = "django.contrib.sessions.backends.cached_db"
 def _silent_outage_log(monkeypatch: pytest.MonkeyPatch) -> None:
     # The log is rate limited per process: every test starts with a fresh one.
     monkeypatch.setattr(cache_backend, "outage_log", OutageLog(WARNING_INTERVAL))
-
-
-@pytest.fixture
-def client() -> Iterator[mock.Mock]:
-    """Stand in for the redis-py client, so the test opens no connection."""
-    with mock.patch.object(ValkeyCache, "_cache", new=mock.Mock()) as fake:
-        yield fake
 
 
 @pytest.fixture
@@ -106,37 +95,6 @@ def test_max_ttl_defaults_to_thirty_days() -> None:
     assert _backend().max_ttl == DEFAULT_MAX_TTL == THIRTY_DAYS
 
 
-@pytest.mark.parametrize("method", ["set", "add", "strict_set"])
-def test_a_write_without_timeout_reaches_the_server_with_a_ttl(
-    client: mock.Mock,
-    method: str,
-) -> None:
-    backend = _backend(MAX_TTL=MAX_TTL)
-
-    getattr(backend, method)("key", "value", timeout=None)
-
-    called = client.add if method == "add" else client.set
-    assert called.call_args.args[-1] == MAX_TTL
-
-
-def test_touch_without_timeout_never_makes_a_key_persistent(
-    client: mock.Mock,
-) -> None:
-    backend = _backend(MAX_TTL=MAX_TTL)
-
-    backend.touch("key", timeout=None)
-
-    assert client.touch.call_args.args[-1] == MAX_TTL
-
-
-def test_set_many_without_timeout_sets_a_ttl(client: mock.Mock) -> None:
-    backend = _backend(MAX_TTL=MAX_TTL)
-
-    backend.set_many({"one": 1, "two": 2}, timeout=None)
-
-    assert client.set_many.call_args.args[-1] == MAX_TTL
-
-
 def test_reads_fail_open_as_on_an_empty_cache(dead: ValkeyCache) -> None:
     assert dead.get("key") is None
     assert dead.get("key", "fallback") == "fallback"
@@ -161,16 +119,19 @@ def test_counters_find_no_key(dead: ValkeyCache, method: str) -> None:
         getattr(dead, method)("key")
 
 
-def test_a_timeout_fails_open_and_other_errors_still_raise(
-    client: mock.Mock,
-) -> None:
+def test_a_timeout_fails_open_and_other_errors_still_raise() -> None:
     backend = _backend()
+    # Django's RedisCache.get, which ValkeyCache.get wraps, raises what the
+    # server answered.
+    timeout = ValkeyTimeoutError("Timeout reading from socket")
 
-    client.get.side_effect = ValkeyTimeoutError("Timeout reading from socket")
-    assert backend.get("key", "fallback") == "fallback"
+    with mock.patch.object(RedisCache, "get", side_effect=timeout):
+        assert backend.get("key", "fallback") == "fallback"
 
-    client.get.side_effect = ResponseError("WRONGTYPE")
-    with pytest.raises(ResponseError):
+    with (
+        mock.patch.object(RedisCache, "get", side_effect=ResponseError("WRONGTYPE")),
+        pytest.raises(ResponseError),
+    ):
         backend.get("key")
 
 
@@ -289,9 +250,9 @@ def test_login_and_the_session_work_during_an_outage(
         message = "allauth waited for its rate-limit lock: add() did not fail open"
         raise AssertionError(message)
 
-    # allauth sleeps between attempts to take its lock, then answers 429.
-    clock = SimpleNamespace(monotonic=time.monotonic, time=time.time, sleep=no_sleep)
-    monkeypatch.setattr(ratelimit, "time", clock)
+    # allauth sleeps (time.sleep) between attempts to take its lock, then
+    # answers 429.
+    monkeypatch.setattr(time, "sleep", no_sleep)
 
     token = _login()
     me = Client().get(ME_URL, HTTP_X_SESSION_TOKEN=token)

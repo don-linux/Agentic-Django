@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 from allauth.account import app_settings as account_settings
-from allauth.core.internal.ratelimit import parse_rates
 from django.conf import settings as django_settings
 from django.core import mail
 
@@ -18,18 +17,19 @@ if TYPE_CHECKING:
     from pytest_django.fixtures import Settings
 
 RESET_REQUEST_URL = "/_allauth/app/v1/auth/password/request"
-HOUR = 3600
 
 
 def test_email_limits_add_an_hourly_cap_per_address() -> None:
     limits = account_settings.RATE_LIMITS
 
-    assert [
-        (r.amount, r.duration, r.per) for r in parse_rates(limits["reset_password"])
-    ] == [(20, 60, "ip"), (5, 60, "key"), (20, HOUR, "key")]
-    assert [
-        (r.amount, r.duration, r.per) for r in parse_rates(limits["confirm_email"])
-    ] == [(1, 10, "key"), (10, HOUR, "key")]
+    # allauth's documented format: amount/period/ip, user or key, comma
+    # separated. The next test shows allauth enforcing a "/h/key" cap.
+    assert {
+        action: limits[action] for action in ("reset_password", "confirm_email")
+    } == {
+        "reset_password": "20/m/ip,5/m/key,20/h/key",
+        "confirm_email": "1/10s/key,10/h/key",
+    }
     # The template does not override signup (allauth's default remains).
     assert "signup" not in django_settings.ACCOUNT_RATE_LIMITS
 
