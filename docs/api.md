@@ -185,7 +185,7 @@ The client is the `X-Forwarded-For` entry that many trusted proxies from the end
 
 ## Breaking changes
 
-`docs/openapi.json` is the contract. The `lint` job proves it matches the code; on a pull request, the `api-contract` job runs [oasdiff](https://github.com/oasdiff/oasdiff) against the base branch's copy and fails on any change at level `ERR`: a removed path or operation, a removed or newly required request field, a removed required response field, a narrowed type or enum. oasdiff rates a removed request field only `WARN`, but request bodies reject unknown keys (`unknown_field`), so a client that still sends it gets a `400`: `.github/oasdiff-levels.txt` raises `request-property-removed` to `ERR`. Such a change goes to `/api/v2/` instead ([Deprecating endpoints and fields](#deprecating-endpoints-and-fields)). Run it locally before pushing (oasdiff 1.38.0, the version in `ci.yml`):
+`docs/openapi.json` is the contract. The `lint` job proves it matches the code; on a pull request, the `api-contract` job runs [oasdiff](https://github.com/oasdiff/oasdiff) against the base branch's copy and fails on any change at level `ERR`: a removed path or operation, a removed or newly required request field, a removed required response field, a narrowed type or enum. oasdiff rates a removed request field only `WARN`, but request bodies reject unknown keys (`unknown_field`), so a client that still sends it gets a `400`: `.github/oasdiff-levels.txt` raises `request-property-removed` to `ERR`. Such a change goes to `/api/v2/` instead ([Deprecating endpoints and fields](#deprecating-endpoints-and-fields)). Run it locally before pushing (oasdiff 1.39.0, the version in `ci.yml`):
 
 ```bash
 git show origin/main:docs/openapi.json > /tmp/openapi-base.json
