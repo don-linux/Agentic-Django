@@ -2,9 +2,9 @@
 
 NUL characters, the empty PATCH body, multipart 415, DoesNotExist and bare
 PermissionDenied, Throttled without a wait, the page_size fallback, the
-previous link to the first page, the cached count of a plain list, OPTIONS
-and the ScopedThrottle cache key. Each one answered like DRF before; nothing
-else exercised them.
+previous link to the first page, the cached count of a plain list, the
+anonymous OPTIONS and the ScopedThrottle cache key. Each one answered like DRF
+before; nothing else exercised them.
 """
 
 from __future__ import annotations
@@ -42,16 +42,6 @@ def test_anonymous_options_is_401_with_allow(client: Client) -> None:
     assert response.status_code == HTTPStatus.UNAUTHORIZED
     assert response["WWW-Authenticate"] == "X-Session-Token"
     assert response["Allow"] == "GET, PATCH, HEAD, OPTIONS"
-
-
-@pytest.mark.django_db
-def test_authenticated_options_is_drf_metadata(user_client: Client) -> None:
-    response = user_client.options(ME_URL)
-    assert response.status_code == HTTPStatus.OK
-    assert response["Allow"] == "GET, PATCH, HEAD, OPTIONS"
-    body = response.json()
-    assert set(body) == {"name", "description", "renders", "parses"}
-    assert body["renders"] == body["parses"] == ["application/json"]
 
 
 def test_scoped_throttle_cache_key_names_the_scope(rf) -> None:

@@ -3,10 +3,11 @@ Native Ninja throttles with get_ident from core.net.
 
 AnonThrottle, UserThrottle and ScopedThrottle extend Ninja's AnonRateThrottle,
 UserRateThrottle and SimpleRateThrottle. get_ident uses TRUSTED_PROXY_COUNT via
-core.net, skipping blank hops. The rate is re-read from
-NINJA_DEFAULT_THROTTLE_RATES on each request, so tests can patch
-SimpleRateThrottle.THROTTLE_RATES (core/tests/ninja/adapters.py). Ninja 1.8.0
-ninja/throttling.py does not catch cache errors.
+core.net, skipping blank hops. A rate passed to the constructor ("10/min", as in
+Ninja's docs) is fixed. A rate from NINJA_DEFAULT_THROTTLE_RATES is re-read on
+each request, so tests can patch SimpleRateThrottle.THROTTLE_RATES
+(core/tests/ninja/adapters.py). Ninja 1.8.0 ninja/throttling.py does not catch
+cache errors.
 
 Sources: django-ninja 1.8.0 ninja/throttling.py and ninja/conf.py
 (NINJA_NUM_PROXIES, NINJA_DEFAULT_THROTTLE_RATES); Context7
@@ -44,9 +45,15 @@ class IdentMixin(SimpleRateThrottle):
 class RefreshingRateMixin(SimpleRateThrottle):
     """Per-request copy, with the scope rate re-read so settings patches apply."""
 
+    def __init__(self, rate: str | None = None) -> None:
+        # An explicit rate ("10/min" as in Ninja's docs) is fixed; only a rate
+        # read from NINJA_DEFAULT_THROTTLE_RATES is refreshed per request.
+        self._fixed_rate = rate
+        super().__init__(rate)
+
     def allow_request(self, request: HttpRequest) -> bool:
         worker: RefreshingRateMixin = copy.copy(self)
-        worker.rate = worker.get_rate()
+        worker.rate = self._fixed_rate or worker.get_rate()
         worker.num_requests, worker.duration = worker.parse_rate(worker.rate)
         setattr(_STATE, f"throttle_{id(self)}", worker)
         return super(RefreshingRateMixin, worker).allow_request(request)
