@@ -18,7 +18,9 @@ Every route stays under `/api/v1/`. `docs/openapi.json` is the committed contrac
 - `--api config.api.api` names the instance that has every router mounted once its module is imported, as Ninja's guide exports `project.urls.api` ([Ninja guide, Exporting the schema](https://django-ninja.dev/guide/openapi/)). `core.api.api.api` gets the routes only when something imports the URLconf, which `get_openapi_schema()` does through `reverse()`; `core/tests/ninja/test_openapi_export.py` checks the instance in a process that never imports it.
 - The schema goes to stdout and the shell redirects it. Django ends a command's output with a newline, so `docs/openapi.json` ends in exactly one and pre-commit's `end-of-file-fixer` leaves it as generated. `--output` writes the same JSON with no final newline, so the contract is not written with it.
 - The first pull request that introduces the JSON contract still compares against `docs/openapi.yaml` on the base branch; later pull requests compare JSON to JSON.
-- oasdiff 1.38.0 reports OpenAPI 3.1 typelist forms (`anyOf: [string, null]`) as `response-property-list-of-types-widened` against a 3.0.3 `nullable: true` baseline. That is a document-version difference, not a change in the HTTP contract.
+- oasdiff 1.38.0 reports OpenAPI 3.1 typelist forms (`anyOf: [string, null]`) as `response-property-list-of-types-widened` against a 3.0.3 `nullable: true` baseline. That is a document-version difference, not a change in the HTTP contract. Those errors are listed in `.github/oasdiff-yaml-baseline-err-ignore.txt`, which the `api-contract` job applies only while the base schema is YAML; the next pull request deletes it.
+- Ninja wraps an optional body (`Body(default_factory=...)`) in a one-item `allOf`, so the job runs oasdiff with `--flatten-allof` ([oasdiff: merging allOf](https://github.com/oasdiff/oasdiff/blob/main/docs/ALLOF.md)); a real change inside the body is still reported.
+- Error responses are declared per operation (`core/api/responses.py`), so they are part of the contract and `oasdiff changelog` shows any change to them.
 
 ## Alternatives
 

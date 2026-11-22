@@ -10,7 +10,7 @@
 
 ## Decision
 
-Writes are services and reads are selectors ([HackSoft Django Styleguide](https://github.com/HackSoftware/Django-Styleguide)): keyword-only, strictly typed functions that take plain values and model instances. Only `apps/<app>/api/` and `core/api/` import Django Ninja; routers are mounted in `config/api.py`. `lint-imports` enforces it. Domain errors are `core.exceptions.ApplicationError`, and the error body is built in `core.errors`, without the API framework. See [ARCHITECTURE.md#services-and-selectors](../ARCHITECTURE.md#services-and-selectors), [#strict-typing](../ARCHITECTURE.md#strict-typing) and [#import-contracts](../ARCHITECTURE.md#import-contracts).
+Writes are services and reads are selectors ([HackSoft Django Styleguide](https://github.com/HackSoftware/Django-Styleguide)): keyword-only, strictly typed functions that take plain values and model instances. Only `apps/<app>/api/`, `core/api/` and the tests under `tests/ninja/` import Django Ninja; routers are mounted in `config/api.py`. `lint-imports` enforces it. Domain errors are `core.exceptions.ApplicationError`, and the error body is built in `core.errors`, without the API framework. See [ARCHITECTURE.md#services-and-selectors](../ARCHITECTURE.md#services-and-selectors), [#strict-typing](../ARCHITECTURE.md#strict-typing) and [#import-contracts](../ARCHITECTURE.md#import-contracts).
 
 ## Consequences
 
