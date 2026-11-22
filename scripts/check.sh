@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# The lint and test gate for local runs and CI: `lint`, `test`, `reversible`, or
-# lint then test with no argument. See docs/development.md#checks.
+# The lint and test gate for local runs and CI: `lint`, `test`, `reversible`,
+# `openapi` (the docs/openapi.yaml drift check that ends `lint`), or lint then
+# test with no argument. See docs/development.md#checks.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -23,8 +24,17 @@ run_lint() {
     echo "== django-upgrade"
     find . \( -path ./.git -o -path ./.venv -o -path './.*_cache' -o -path ./staticfiles -o -path ./media \) -prune \
         -o -name '*.py' -exec django-upgrade --target-version 6.1 --check {} +
+    run_openapi
+}
+
+run_openapi() {
     echo "== OpenAPI schema"
-    local schema="${TMPDIR:-/tmp}/openapi-check.yaml"
+    # A private directory per run (mktemp -d, in $TMPDIR), removed on exit even
+    # after a failure: parallel runs never share the export, and a file left at
+    # a fixed path is never read or overwritten.
+    OPENAPI_CHECK_DIR="$(mktemp -d)"
+    trap 'rm -rf -- "$OPENAPI_CHECK_DIR"' EXIT
+    local schema="$OPENAPI_CHECK_DIR/openapi.yaml"
     python manage.py spectacular --file "$schema" --validate --fail-on-warn
     if ! diff -u docs/openapi.yaml "$schema"; then
         echo "docs/openapi.yaml is out of date. Regenerate it with:" >&2
@@ -81,12 +91,13 @@ case "${1:-all}" in
     lint) run_lint ;;
     test) run_test ;;
     reversible) run_reversible ;;
+    openapi) run_openapi ;;
     all)
         run_lint
         run_test
         ;;
     *)
-        echo "usage: $0 [lint|test|reversible]" >&2
+        echo "usage: $0 [lint|test|reversible|openapi]" >&2
         exit 2
         ;;
 esac
