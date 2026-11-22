@@ -49,15 +49,22 @@ def _with_request_id(record: logging.LogRecord, request_id: str) -> logging.LogR
     return record
 
 
+# The filter adds an attribute that LogRecord does not declare; a format string
+# reads it the way the configured formats do ("[%(request_id)s]").
+REQUEST_ID_FORMAT = logging.Formatter("%(request_id)s")
+
+
 def test_filter_adds_the_current_request_id() -> None:
-    assert _with_request_id(_record(), "abc123").request_id == "abc123"  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]
+    record = _with_request_id(_record(), "abc123")
+
+    assert REQUEST_ID_FORMAT.format(record) == "abc123"
 
 
 def test_filter_outside_a_request_uses_a_dash() -> None:
     record = _record()
     RequestIdFilter().filter(record)
 
-    assert record.request_id == "-"  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]
+    assert REQUEST_ID_FORMAT.format(record) == "-"
 
 
 def test_json_formatter_writes_one_object_with_request_id_and_extra() -> None:

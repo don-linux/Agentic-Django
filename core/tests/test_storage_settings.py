@@ -5,6 +5,7 @@ from http import HTTPStatus
 from typing import TYPE_CHECKING
 
 import pytest
+from django.contrib.auth.models import Group
 from django.core.files.storage import storages
 from django.db import models
 from django.db.models.fields.files import FieldFile
@@ -110,6 +111,7 @@ def test_s3_storages_build_public_and_signed_urls(
     assert "X-Amz-Signature=" in signed
 
     field = models.FileField(storage=storages["private"])
-    response = protected_file_response(FieldFile(None, field, "b.pdf"))  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]
+    # FieldFile needs its owner instance; this read never looks at it.
+    response = protected_file_response(FieldFile(Group(), field, "b.pdf"))
     assert response.status_code == HTTPStatus.FOUND
     assert "X-Amz-Signature=" in response["Location"]
