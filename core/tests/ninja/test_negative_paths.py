@@ -4,8 +4,10 @@ from http import HTTPStatus
 
 import pytest
 
+from core.tests.cache_helpers import DEAD_VALKEY
 from core.tests.ninja.pagination_views import _create_users
 from core.tests.ninja.pagination_views import _list
+from core.tests.ninja.pagination_views import cached_count_api
 from core.tests.ninja.pagination_views import cursor_api
 from core.tests.ninja.pagination_views import ordered_api
 
@@ -33,3 +35,12 @@ def test_an_invalid_cursor_is_404_not_found() -> None:
     response = _list(cursor_api(), "?cursor=not-a-cursor")
     # Ninja's cursor parser is a 400; the page-number contract stays 404.
     assert response.status_code in {HTTPStatus.BAD_REQUEST, HTTPStatus.NOT_FOUND}
+
+
+def test_cached_count_list_still_answers_during_a_valkey_outage(settings) -> None:
+    settings.CACHES = DEAD_VALKEY
+    total = 3
+    _create_users(total)
+    response = _list(cached_count_api())
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["count"] == total

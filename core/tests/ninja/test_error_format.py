@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from http import HTTPStatus
 
+import pytest
 from django.core.exceptions import PermissionDenied
+from django.db.models import ProtectedError
+from django.db.models import RestrictedError
 from ninja import Router
 from ninja.errors import Throttled
 from ninja.testing import TestClient
@@ -46,6 +49,26 @@ def test_conflict_error_defaults_to_409_and_includes_extra() -> None:
     assert body["code"] == "taken"
     assert body["detail"] == "Taken."
     assert body.get("extra") == {"field": "email"}
+
+
+def _raise_protected() -> None:
+    msg = "Cannot delete."
+    raise ProtectedError(msg, set())
+
+
+def _raise_restricted() -> None:
+    msg = "Cannot delete."
+    raise RestrictedError(msg, set())
+
+
+@pytest.mark.parametrize("raises", [_raise_protected, _raise_restricted])
+def test_protected_and_restricted_errors_map_to_409(raises) -> None:
+    response = _client(raises).get("/err/")
+    assert response.status_code == HTTPStatus.CONFLICT
+    assert response.json() == {
+        "code": "protected",
+        "detail": "This resource has dependent records and cannot be deleted.",
+    }
 
 
 def test_django_permission_denied_maps_to_permission_denied() -> None:
