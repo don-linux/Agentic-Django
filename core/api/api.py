@@ -5,6 +5,7 @@ from __future__ import annotations
 from django.conf import settings
 from django.urls import register_converter
 from ninja import NinjaAPI
+from ninja.renderers import JSONRenderer
 
 from core.api.auth import API_AUTH
 from core.api.converters import PublicIdConverter
@@ -19,6 +20,12 @@ from core.api.throttling import UserThrottle
 # https://docs.djangoproject.com/en/6.1/releases/6.0/ (removed features) and
 # https://docs.djangoproject.com/en/6.1/topics/http/urls/#registering-custom-path-converters
 register_converter(PublicIdConverter, "public_id")
+
+
+class CompactJSONRenderer(JSONRenderer):
+    """DRF's JSONRenderer bytes: no spaces after separators, UTF-8 (not \\u escapes)."""
+
+    json_dumps_params = {"separators": (",", ":"), "ensure_ascii": False}
 
 
 class ContractAPI(NinjaAPI):
@@ -44,6 +51,7 @@ api = ContractAPI(
     auth=API_AUTH,
     throttle=[AnonThrottle(), UserThrottle()],
     parser=JSONParser(),
+    renderer=CompactJSONRenderer(),
     servers=getattr(
         settings, "NINJA_SERVERS", [{"url": "/", "description": "Current host"}]
     ),

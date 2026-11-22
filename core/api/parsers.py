@@ -15,6 +15,11 @@ if TYPE_CHECKING:
     from django.http import HttpRequest
 
 
+def _reject_constant(name: str) -> object:
+    msg = f"Out of range float values are not JSON compliant: {name!r}"
+    raise ValueError(msg)
+
+
 class JSONParser(Parser):
     """
     Ninja's default json.loads, plus a 400 when JSON is nested too deeply.
@@ -24,8 +29,16 @@ class JSONParser(Parser):
     """
 
     def parse_body(self, request: HttpRequest) -> dict[str, Any]:
+        # Public Parser hook, after authentication and path validation. Ninja
+        # deliberately does not inspect Content-Type (guide/parsers/).
+        if request.body and (request.content_type or "").lower() != "application/json":
+            raw = request.headers.get("content-type", "")
+            raise HttpError(415, f'Unsupported media type "{raw}" in request.')
         try:
-            return super().parse_body(request)
+            # Strict UTF-8 (no BOM) and no NaN/Infinity, as DRF's JSONParser.
+            return json.loads(
+                request.body.decode("utf-8"), parse_constant=_reject_constant
+            )
         except RecursionError as exc:
             raise HttpError(400, "JSON parse error - nested too deeply.") from exc
         except RequestDataTooBig, TooManyFieldsSent:

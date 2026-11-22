@@ -346,7 +346,6 @@ MIDDLEWARE = [
     # Right after the probe, so every logged request has an id.
     "core.middleware.RequestIdMiddleware",
     "django.middleware.security.SecurityMiddleware",
-    "core.api.negotiation.ApiContractMiddleware",
     "django.middleware.csp.ContentSecurityPolicyMiddleware",
     # Right after SecurityMiddleware, so CORS and 404 responses under /api/ get it too.
     "core.middleware.ApiNoStoreMiddleware",
@@ -364,6 +363,9 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",
+    # Inside every header middleware (CSP, no-store, CORS, X-Frame-Options), so its
+    # 405/406/415 responses get the same headers as Ninja's.
+    "core.api.negotiation.ApiContractMiddleware",
     # Last: turns an admin lockout into a 429 response.
     "axes.middleware.AxesMiddleware",
 ]

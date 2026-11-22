@@ -80,6 +80,30 @@ def test_django_permission_denied_maps_to_permission_denied() -> None:
     assert response.json()["code"] == "permission_denied"
 
 
+def test_django_permission_denied_keeps_its_message() -> None:
+    def raises() -> None:
+        msg = "Only the owner can do this."
+        raise PermissionDenied(msg)
+
+    response = _client(raises).get("/err/")
+    assert response.status_code == HTTPStatus.FORBIDDEN
+    assert response.json() == {
+        "code": "permission_denied",
+        "detail": "Only the owner can do this.",
+    }
+
+
+def test_django_permission_denied_without_a_message_has_the_default_detail() -> None:
+    def raises() -> None:
+        raise PermissionDenied
+
+    response = _client(raises).get("/err/")
+    assert response.json() == {
+        "code": "permission_denied",
+        "detail": "You do not have permission to perform this action.",
+    }
+
+
 def test_throttled_keeps_retry_after_header() -> None:
     wait = 7
 

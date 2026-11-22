@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 
@@ -86,6 +87,24 @@ def test_cursor_pagination_follows_next_links_without_a_count() -> None:
     emails = [row["email"] for row in first["results"] + second["results"]]
     assert emails == newest_first
     assert second["next"] is None
+
+
+def test_cursor_pagination_orders_by_public_id_not_by_pk() -> None:
+    # public_id is a uuid7 and grows with the pk, so give the rows public_ids in
+    # the opposite order: only -public_id, not Ninja's default -pk, lists them
+    # by ascending pk.
+    _create_users(3)
+    by_pk = list(User.objects.order_by("pk").values_list("pk", "email"))
+    for position, (pk, _email) in enumerate(by_pk):
+        reversed_id = uuid.UUID(int=len(by_pk) - position)
+        User.objects.filter(pk=pk).update(public_id=reversed_id)
+    api = cursor_api()
+
+    first = _list(api, "?page_size=2").json()
+    second = _list(api, f"?{first['next'].split('?', 1)[1]}").json()
+
+    emails = [row["email"] for row in first["results"] + second["results"]]
+    assert emails == [email for _pk, email in by_pk]
 
 
 def test_cursor_parameter_is_documented_in_the_schema() -> None:

@@ -156,13 +156,43 @@ def test_production_shares_one_proxy_count(env: dict[str, str], expected: int) -
     assert production["NINJA_NUM_PROXIES"] == expected
 
 
-VALID_RATES = ["60/min", "5/s", "1000/hour", "10/minute", "1/d"]
-MALFORMED_RATES = ["600 per minute", "sixty/min", "60/", "60/week", "/min"]
+# Each valid rate as Ninja 1.8.0 parses it: (requests, seconds).
+PARSED_RATES = {
+    "60/min": (60, 60),
+    "5/s": (5, 1),
+    "1000/hour": (1000, 3600),
+    "1/d": (1, 86400),
+    "1/10s": (1, 10),
+    "100/300": (100, 300),
+    "5/sec": (5, 1),
+}
+VALID_RATES = list(PARSED_RATES)
+MALFORMED_RATES = [
+    "600 per minute",
+    "sixty/min",
+    "60/",
+    "60/week",
+    "/min",
+    "10/minute",
+    "60/hours",
+    "60/days",
+    "100/hr",
+]
 
 
 @pytest.mark.parametrize("rate", VALID_RATES)
 def test_ninja_rate_formats_are_accepted(rate: str) -> None:
     assert_throttle_rates({"anon": rate, "reports.generate": None})
+    # The guard and Ninja agree: what the guard accepts, Ninja parses to a
+    # positive number of requests per positive number of seconds.
+    throttle = SimpleRateThrottle(rate)
+    assert (throttle.num_requests, throttle.duration) == PARSED_RATES[rate]
+
+
+@pytest.mark.parametrize("rate", MALFORMED_RATES[5:])
+def test_rates_ninja_cannot_parse_are_refused(rate: str) -> None:
+    with pytest.raises(ValueError, match="Invalid rate format"):
+        SimpleRateThrottle(rate)
 
 
 @pytest.mark.parametrize("rate", MALFORMED_RATES)

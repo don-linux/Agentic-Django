@@ -381,9 +381,11 @@ LOCAL_DATABASE_HOSTS = frozenset({"postgres_db", "postgres", "db"})
 LOCAL_VALKEY_HOSTS = frozenset({"valkey"})
 
 
-# Ninja's SimpleRateThrottle.parse_rate reads "<int>/<period>" and only the first
-# letter of the period (s, m, h or d), so "60/min" and "60/minute" both work.
-_THROTTLE_RATE = re.compile(r"[0-9]+/[smhd][a-z]*")
+# Ninja 1.8.0 SimpleRateThrottle.parse_rate: "<int>/[<int>]<unit>" with unit s, sec,
+# m, min, h, hour, d or day, or "<int>/<seconds>". "60/minute" or "60/hours" raise
+# ValueError when core/api/api.py builds the throttles: every URL would be a 500.
+# Source: ninja/throttling.py; https://django-ninja.dev/guides/throttling
+_THROTTLE_RATE = re.compile(r"[0-9]+/(?:[0-9]+|[0-9]*(?:s|sec|m|min|h|hour|d|day))")
 
 
 def assert_throttle_rates(rates: dict[str, str | None]) -> None:

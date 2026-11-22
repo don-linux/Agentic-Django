@@ -22,6 +22,7 @@ from django.urls import Resolver404
 from django.urls import resolve
 
 from core.api.api import api
+from core.api.auth import API_AUTH
 from core.api.auth import x_session_token_auth
 from core.errors import error_body
 
@@ -218,8 +219,16 @@ def _produces(subpath: str) -> tuple[str, ...]:
     )
 
 
+_COMPACT: dict[str, Any] = {"separators": (",", ":"), "ensure_ascii": False}
+
+# DRF's OPTIONS metadata body for each resource (SimpleMetadata, no actions).
+_OPTIONS_NAMES = {"users/": "User List", "users/me/": "Me"}
+
+
 def _error(code: str, detail: str, status: int, **headers: str) -> JsonResponse:
-    response = JsonResponse(error_body(code, detail), status=status)
+    response = JsonResponse(
+        error_body(code, detail), status=status, json_dumps_params=_COMPACT
+    )
     for key, value in headers.items():
         response[key] = value
     return response
@@ -299,31 +308,43 @@ class ApiContractMiddleware:
         if allow is not None and method not in {m.strip() for m in allow.split(",")}:
             return self._not_allowed(method, allow)
 
-        if (
-            method in {"POST", "PUT", "PATCH"}
-            and allow
-            and method in {m.strip() for m in allow.split(",")}
-        ):
-            content_type = (request.content_type or "").split(";")[0].strip().lower()
-            if content_type and content_type not in {
-                "application/json",
-                "application/octet-stream",
-                "",
-            }:
-                return _error(
-                    "unsupported_media_type",
-                    f'Unsupported media type "{request.content_type}" in request.',
-                    HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
-                )
+        if method == "OPTIONS" and allow is not None and subpath.startswith("users/"):
+            return self._options(request, subpath, allow)
+
+        # 415 is decided by core.api.parsers, after the path lookup validator.
 
         response = self.get_response(request)
         if response.status_code == HTTPStatus.METHOD_NOT_ALLOWED and allow is not None:
             return self._not_allowed(method, allow)
+        # DRF sent Allow on every response of a resource, not only on 405.
+        if allow is not None and not response.has_header("Allow"):
+            response["Allow"] = allow
+        return response
+
+    def _options(self, request: HttpRequest, subpath: str, allow: str) -> HttpResponse:
+        """OPTIONS as DRF answered it: 401 when anonymous, else 200 metadata."""
+        if not any(auth(request) for auth in API_AUTH):
+            return _error(
+                "not_authenticated",
+                "Authentication credentials were not provided.",
+                HTTPStatus.UNAUTHORIZED,
+                **{"WWW-Authenticate": "X-Session-Token", "Allow": allow},
+            )
+        body = {
+            "name": _OPTIONS_NAMES.get(subpath, "User Instance"),
+            "description": "",
+            "renders": [JSON],
+            "parses": [JSON],
+        }
+        response = JsonResponse(body, json_dumps_params=_COMPACT)
+        response["Allow"] = allow
         return response
 
     def _not_allowed(self, method: str, allow: str) -> HttpResponse:
         body = json.dumps(
-            error_body("method_not_allowed", f'Method "{method}" not allowed.')
+            error_body("method_not_allowed", f'Method "{method}" not allowed.'),
+            separators=(",", ":"),
+            ensure_ascii=False,
         )
         # HttpResponseNotAllowed joins the list in order: Allow keeps DRF's order.
         return HttpResponseNotAllowed(

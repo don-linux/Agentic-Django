@@ -23,7 +23,10 @@ class BaseSchema(Schema):
 class InputSchema(Schema):
     # A body key that is not a field is a 400 unknown_field, not a typo ignored.
     # See docs/api.md#representation and ADR 0006.
-    model_config = ConfigDict(extra="forbid", from_attributes=True)
+    # str_strip_whitespace: DRF CharField trimmed by default (trim_whitespace=True).
+    model_config = ConfigDict(
+        extra="forbid", from_attributes=True, str_strip_whitespace=True
+    )
 
 
 class ErrorSchema(BaseSchema):

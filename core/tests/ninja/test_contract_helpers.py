@@ -2,47 +2,53 @@
 
 from __future__ import annotations
 
+import re
 from http import HTTPStatus
 
 import pytest
 from django.conf import settings
 from django.core.exceptions import RequestDataTooBig
-from django.http import Http404
+from django.http import HttpRequest
 from django.test import RequestFactory
 from ninja import Router
 from ninja.errors import HttpError
-from ninja.parser import Parser
 from ninja.testing import TestClient
 
 from apps.users.models import User
 from core.api.exceptions import _ninja_validation_fields
 from core.api.pagination import LimitPageNumberPagination
-from core.api.pagination import _abs_url
-from core.api.pagination import _parse_page
-from core.api.pagination import _parse_page_size
+from core.api.pagination import _positive_int
+from core.api.pagination import _set_query_param
 from core.api.parsers import JSONParser
 from core.api.throttling import ScopedThrottle
 from core.tests.ninja.pagination_views import _list
 from core.tests.ninja.pagination_views import cached_count_api
 from core.tests.ninja.support import make_api
 
-
-def test_parse_page_and_page_size_reject_values_below_one() -> None:
-    size, cap = 20, 100
-    with pytest.raises(Http404):
-        _parse_page(0)
-    with pytest.raises(Http404):
-        _parse_page_size(0, default=size, maximum=cap)
-    assert _parse_page(None) == 1
-    assert _parse_page_size(None, default=size, maximum=cap) == size
-    assert _parse_page_size(500, default=size, maximum=cap) == cap
+REF_VALIDATION = "#/components/schemas/ValidationErrorSchema"
+REF_ERROR = "#/components/schemas/ErrorSchema"
+REF_UPDATE = "#/components/schemas/UserUpdateIn"
 
 
-def test_abs_url_includes_page_size_when_present() -> None:
-    request = RequestFactory().get("/api/v1/users/", {"page_size": "10"})
-    url = _abs_url(request, page=2, page_size=10, default_size=20)
-    assert "page=2" in url
-    assert "page_size=10" in url
+def test_positive_int_is_drf_strict_and_capped() -> None:
+    cutoff = 100
+    for raw in ("0", "-1"):
+        with pytest.raises(ValueError, match=f"^{re.escape(raw)}$"):
+            _positive_int(raw, cutoff=cutoff)
+    for raw in ("abc", "1.0", ""):
+        with pytest.raises(ValueError, match=r"^invalid literal for int\(\)"):
+            _positive_int(raw, cutoff=cutoff)
+    assert _positive_int("500", cutoff=cutoff) == cutoff
+
+
+def test_set_query_param_sorts_keeps_lists_and_removes() -> None:
+    url = "http://testserver/api/v1/users/?foo=b&foo=a&page_size=1&page=2"
+    assert _set_query_param(url, "page", "3") == (
+        "http://testserver/api/v1/users/?foo=b&foo=a&page=3&page_size=1"
+    )
+    assert _set_query_param(url, "page", None) == (
+        "http://testserver/api/v1/users/?foo=b&foo=a&page_size=1"
+    )
 
 
 def test_pagination_counts_a_plain_list() -> None:
@@ -61,10 +67,10 @@ def test_scoped_throttle_takes_the_rate_of_its_scope() -> None:
 def test_json_parser_reraises_request_data_too_big(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def boom(self, request):
+    def boom(self):
         raise RequestDataTooBig
 
-    monkeypatch.setattr(Parser, "parse_body", boom)
+    monkeypatch.setattr(HttpRequest, "body", property(boom))
     with pytest.raises(RequestDataTooBig):
         JSONParser().parse_body(RequestFactory().post("/"))
 

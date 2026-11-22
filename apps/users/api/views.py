@@ -21,6 +21,7 @@ from pydantic import ValidationInfo
 from pydantic import WithJsonSchema
 from pydantic import field_validator
 from pydantic import model_validator
+from pydantic_core import PydanticCustomError
 
 from apps.users.models import User
 from apps.users.selectors import user_list
@@ -48,6 +49,13 @@ ERROR_400 = {
     ]
 }
 ERROR_404 = {404: ErrorSchema}
+
+
+# DRF CharField's codes and messages for the same input (ADR 0006).
+NULL_CODE = "null"
+NULL_DETAIL = "This field may not be null."
+NUL_CHAR_CODE = "null_characters_not_allowed"
+NUL_CHAR_DETAIL = "Null characters are not allowed."
 
 
 class UserOut(BaseSchema):
@@ -88,12 +96,19 @@ class UserUpdateIn(InputSchema):
     def coerce_and_reject_null(cls, value: Any) -> Any:
         # DRF CharField coerced numbers to strings; booleans stay invalid.
         if value is None:
-            msg = "This field may not be null."
-            raise ValueError(msg)
+            raise PydanticCustomError(NULL_CODE, NULL_DETAIL)
         if isinstance(value, bool):
             return value
         if isinstance(value, int | float):
             return str(value)
+        return value
+
+    @field_validator("name", mode="after")
+    @classmethod
+    def reject_null_characters(cls, value: str | None) -> str | None:
+        # DRF CharField's ProhibitNullCharactersValidator; Postgres refuses NUL.
+        if value is not None and "\x00" in value:
+            raise PydanticCustomError(NUL_CHAR_CODE, NUL_CHAR_DETAIL)
         return value
 
 

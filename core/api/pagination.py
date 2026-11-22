@@ -16,7 +16,10 @@ from __future__ import annotations
 
 from math import ceil
 from typing import Any
+from urllib.parse import parse_qs
 from urllib.parse import urlencode
+from urllib.parse import urlsplit
+from urllib.parse import urlunsplit
 
 from django.conf import settings
 from django.core.exceptions import EmptyResultSet
@@ -28,6 +31,9 @@ from ninja import Field
 from ninja import Schema
 from ninja.pagination import CursorPagination as NinjaCursorPagination
 from ninja.pagination import PageNumberPagination
+from pydantic import ValidationError as PydanticValidationError
+from pydantic import ValidatorFunctionWrapHandler
+from pydantic import field_validator
 
 from core.cache import read_through
 
@@ -54,29 +60,34 @@ class PageNumberIn(Schema):
         default=None, description="Number of results to return per page."
     )
 
-
-def _parse_page(raw: int | None) -> int:
-    page = 1 if raw is None else raw
-    if page < 1:
-        raise Http404(INVALID_PAGE)
-    return page
-
-
-def _parse_page_size(raw: int | None, default: int, maximum: int) -> int:
-    if raw is None:
-        return default
-    if raw < 1:
-        raise Http404(INVALID_PAGE)
-    return min(raw, maximum)
+    @field_validator("page", "page_size", mode="wrap")
+    @classmethod
+    def _lenient(cls, value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
+        # paginate_queryset reads the raw query string with DRF's rules.
+        try:
+            return handler(value)
+        except PydanticValidationError:
+            return None
 
 
-def _abs_url(request: HttpRequest, page: int, page_size: int, default_size: int) -> str:
-    params = request.GET.copy()
-    params["page"] = str(page)
-    if "page_size" in request.GET or page_size != default_size:
-        params["page_size"] = str(page_size)
-    query = urlencode(params, doseq=True)
-    return request.build_absolute_uri(request.path + (f"?{query}" if query else ""))
+def _positive_int(raw: str, cutoff: int) -> int:
+    """DRF's _positive_int(strict=True): int(), > 0, capped at cutoff."""
+    value = int(raw)
+    if value <= 0:
+        raise ValueError(raw)
+    return min(value, cutoff)
+
+
+def _set_query_param(url: str, key: str, value: str | None) -> str:
+    """DRF's replace_query_param / remove_query_param (sorted keys, lists kept)."""
+    scheme, netloc, path, query, fragment = urlsplit(url)
+    params = parse_qs(query, keep_blank_values=True)
+    if value is None:
+        params.pop(key, None)
+    else:
+        params[key] = [value]
+    query = urlencode(sorted(params.items()), doseq=True)
+    return urlunsplit((scheme, netloc, path, query, fragment))
 
 
 class LimitPageNumberPagination(PageNumberPagination):
@@ -118,32 +129,40 @@ class LimitPageNumberPagination(PageNumberPagination):
         if not isinstance(pagination, PageNumberIn):
             msg = f"expected PageNumberIn, got {type(pagination).__name__}"
             raise TypeError(msg)
-        page = _parse_page(pagination.page)
-        page_size = _parse_page_size(
-            pagination.page_size, self.page_size, self.max_page_size
-        )
-        if page > self.max_page_number:
-            raise Http404(INVALID_PAGE)
+        # DRF PageNumberPagination: a bad page_size falls back to the default;
+        # an empty page is 1; "last" is the last page; anything else is 404.
+        page_size = self.page_size
+        if "page_size" in request.GET:
+            try:
+                page_size = _positive_int(request.GET["page_size"], self.max_page_size)
+            except ValueError:
+                page_size = self.page_size
+        raw_page = request.GET.get("page") or "1"
 
         count = self.count_items(queryset)
-        total_pages = ceil(count / page_size) if page_size else 0
-        if count == 0:
-            if page > 1:
-                raise Http404(INVALID_PAGE)
-            total_pages = 1
-        elif page > total_pages:
+        total_pages = max(1, ceil(count / page_size))
+        if raw_page == "last":
+            raw_page = str(total_pages)
+        try:
+            page = int(raw_page)
+        except ValueError:
+            raise Http404(INVALID_PAGE) from None
+        if page > self.max_page_number or page < 1 or page > total_pages:
             raise Http404(INVALID_PAGE)
 
         offset = (page - 1) * page_size
         results = queryset[offset : offset + page_size]
+        url = request.build_absolute_uri()
         next_url = (
-            _abs_url(request, page + 1, page_size, self.page_size)
-            if page < total_pages
-            else None
+            _set_query_param(url, "page", str(page + 1)) if page < total_pages else None
         )
-        previous_url = (
-            _abs_url(request, page - 1, page_size, self.page_size) if page > 1 else None
-        )
+        previous_url = None
+        if page > 1:
+            previous = page - 1
+            # The link to the first page has no page parameter, as DRF's.
+            previous_url = _set_query_param(
+                url, "page", None if previous == 1 else str(previous)
+            )
         return {
             "count": count,
             "next": next_url,
@@ -196,6 +215,13 @@ class LimitCursorPagination(NinjaCursorPagination):
         self,
         page_size: int = 20,
         max_page_size: int = 100,
+        ordering: tuple[str, ...] = ("-public_id",),
         **kwargs: Any,
     ) -> None:
-        super().__init__(page_size=page_size, max_page_size=max_page_size, **kwargs)
+        # Ninja's default is ("-pk",): the cursor would carry the integer pk.
+        super().__init__(
+            page_size=page_size,
+            max_page_size=max_page_size,
+            ordering=ordering,
+            **kwargs,
+        )
