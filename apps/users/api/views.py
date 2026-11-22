@@ -181,8 +181,7 @@ def _apply_update(user: User, data: dict[str, Any]) -> User:
     return user_update(user=user, name=data["name"])
 
 
-@router.api_operation(
-    ["GET", "HEAD"],
+@router.get(
     "/",
     response={200: list[UserOut], **ERROR_401},
     operation_id="users_list",
@@ -201,8 +200,7 @@ def users_list(request: HttpRequest) -> Any:
     return user_list(user=current)
 
 
-@router.api_operation(
-    ["GET", "HEAD"],
+@router.get(
     "/me/",
     response={200: UserOut, **ERROR_401},
     operation_id="users_me_retrieve",
@@ -232,8 +230,7 @@ def users_me_partial_update(request: HttpRequest, body: UserPatchBody) -> User:
     return _apply_update(user, body.model_dump(exclude_unset=True))
 
 
-@router.api_operation(
-    ["GET", "HEAD"],
+@router.get(
     "/{public_id:id}/",
     response={200: UserOut, **ERROR_401, **ERROR_404},
     operation_id="users_retrieve",

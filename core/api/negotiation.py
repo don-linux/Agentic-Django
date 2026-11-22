@@ -8,7 +8,9 @@ for an anonymous client (tests/http/test_openapi.py).
 
 from __future__ import annotations
 
+import functools
 import json
+import re
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 from typing import Any
@@ -28,6 +30,7 @@ from core.errors import error_body
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from collections.abc import Iterable
 
 JSON = "application/json"
 SCHEMA_YAML = "application/vnd.oai.openapi"
@@ -35,13 +38,12 @@ SCHEMA_JSON = "application/vnd.oai.openapi+json"
 # The schema's media types: SpectacularAPIView's four renderers, in their order.
 SCHEMA_MEDIA_TYPES = (SCHEMA_YAML, "application/yaml", SCHEMA_JSON, JSON)
 
-# Path prefixes under /api/v1/ and the methods the HTTP contract advertises.
-# HEAD and OPTIONS are advertised even when Ninja only registered GET/PATCH.
-_ALLOW: list[tuple[str, str]] = [
-    ("users/me/", "GET, PATCH, HEAD, OPTIONS"),
-    # Detail after me so "me" is not parsed as an id.
-    ("users/", "GET, HEAD, OPTIONS"),  # list, exact suffix handled below
-]
+# Allow lists the route's operations in DRF's order, then HEAD (served by the
+# GET operation) and OPTIONS (answered here). The methods come from the
+# project API's OpenAPI document, so a new router needs no entry here.
+_METHOD_ORDER = ("GET", "POST", "PUT", "PATCH", "DELETE")
+_DOCS_ROUTES = {"api-schema", "api-docs"}
+_ROUTE_PARAM = re.compile(r"<(?:[^>:]+:)?([^>]+)>")
 
 
 def _api_path(request: HttpRequest) -> str | None:
@@ -54,30 +56,39 @@ def _api_path(request: HttpRequest) -> str | None:
     return path[len(prefix) :]
 
 
-def _allow_for(subpath: str) -> str | None:
-    # Only exact, slash-terminated API paths. A missing trailing slash is a 404,
-    # not a 405 (tests/http/test_rest_conventions.py).
-    if subpath == "users/":
-        return "GET, HEAD, OPTIONS"
-    if subpath == "users/me/":
-        return "GET, PATCH, HEAD, OPTIONS"
-    if (
-        subpath.startswith("users/")
-        and subpath.endswith("/")
-        and subpath != "users/me/"
-    ):
-        return "GET, PATCH, HEAD, OPTIONS"
-    if subpath in {"schema/", "docs/"}:
-        return "GET, HEAD, OPTIONS"
-    return None
+def _allow_header(methods: Iterable[str]) -> str:
+    wanted = {m.upper() for m in methods}
+    ordered = [m for m in _METHOD_ORDER if m in wanted]
+    if "GET" in wanted:
+        ordered.append("HEAD")
+    ordered.append("OPTIONS")
+    return ", ".join(ordered)
 
 
-def _is_route(path: str) -> bool:
+@functools.cache
+def _operations_by_route() -> dict[str, dict[str, Any]]:
+    """OpenAPI path ("/api/v1/users/{id}/") -> {method: operation}."""
+    paths = api.get_openapi_schema().get("paths", {})
+    return {
+        path: {m.upper(): op for m, op in item.items() if m.upper() in _METHOD_ORDER}
+        for path, item in paths.items()
+    }
+
+
+def _route_operations(request: HttpRequest) -> dict[str, Any] | None:
+    """The operations of the API route this request resolves to, else None.
+
+    A path that resolves to nothing is Django's 404, not a 405: Resolver404
+    happens before any method check, as in the DRF contract.
+    """
     try:
-        resolve(path)
+        match = resolve(request.path_info)
     except Resolver404:
-        return False
-    return True
+        return None
+    if match.url_name in _DOCS_ROUTES:
+        return {"GET": {"summary": match.url_name}}
+    route = "/" + _ROUTE_PARAM.sub(r"{\1}", match.route)
+    return _operations_by_route().get(route)
 
 
 # DRF 3.18.3 DefaultContentNegotiation's bounds on the Accept header
@@ -221,9 +232,6 @@ def _produces(subpath: str) -> tuple[str, ...]:
 
 _COMPACT: dict[str, Any] = {"separators": (",", ":"), "ensure_ascii": False}
 
-# DRF's OPTIONS metadata body for each resource (SimpleMetadata, no actions).
-_OPTIONS_NAMES = {"users/": "User List", "users/me/": "Me"}
-
 
 def _error(code: str, detail: str, status: int, **headers: str) -> JsonResponse:
     response = JsonResponse(
@@ -282,6 +290,12 @@ def _not_acceptable() -> JsonResponse:
     )
 
 
+def _options_name(operations: dict[str, Any]) -> str:
+    first: dict[str, Any] = next(iter(operations.values()), {})
+    operation: dict[str, Any] = operations.get("GET") or first
+    return str(operation.get("summary") or "")
+
+
 class ApiContractMiddleware:
     """406 / 415 / 405 {code, detail} on /api/v1/ before and after Ninja."""
 
@@ -293,35 +307,57 @@ class ApiContractMiddleware:
         if subpath is None:
             return self.get_response(request)
 
-        allow = _allow_for(subpath)
-        method = request.method or "GET"
-
-        # Content negotiation comes first, as in DRF's APIView.initial: an Accept
-        # the route cannot produce is 406 before the 405, OPTIONS and the staff
-        # and auth checks, even when anonymous. A path that matches no route is
-        # Django's 404 whatever the Accept.
-        if _is_route(request.path_info) and not _negotiate(
-            request.headers.get("Accept"), _produces(subpath)
-        ):
-            return _not_acceptable()
-
-        if allow is not None and method not in {m.strip() for m in allow.split(",")}:
-            return self._not_allowed(method, allow)
-
-        if method == "OPTIONS" and allow is not None and subpath.startswith("users/"):
-            return self._options(request, subpath, allow)
-
+        operations = _route_operations(request)
+        allow = _allow_header(operations) if operations is not None else None
+        early = self._before(request, subpath, operations, allow)
         # 415 is decided by core.api.parsers, after the path lookup validator.
-
-        response = self.get_response(request)
-        if response.status_code == HTTPStatus.METHOD_NOT_ALLOWED and allow is not None:
-            return self._not_allowed(method, allow)
-        # DRF sent Allow on every response of a resource, not only on 405.
+        # Every API route is in the schema (test_method_negotiation pins it), so
+        # a method the route lacks never reaches Ninja: _before answered 405.
+        response = early if early is not None else self._dispatch(request)
+        # DRF sent Allow on every response of a resource, the early 406 included
+        # (APIView.finalize_response sets it after the handler or the exception).
         if allow is not None and not response.has_header("Allow"):
             response["Allow"] = allow
         return response
 
-    def _options(self, request: HttpRequest, subpath: str, allow: str) -> HttpResponse:
+    def _before(
+        self,
+        request: HttpRequest,
+        subpath: str,
+        operations: dict[str, Any] | None,
+        allow: str | None,
+    ) -> HttpResponse | None:
+        """406, 405 and OPTIONS answered before the operation runs."""
+        method = request.method or "GET"
+        # Content negotiation comes first, as in DRF's APIView.initial: an Accept
+        # the route cannot produce is 406 before the 405, OPTIONS and the staff
+        # and auth checks, even when anonymous. A path that matches no route is
+        # Django's 404 whatever the Accept.
+        if operations is not None and not _negotiate(
+            request.headers.get("Accept"), _produces(subpath)
+        ):
+            return _not_acceptable()
+        if allow is not None and method not in {m.strip() for m in allow.split(",")}:
+            return self._not_allowed(method, allow)
+        if method == "OPTIONS" and operations is not None:
+            return self._options(request, operations, allow or "")
+        return None
+
+    def _dispatch(self, request: HttpRequest) -> HttpResponse:
+        # HEAD runs the GET operation (Django's View does the same); the server
+        # drops the body. Operations declare GET only, so the schema has no
+        # duplicate HEAD operationIds (OpenAPI 3.1 requires unique ones).
+        if request.method != "HEAD":
+            return self.get_response(request)
+        request.method = "GET"
+        try:
+            return self.get_response(request)
+        finally:
+            request.method = "HEAD"
+
+    def _options(
+        self, request: HttpRequest, operations: dict[str, Any], allow: str
+    ) -> HttpResponse:
         """OPTIONS as DRF answered it: 401 when anonymous, else 200 metadata."""
         if not any(auth(request) for auth in API_AUTH):
             return _error(
@@ -331,7 +367,8 @@ class ApiContractMiddleware:
                 **{"WWW-Authenticate": "X-Session-Token", "Allow": allow},
             )
         body = {
-            "name": _OPTIONS_NAMES.get(subpath, "User Instance"),
+            # DRF SimpleMetadata shape; the name is the GET (or first) summary.
+            "name": _options_name(operations),
             "description": "",
             "renders": [JSON],
             "parses": [JSON],
