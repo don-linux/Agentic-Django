@@ -18,6 +18,8 @@ run_lint() {
     python scripts/forbid_cache_clear.py apps core config
     echo "== mypy"
     mypy .
+    echo "== pyright"
+    pyright
     echo "== import contracts"
     # [tool.importlinter] in pyproject.toml; docs/ARCHITECTURE.md#import-contracts.
     lint-imports

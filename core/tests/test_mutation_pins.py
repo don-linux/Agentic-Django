@@ -32,6 +32,7 @@ from django.test import RequestFactory
 from django.test import override_settings
 from django.urls import NoReverseMatch
 from django.utils import timezone
+from django_stubs_ext.db.models import TypedModelMeta
 from redis.exceptions import ConnectionError as ValkeyConnectionError
 from sentry_sdk.integrations.logging import LoggingIntegration
 
@@ -368,7 +369,7 @@ def _sample_model_with_note() -> Any:
         title = models.CharField(max_length=100)
         note = models.CharField(max_length=100, default="original")
 
-        class Meta:
+        class Meta(BaseModel.Meta, TypedModelMeta):
             app_label = "core"
             apps = isolated_apps
 

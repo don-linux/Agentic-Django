@@ -36,18 +36,17 @@ USE_TZ = True
 
 
 if os.getenv("DATABASE_URL", default=None):
-    DATABASES = {"default": env.db("DATABASE_URL")}
+    default_database: dict[str, Any] = env.db("DATABASE_URL")
 else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": env.str("POSTGRES_DB"),
-            "USER": env.str("POSTGRES_USER"),
-            "PASSWORD": env.str("POSTGRES_PASSWORD"),
-            "HOST": env.str("POSTGRES_HOST", default="postgres_db"),
-            "PORT": env.str("POSTGRES_PORT", default="5432"),
-        },
+    default_database = {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": env.str("POSTGRES_DB"),
+        "USER": env.str("POSTGRES_USER"),
+        "PASSWORD": env.str("POSTGRES_PASSWORD"),
+        "HOST": env.str("POSTGRES_HOST", default="postgres_db"),
+        "PORT": env.str("POSTGRES_PORT", default="5432"),
     }
+DATABASES: dict[str, dict[str, Any]] = {"default": default_database}
 # Give up on an unreachable server instead of hanging the request (and /health/).
 DATABASES["default"].setdefault("OPTIONS", {})["connect_timeout"] = env.int(
     "POSTGRES_CONNECT_TIMEOUT",
@@ -488,7 +487,7 @@ AXES_RESET_ON_SUCCESS = True
 AXES_USERNAME_FORM_FIELD = "username"
 # Counters live in the default cache, shared by every worker in production.
 AXES_HANDLER = "axes.handlers.cache.AxesCacheHandler"
-# Reads TRUSTED_PROXY_COUNT, like DRF and allauth; see core/net.py.
+# Reads TRUSTED_PROXY_COUNT, like Ninja throttles and allauth; see core/net.py.
 AXES_CLIENT_IP_CALLABLE = "core.net.get_client_ip"
 
 # Same in every environment, so Mailpit shows exactly what production sends.

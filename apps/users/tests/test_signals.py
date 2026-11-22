@@ -53,7 +53,12 @@ def test_a_delete_invalidates(cache_writes: CacheWrites) -> None:
     # Collector, which still sends post_delete.
     with cache_writes():
         collector = Collector(using="default")
-        collector.collect([doomed])
+        # django-stubs 6.1.2 types collect() as
+        # _IndexableCollection[Model | None], a Protocol whose __getitem__
+        # also takes `index` by name; typeshed's list and tuple take it
+        # positional-only, so Pyright 1.1.414 does not treat list[User] or
+        # tuple[User] as that protocol.
+        collector.collect([doomed])  # pyright: ignore[reportArgumentType]
         collector.delete()
 
     assert _current_version() != before

@@ -16,7 +16,6 @@ if typing.TYPE_CHECKING:
     from django.contrib.auth.base_user import AbstractBaseUser
     from django.http import HttpRequest
 
-    from apps.users.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +117,9 @@ class HeadlessAdapter(DefaultHeadlessAdapter):
                 )
         return dataclasses.make_dataclass("User", fields)
 
-    def user_as_dataclass(self, user: User) -> typing.Any:
+    def user_as_dataclass(self, user: AbstractBaseUser) -> typing.Any:
+        # DefaultHeadlessAdapter types `user` as AbstractBaseUser. Narrowing the
+        # parameter to User is an incompatible override for pyright.
         data = super().user_as_dataclass(user)
-        return dataclasses.replace(data, id=str(user.public_id) if user.pk else None)
+        public_id = getattr(user, "public_id", None)
+        return dataclasses.replace(data, id=str(public_id) if user.pk else None)

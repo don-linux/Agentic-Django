@@ -56,7 +56,12 @@ class Command(BaseCommand):
 
         collector = Collector(using=router.db_for_write(User))
         try:
-            collector.collect([user])
+            # django-stubs 6.1.2 types collect() as
+            # _IndexableCollection[Model | None], a Protocol whose __getitem__
+            # also takes `index` by name; typeshed's list and tuple take it
+            # positional-only, so Pyright 1.1.414 does not treat list[User] or
+            # tuple[User] as that protocol.
+            collector.collect([user])  # pyright: ignore[reportArgumentType]
         except ProtectedError as exc:
             msg = f"Rows that protect this user must go first: {exc.args[0]}"
             raise CommandError(msg) from exc

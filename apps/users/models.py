@@ -30,9 +30,15 @@ class User(AbstractUser):
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
 
-    objects: ClassVar[UserManager] = UserManager()
+    # django-stubs declares AbstractUser.objects as ClassVar[UserManager[Self]].
+    # Pyright 1.1.414 compares this override with UserManager[AbstractUser] and,
+    # objects being a mutable class variable, requires that exact type, which
+    # the custom manager (a subclass of UserManager[User]) is not.
+    objects: ClassVar[UserManager] = UserManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
-    class Meta:
+    # Extends AbstractUser.Meta, as Django documents for an abstract parent's
+    # Meta and as django.contrib.auth's own User does.
+    class Meta(AbstractUser.Meta):
         verbose_name = "user"
         verbose_name_plural = "users"
         constraints = [

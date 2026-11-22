@@ -9,6 +9,7 @@ from django.apps.registry import Apps
 from django.db import connection
 from django.db import models
 from django.utils import timezone
+from django_stubs_ext.db.models import TypedModelMeta
 
 from core.models import BaseModel
 
@@ -19,7 +20,7 @@ def _build_sample_model() -> Any:
     class SampleItem(BaseModel):
         title = models.CharField(max_length=100)
 
-        class Meta:
+        class Meta(BaseModel.Meta, TypedModelMeta):
             app_label = "core"
             apps = isolated_apps
 

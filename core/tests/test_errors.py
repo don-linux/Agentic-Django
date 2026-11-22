@@ -46,7 +46,9 @@ def test_an_application_error_keeps_its_code_message_and_extra() -> None:
         "code": "insufficient_stock",
         "detail": "Stock is not enough.",
     }
-    assert application_error_body(with_extra)["extra"] == {"why": "rule"}
+    body = application_error_body(with_extra)
+    assert "extra" in body
+    assert body["extra"] == {"why": "rule"}
 
 
 def test_protected_and_validation_bodies_use_their_stable_codes() -> None:

@@ -56,6 +56,7 @@ dev = [
   "pytest-django==4.14.0",
   "pytest-sugar==1.1.1",
   "ruff==0.17.5",
+  "pyright==1.1.414",
 ]
 
 [tool.ruff]
@@ -65,7 +66,6 @@ extend-exclude = [
   ".agents/*",
   "*/migrations/*.py",
   "staticfiles/*",
-  # Spike: still import rest_framework; rewrite tracked in SPIKE-REPORT.md.
 ]
 
 lint.select = [
@@ -189,6 +189,10 @@ exclude_also = [ "if TYPE_CHECKING:", "raise NotImplementedError", "@overload" ]
 
 [tool.mypy]
 python_version = "3.14"
+# typings/ holds pyright stubs for third-party packages without py.typed
+# (django-environ). mypy already ignores those packages; do not type-check the
+# stub sources as first-party modules.
+exclude = ["typings/"]
 check_untyped_defs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
@@ -312,3 +316,20 @@ ignore_imports = [
   # Under TYPE_CHECKING only: the manager annotates what it returns.
   "apps.*.managers -> apps.*.models",
 ]
+
+
+[tool.pyright]
+# standard on apps/, core/, and config/, including tests and settings.
+# Generated migrations, bytecode, the project venv, and agent skills are not
+# source. typings/ holds local stubs for third-party packages that ship none
+# (django-environ 0.14.0). mypy --strict on services/selectors/errors is unchanged.
+pythonVersion = "3.14"
+typeCheckingMode = "standard"
+include = ["apps", "core", "config"]
+exclude = [
+  "**/migrations",
+  "**/__pycache__",
+  ".venv",
+  ".agents",
+]
+stubPath = "typings"
