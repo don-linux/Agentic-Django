@@ -1,7 +1,8 @@
-"""docs/api.md#representation on Ninja: UTC datetimes, decimals, 201 and 204.
+"""docs/api.md#representation on Ninja: field types, UTC datetimes, 201 and 204.
 
-UTCDateTime, decimals as strings, a 201 with Location from the url field, and
-an empty 204, as the representation rules of the template say.
+UTCDateTime and ISODate accept RFC 3339 only, the strict types of a body take
+no other JSON type (ADR 0022), decimals are strings, a 201 has its Location
+from the url field, and a 204 is empty.
 """
 
 from __future__ import annotations
@@ -11,14 +12,23 @@ from decimal import Decimal
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 
+import pytest
 from django.http import HttpRequest  # noqa: TC002  # runtime: Ninja signature
 from django.http import HttpResponse  # noqa: TC002  # runtime: response argument
+from ninja import Query
 from ninja import Router
+from ninja import Schema
 from ninja import Status
 from ninja.testing import TestClient
+from pydantic import FiniteFloat
+from pydantic import StrictBool
+from pydantic import StrictFloat
+from pydantic import StrictInt
 
 from core.api.schemas import BaseSchema
 from core.api.schemas import InputSchema
+from core.api.schemas import ISODate
+from core.api.schemas import PublicId
 from core.api.schemas import UTCDateTime
 from core.tests.ninja.support import make_api
 
@@ -37,6 +47,37 @@ class _Out(BaseSchema):
     at: UTCDateTime
     price: Decimal
     url: str
+
+
+class _Typed(InputSchema):
+    count: StrictInt
+    ratio: StrictFloat
+    flag: StrictBool
+    at: UTCDateTime
+    day: ISODate
+    ref: PublicId
+
+
+class _QueryIn(Schema):
+    count: int
+    flag: bool
+    ratio: FiniteFloat
+    at: UTCDateTime
+    day: ISODate
+
+
+class _Ok(BaseSchema):
+    ok: bool
+
+
+VALID: dict[str, object] = {
+    "count": 1,
+    "ratio": 1.5,
+    "flag": True,
+    "at": "2026-11-13T18:00:00Z",
+    "day": "2026-11-13",
+    "ref": "0190F2A4-5B6C-7D8E-9F00-112233445566",
+}
 
 
 def _client() -> TestClient:
@@ -66,20 +107,96 @@ def _client() -> TestClient:
     def destroy(request: HttpRequest) -> Status[None]:
         return Status(HTTPStatus.NO_CONTENT, None)
 
+    @router.post("/typed/", auth=None, response=_Ok)
+    def typed(request: HttpRequest, body: _Typed) -> dict[str, bool]:
+        return {"ok": True}
+
+    @router.get("/query/", auth=None, response=_Ok)
+    def query(request: HttpRequest, params: Query[_QueryIn]) -> dict[str, bool]:
+        return {"ok": True}
+
     api.add_router("/", router)
     return TestClient(api)
 
 
-def _post(client: TestClient, path: str, body: dict[str, str]):
+def _post(client: TestClient, path: str, body: dict[str, object]):
     # ninja.testing builds a Mock request: content_type must be set explicitly.
     return client.post(path, json=body, content_type="application/json")
 
 
-def test_naive_input_is_read_as_utc(settings: Settings) -> None:
+def _field_code(response, field: str) -> str:
+    assert response.status_code == HTTPStatus.BAD_REQUEST, response.content
+    return response.json()["fields"][field][0]["code"]
+
+
+def test_a_datetime_without_a_time_zone_is_400(settings: Settings) -> None:
+    # RFC 3339 requires the offset; the server does not guess one (ADR 0022).
     settings.TIME_ZONE = "America/Mexico_City"
     response = _post(_client(), "/echo/", {"at": "2026-11-13T18:00:00.123456"})
+    assert _field_code(response, "at") == "datetime_parsing"
+
+
+def test_strict_types_accept_their_own_json_type() -> None:
+    response = _post(_client(), "/typed/", VALID)
     assert response.status_code == HTTPStatus.OK, response.content
-    assert response.json()["at"] == "2026-11-13T18:00:00.123456Z"
+    # An integer is a number too (JSON Schema "number").
+    response = _post(_client(), "/typed/", {**VALID, "ratio": 2})
+    assert response.status_code == HTTPStatus.OK, response.content
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "code"),
+    [
+        ("count", "1", "int_type"),
+        ("count", True, "int_type"),
+        ("count", 1.0, "int_type"),
+        ("ratio", "1.5", "float_type"),
+        ("ratio", False, "float_type"),
+        ("flag", 0, "bool_type"),
+        ("flag", "true", "bool_type"),
+        ("at", 0, "datetime_type"),
+        ("at", "1700000000", "datetime_parsing"),
+        ("at", "2026-11-13", "datetime_parsing"),
+        ("at", "2026-11-13 18:00:00Z", "datetime_parsing"),
+        ("at", "2026-11-13T18:00Z", "datetime_parsing"),
+        ("day", 0, "date_type"),
+        ("day", "2026-11-13T00:00:00Z", "date_parsing"),
+        ("ref", 1, "uuid_type"),
+        ("ref", "0190f2a45b6c7d8e9f00112233445566", "uuid_parsing"),
+        ("ref", "{0190f2a4-5b6c-7d8e-9f00-112233445566}", "uuid_parsing"),
+        ("ref", "urn:uuid:0190f2a4-5b6c-7d8e-9f00-112233445566", "uuid_parsing"),
+    ],
+)
+def test_a_body_value_of_another_json_type_is_400(
+    field: str, value: object, code: str
+) -> None:
+    # What Pydantic's lax mode would take, and the schema forbids (ADR 0022).
+    response = _post(_client(), "/typed/", {**VALID, field: value})
+    assert _field_code(response, field) == code
+
+
+QUERY = "count=2&flag=true&ratio=1.5&at=2026-11-13T18:00:00Z&day=2026-11-13"
+
+
+def test_query_parameters_parse_their_text() -> None:
+    response = _client().get(f"/query/?{QUERY}")
+    assert response.status_code == HTTPStatus.OK, response.content
+
+
+@pytest.mark.parametrize(
+    ("replace", "field", "code"),
+    [
+        ("at=2026-11-13T18:00:00Z", "at", "datetime_parsing"),
+        ("day=2026-11-13", "day", "date_parsing"),
+        ("ratio=1.5", "ratio", "finite_number"),
+    ],
+)
+def test_a_query_value_that_is_not_its_type_is_400(
+    replace: str, field: str, code: str
+) -> None:
+    bad = {"at": "at=0.5", "day": "day=0", "ratio": "ratio=nan"}[field]
+    response = _client().get(f"/query/?{QUERY.replace(replace, bad)}")
+    assert _field_code(response, field) == code
 
 
 def test_an_offset_input_is_converted_to_utc() -> None:

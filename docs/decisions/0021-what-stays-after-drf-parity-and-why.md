@@ -22,7 +22,7 @@ These stay, each for the reason given:
   - Ninja's native `{items, count}` is a breaking change: oasdiff reports 3 ERR (`response-required-property-removed`).
   - A page past the last one, or deeper than `DJANGO_API_MAX_PAGE_NUMBER`, is a 404, because every page costs a `COUNT(*)` and an `OFFSET`.
 - **Optional `PATCH` body.** An empty `PATCH` changes nothing, as `{}` does. A required body is an oasdiff ERR (`request-body-became-required`), so the one-item `allOf` and `--flatten-allof` stay.
-- **`UTCDateTime`.** A naive input is read as UTC, because with `USE_TZ` saving a naive datetime warns and guesses a zone. Output is UTC with `Z`. Microseconds are kept, so a client can send a timestamp back exactly, for example in a filter; Ninja's encoder would cut them to milliseconds.
+- **`UTCDateTime`.** Output is UTC with `Z`. Microseconds are kept, so a client can send a timestamp back exactly, for example in a filter; Ninja's encoder would cut them to milliseconds. Input is exact RFC 3339 with a time zone ([0022](0022-request-fields-validate-strictly.md)); this record first read a value without one as UTC.
 - **JSON bytes.**
   - The body is compact UTF-8 with no `\u` escapes; RFC 8259, section 8.1, makes UTF-8 the encoding.
   - The Content-Type is `application/json` without `charset`, which RFC 8259, section 11, does not define.
