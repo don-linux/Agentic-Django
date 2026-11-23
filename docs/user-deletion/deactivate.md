@@ -1,6 +1,6 @@
 # Deactivate a user
 
-Reversible: the account stops working and its data stays. This is what "delete my account" does.
+Reversible: the account stops working and its data stays. Use it for a "delete my account" request, a suspension or a leaver; the template ships no self-service endpoint that calls it.
 
 - Code: `apps.users.services.user_deactivate(user=...)`; `user_reactivate` undoes it.
 - It sets `is_active = False`, so the user cannot log in, deletes every session the user has (API tokens and admin sessions, from the database and from Valkey), and invalidates the cached user.

@@ -14,7 +14,7 @@ How the GitHub Actions workflows check the template. Local commands are in [deve
 - `docker`: validates the production and development Compose files with the example values, builds the production image, scans it with Trivy, runs `manage.py check --deploy`, and smoke-tests it against a password-protected Valkey.
 - `bruno`: the Bruno smoke requests against `runserver` ([Bruno smoke](#bruno-smoke)).
 
-A new push to a pull request cancels the run still in progress for it; pushes to `main` never cancel each other. Every checkout drops the GitHub token after cloning (`persist-credentials: false`), and multi-line steps run under `set -euo pipefail`.
+A new push to a pull request cancels the run still in progress for it. On `main`, a run in progress always finishes, and of the pushes waiting behind it only the newest runs. Every checkout drops the GitHub token after cloning (`persist-credentials: false`), and multi-line steps run under `set -euo pipefail`.
 
 [`.github/workflows/audit.yml`](../.github/workflows/audit.yml) audits the dependencies ([Audit](#audit)). [`.github/workflows/links.yml`](../.github/workflows/links.yml) checks the external links every Monday ([Docs lint](#docs-lint)).
 

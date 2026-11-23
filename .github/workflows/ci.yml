@@ -205,7 +205,7 @@ jobs:
         image: valkey/valkey:9.1.4-alpine3.24@sha256:56729e68bdda139cbd3f6a2538683dc3523325fc5711ea1a379938f1b37893f0
         env:
           # A service cannot override its command; the image appends these flags.
-          # The throwaway password is repeated in the two steps that start django.
+          # The throwaway password is repeated in the steps that start django.
           VALKEY_EXTRA_FLAGS: "--requirepass ci-only-valkey-password-never-a-secret --maxmemory 64mb --maxmemory-policy volatile-lru"
           VALKEYCLI_AUTH: ci-only-valkey-password-never-a-secret
         ports:

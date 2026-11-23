@@ -51,7 +51,7 @@ Drop the lines of the service that stays bundled, and its `depends_on` entry com
 
 ## Uploads
 
-Uploads live outside the repository, in `DOCKER_PROD_DJANGO_UPLOADS_PATH` (default `/srv/project-name/uploads`), with `public` and `private` folders owned by uid 1000, the image's user. The `mkdir` and `chown` are in [Start](#start); the host proxy serves `public` ([Proxy](#proxy)), and [NEXT-STEPS.md#the-uploads-folder](NEXT-STEPS.md#the-uploads-folder) has the checklist.
+Uploads live outside the repository, in `DOCKER_PROD_DJANGO_UPLOADS_PATH`, which is required (for example `/srv/project-name/uploads`), with `public` and `private` folders owned by uid 1000, the image's user. The `mkdir` and `chown` are in [Start](#start); the host proxy serves `public` ([Proxy](#proxy)), and [NEXT-STEPS.md#the-uploads-folder](NEXT-STEPS.md#the-uploads-folder) has the checklist.
 
 ## Image
 
@@ -64,10 +64,6 @@ One image runs the web process and the worker. Its name carries no release tag, 
 - The release metadata (`APP_RELEASE` and the rest of `APP_*`) is declared after `collectstatic`, so a new value on every commit does not invalidate the cached layers above.
 
 Static files are collected when the image is built. `APP_RELEASE` stamps it with the deployed commit ([ARCHITECTURE.md#deployment](ARCHITECTURE.md#deployment)); without it the release is `dev`.
-
-## Settings module
-
-The settings module production runs with. The reference is [settings.md#production-overrides](settings.md#production-overrides).
 
 ## Migrate
 
@@ -142,17 +138,3 @@ Size the containers from the server's RAM before going live.
 - **Kernel setting for Valkey:** set `vm.overcommit_memory = 1` on the host, in `/etc/sysctl.conf`, and apply it with `sudo sysctl vm.overcommit_memory=1`. Valkey warns about it when it starts: without it, the fork that rewrites the append-only file can fail when memory is short. A container cannot set it; it belongs to the host's kernel.
 
 The Argon2 hasher keeps the algorithm name `argon2`, so existing hashes still verify after a cost change and `must_update()` rehashes them on the next login. The cost is read from settings on every call.
-
-## Upgrading from the database cache
-
-Only for a deployment created before Valkey became the cache. Earlier versions of this template cached in PostgreSQL (`DatabaseCache`, table `django_cache`). A deployment created from one of them moves to Valkey like this:
-
-1. Add `VALKEY_PASSWORD` to `docker/prod/.env`: 32 characters or more, generated with the command shown in `docker/prod/.env.example`.
-2. Deploy as usual. Compose starts the new `valkey` and `celery_worker` services, and django refuses to start without the password.
-3. Drop the old table, which nothing reads any more:
-
-   ```bash
-   docker compose -f docker/prod/compose.yaml exec postgres_db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DROP TABLE IF EXISTS django_cache;"'
-   ```
-
-Throttles and rate-limit counters start from zero. Nobody is signed out: sessions were already in PostgreSQL, and they are read from there until Valkey has them.

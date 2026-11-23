@@ -131,14 +131,6 @@ A helper that several test modules use lives in a support module (`core/tests/ro
 
 The root `conftest.py` marks every test under `tests/http/` with `http` and every test under `tests/ninja/` with `ninja`, by path: `pytest -m http` runs the HTTP contract alone and `pytest -m ninja` the Ninja tests.
 
-## Test settings
-
-How tests choose their settings. The module reference is [settings.md#test](settings.md#test).
-
-## Local settings
-
-How development chooses its settings. The module reference is [settings.md#local](settings.md#local).
-
 ## Test fixtures
 
 The shared fixtures live in the root `conftest.py`:

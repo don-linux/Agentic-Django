@@ -6,7 +6,7 @@ The checklist after you copy this template, in order: personalize it, work on it
 
 1. **Start the repository.** In a folder copy, with no `.git`, run `git init -b main`: CI runs on pushes to `main`, and the Git hooks need a repository.
 2. **Personalize the placeholders.** Run the `personalize-django-template` skill. `project`, `Project`, `project-name`, `example.com` and `project_db` still appear in settings, Compose, email and the schema ([development.md#personalize](development.md#personalize)).
-3. **Bring the stack up**, with Docker or without it ([development/](development/README.md)). With Docker, the dev containers run as a non-root user, `django`, with `HOST_UID` and `HOST_GID` from `docker/dev/.env` (1000 by default). On Linux, if `id -u` or `id -g` prints something else, set them first. After changing them, or in a checkout whose old dev image ran as root, rebuild with `docker compose -f docker/dev/compose.yaml up -d --build` and give back the caches those root containers left ([with-docker.md#running-as-root](development/with-docker.md#running-as-root)).
+3. **Bring the stack up**, with Docker or without it ([development/](development/README.md)). With Docker, the dev containers run as a non-root user, `django`, with `HOST_UID` and `HOST_GID` from `docker/dev/.env` (1000 by default). On Linux, if `id -u` or `id -g` prints something else, set them first. After changing them, rebuild with `docker compose -f docker/dev/compose.yaml up -d --build` ([with-docker.md#running-as-root](development/with-docker.md#running-as-root)).
 4. **Install the Git hooks** on the host ([development.md#pre-commit](development.md#pre-commit)).
 5. **Try the account flow.** Sign up, read the code in Mailpit, verify, and run the Bruno smoke requests after `seed_dev` ([development.md#accounts](development.md#accounts), [development.md#bruno](development.md#bruno)).
 6. **Write your domain invariants** in `AGENTS.md`, with the product owner, before creating domain apps.
@@ -115,7 +115,7 @@ server {
         proxy_connect_timeout 5s;
         proxy_read_timeout 35s;
         gzip on;
-        gzip_types application/json application/problem+json;
+        gzip_types application/json;
         gzip_min_length 1024;
         gzip_proxied any;
         gzip_comp_level 5;
@@ -241,11 +241,10 @@ sudo timedatectl set-ntp true   # systemd-timesyncd; or install chrony
 Backups are the operator's job; the template ships no tooling. The database is the Docker volume `{PROJECT_NAME}-prod_postgres_db_data`. Copying that volume while PostgreSQL runs can save a broken copy, so dump the database instead and keep the file off the VPS:
 
 ```bash
-docker compose -f docker/prod/compose.yaml exec -T postgres_db \
-  pg_dump -U django project_db > /var/backups/project_db-$(date +\%F).sql
+30 3 * * * cd <path-to-checkout> && docker compose -f docker/prod/compose.yaml exec -T postgres_db pg_dump -U django project_db > /var/backups/project_db-$(date +\%F).sql
 ```
 
-`django` and `project_db` are `POSTGRES_USER` and `POSTGRES_DB` from `docker/prod/.env`. The `\%` keeps cron from reading `%` as a line break, and works in a shell too. Put the command in cron and copy the `.sql` somewhere else.
+It is one crontab line: cron has no line continuation, and it starts in the home folder, hence the `cd`. `django` and `project_db` are `POSTGRES_USER` and `POSTGRES_DB` from `docker/prod/.env`, and `<path-to-checkout>` is the folder that holds this repository on the server. The `\%` keeps cron from reading `%` as a line break. Copy each `.sql` somewhere else.
 
 Valkey needs no backup. Its volume (`{PROJECT_NAME}-prod_valkey_data`) only saves a restart from losing the cached sessions and the task queue; sessions are also in PostgreSQL, and everything else in it is rebuilt or starts again. Losing it loses the tasks that were still queued.
 
@@ -283,6 +282,6 @@ Left out of the template on purpose. Add one when a project needs it:
 - **Separate Valkey users for the cache and the broker:** with `ACL SETUSER`, one user limited to database 0 and another to database 1 (`db=0`, `db=1`). The cache takes `VALKEY_USERNAME` and `VALKEY_PASSWORD`; the broker takes a full `CELERY_BROKER_URL` with the other user. A leaked cache credential then cannot read or forge tasks.
 - **Celery results (`AsyncResult`, chords):** the template stores none; the outcome of a task lives in the row it updates. A project that needs them sets `CELERY_RESULT_BACKEND` to database 2 of Valkey, `CELERY_TASK_IGNORE_RESULT = False` and a `CELERY_RESULT_EXPIRES`, so results expire like every other key.
 - **Filtering, search and ordering:** the recipe is in [api.md#filtering-search-and-ordering](api.md#filtering-search-and-ordering): a `BaseFilterSchema` per list, a `Literal` for the order, and an index for each.
-- **Object permissions:** a reusable owner check in the service (an owner field, `__` paths allowed) as a second layer on writes; scoping the selector's queryset to the caller stays the first layer.
+- **Object permissions:** scoping the selector's queryset to the caller is the first layer; a service raises a 403 for an object the caller can see but may not change ([api.md#permissions-and-public-endpoints](api.md#permissions-and-public-endpoints)).
 - **Soft delete:** an opt-in `SoftDeleteModel` with `deleted_at`, a default manager that hides deleted rows plus an `all_objects` manager, `soft_delete` and `restore` services, and unique constraints with `condition=Q(deleted_at__isnull=True)`.
 - **Fixing a mistyped email during the pending verification:** `ACCOUNT_EMAIL_VERIFICATION_SUPPORTS_CHANGE = True` lets the user change the address inside the `verify_email` flow (`POST /_allauth/app/v1/account/email` with the pending session token). Weigh the account-enumeration limit allauth notes for it before turning it on.

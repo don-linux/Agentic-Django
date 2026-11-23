@@ -89,7 +89,7 @@ API responses are `no-store` by default (`core.middleware.ApiNoStoreMiddleware`)
 
 Server-side caching happens in selectors (`core.cache.read_through`, on Valkey), after authentication, permissions and throttling have run. `cache_page` and the per-site cache middleware are banned: `X-Session-Token` is not in `Vary`, so one user's response would be served to another, and a cache hit would skip permissions and throttles. The rules are in AGENTS.md, "Caching (Valkey)", and the design in [ARCHITECTURE.md](ARCHITECTURE.md#caching).
 
-`ApiNoStoreMiddleware` sits right after `SecurityMiddleware` and sends the same headers as allauth's `never_cache`, because shared caches do not treat `X-Session-Token` like `Authorization`.
+`ApiNoStoreMiddleware` sits right after `SecurityMiddleware` and the CSP middleware, before CORS, and sends the same headers as allauth's `never_cache`, because shared caches do not treat `X-Session-Token` like `Authorization`.
 
 ### Why not RFC 9457
 
@@ -311,7 +311,7 @@ if project.owner_id != user.pk:
     )
 ```
 
-Every operation already declares 403 (`READ_ERRORS`). Do not raise Django's `PermissionDenied` or Ninja's `AuthorizationError` for a domain rule; they stay for authentication and CSRF.
+Every operation already declares 403 (`READ_ERRORS`). Do not raise Django's `PermissionDenied` or Ninja's `AuthorizationError` for a domain rule: the handlers map both to 403 for what Django and Ninja raise themselves, such as Ninja's failed CSRF check, and a domain rule carries its own code and text.
 
 A public operation sets `auth=None` and keeps the API's throttles, so `AnonThrottle` counts by client IP ([Ninja: authentication](https://django-ninja.dev/guide/authentication/)). It answers neither 401 nor 403, so it declares only what it can answer: `response={200: ThingOut, **PUBLIC_ERRORS}` with `openapi_extra=response_docs(PUBLIC_ERRORS)`, and `{**PUBLIC_ERRORS, **PAGE_ERRORS}` for a public list. The published operation has no `security`, and `core/tests/ninja/test_openapi_responses.py` then does not ask it for 401 or 403. A public operation reads only public data, so its selector takes no user.
 

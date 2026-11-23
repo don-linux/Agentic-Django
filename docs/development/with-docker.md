@@ -19,10 +19,11 @@ Every port is published on `127.0.0.1` only, and `docker/dev/.env` can change it
 
 - API: <http://localhost:8000> (`DOCKER_DEV_DJANGO_PORT`)
 - Mailpit: <http://localhost:8025> (`DOCKER_DEV_MAILPIT_UI_PORT`). It catches every email, including verification codes.
+- Mailpit SMTP: `localhost:1025` (`DOCKER_DEV_MAILPIT_SMTP_PORT`), for Django running on the host.
 - Valkey: `localhost:6379` (`DOCKER_DEV_VALKEY_PORT`). The cache, the sessions and the task queue.
 - PostgreSQL: `localhost:5432` (`DOCKER_DEV_POSTGRES_DB_PORT`).
 
-If the host already runs Postgres or Valkey/Redis, the stack fails to start with "port is already allocated". Change `DOCKER_DEV_POSTGRES_DB_PORT` and `DOCKER_DEV_VALKEY_PORT` in `docker/dev/.env` (the example file shows 5433 and 6380). The app still reaches the containers on 5432 and 6379 over the Compose network.
+If the host already uses one of these ports, for example for its own Postgres or Valkey/Redis, the stack fails to start with "port is already allocated". Change the matching `DOCKER_DEV_*_PORT` in `docker/dev/.env` (the example file shows 5433 and 6380 for Postgres and Valkey). The containers still reach each other on their own ports over the Compose network.
 
 ## Worker
 
@@ -52,12 +53,6 @@ Open the folder in the Dev Container to work inside the same Compose stack. Befo
 ## Running as root
 
 The web and worker containers run as `django`, a user created with `HOST_UID` and `HOST_GID` from `docker/dev/.env` (1000 by default). On Linux, set them to the output of `id -u` and `id -g` and rebuild (`up --build`): files the container writes to the checkout, such as migrations, `uv.lock` or `docs/openapi.json`, are then yours. `/opt/venv` belongs to `django`, so `uv sync --locked` works in the container. The Dev Container connects as `django`, and on Linux `updateRemoteUserUID` gives that user your UID and GID. It does not re-own `/opt/venv`, so keep `HOST_UID` and `HOST_GID` right. Docker Desktop on macOS and Windows maps file ownership by itself, so the defaults work there.
-
-A checkout used with an older dev image, which ran as root, still holds root-owned files such as `.ruff_cache`, `.mypy_cache`, `.pytest_cache`, `.coverage` and `__pycache__` folders. After the rebuild, give them back to yourself once, from the checkout (`-h` changes a symbolic link itself, never the file it points to):
-
-```bash
-sudo find . -xdev -user root -exec chown -h "$(id -u):$(id -g)" {} +
-```
 
 For a one-off root shell, for example to try a package with `apt-get install`:
 

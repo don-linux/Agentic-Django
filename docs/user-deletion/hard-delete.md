@@ -12,7 +12,7 @@ The command lists what the delete would remove (Django's `Collector`), then asks
 
 What a hard delete loses, beyond the user:
 
-- The Django admin history the user wrote (`admin.LogEntry.user` cascades). The history other admins wrote about the user, its email addresses and authenticators stays, with the email replaced by `deleted-<public_id>@anonymized.invalid`. Rows left by an older copy of the template are cleaned once by hand ([anonymize.md](anonymize.md#admin-history-left-by-older-copies)).
+- The Django admin history the user wrote (`admin.LogEntry.user` cascades). The history other admins wrote about the user, its email addresses and authenticators stays, with the email replaced by `deleted-<public_id>@anonymized.invalid`.
 - The user's allauth email addresses and MFA authenticators.
 - Anything a project later points at users with `CASCADE`.
 
