@@ -18,6 +18,7 @@ Short records of why the template is the way it is, one decision per file (a lig
 | [0012](0012-http-and-ninja-test-layout.md) | Tests split into `http/` and `ninja/` | Accepted |
 | [0013](0013-business-logic-in-services-and-selectors.md) | Business logic lives in services and selectors; the API framework stays in `api/` | Accepted |
 | [0014](0014-user-extends-abstractbaseuser-and-permissionsmixin.md) | `User` extends `AbstractBaseUser` and `PermissionsMixin`, not `AbstractUser` | Accepted |
+| [0015](0015-typed-environment-with-pydantic-settings.md) | The environment is read through typed pydantic-settings classes | Accepted |
 
 ## Writing one
 

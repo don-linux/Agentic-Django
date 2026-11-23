@@ -30,8 +30,8 @@ Lo que es igual en todos los backends no es placeholder y no se toca: el paquete
 
 **No cambies los defaults de denylist en el código.** Deben seguir siendo valores que producción rechaza si faltan las variables de entorno:
 
-- `config/settings/production.py`: `FRONTEND_URL` default `https://app.example.com` (`ALLOWED_HOSTS` no tiene default: es obligatoria)
-- `config/settings/base.py`: `DEFAULT_FROM_EMAIL` default `Project <noreply@example.com>`, `EMAIL_SUBJECT_PREFIX` default `[Project]` (con un espacio al final), `EMAIL_SIGNATURE_NAME` default `Project`
+- `config/settings/env.py`, `ProductionEnv`: `FRONTEND_URL` default `https://app.example.com` (`DJANGO_ALLOWED_HOSTS` no tiene default: es obligatoria)
+- `config/settings/env.py`, `BaseEnv`: `DJANGO_DEFAULT_FROM_EMAIL` default `Project <noreply@example.com>`, `DJANGO_EMAIL_SUBJECT_PREFIX` default `[Project]` (con un espacio al final), `DJANGO_EMAIL_SIGNATURE_NAME` default `Project`
 - `config/settings/guards.py`: `EXAMPLE_DOMAINS` y las comprobaciones `endswith("example.com")`
 
 Los valores reales del proyecto van en `docker/prod/.env.example` (y en `.env.example` para lo local). Sí se cambian en código: `NINJA_TITLE` y `NINJA_DESCRIPTION`, y el default de `DJANGO_CACHE_KEY_PREFIX` (el slug: dos proyectos no deben compartir claves en Valkey).
@@ -68,8 +68,8 @@ El plan actualiza solo estas rutas.
 
 ### Django
 
-- `config/settings/base.py`: `NINJA_TITLE`, `NINJA_DESCRIPTION` y el default de `DJANGO_CACHE_KEY_PREFIX` (`{slug}`). **No** cambies `DEFAULT_FROM_EMAIL`, `EMAIL_SUBJECT_PREFIX` ni `EMAIL_SIGNATURE_NAME`.
-- `config/settings/production.py`: no se toca (los defaults de denylist se quedan).
+- `config/settings/base.py`: `NINJA_TITLE`, `NINJA_DESCRIPTION` y el default de `DJANGO_CACHE_KEY_PREFIX` (`{slug}`, el `or "project"` de `CACHE_KEY_PREFIX`).
+- `config/settings/env.py` y `config/settings/production.py`: no se tocan (los defaults de denylist se quedan; **no** cambies los de `DJANGO_DEFAULT_FROM_EMAIL`, `DJANGO_EMAIL_SUBJECT_PREFIX`, `DJANGO_EMAIL_SIGNATURE_NAME` ni `FRONTEND_URL`).
 
 ### Proyecto
 
@@ -124,7 +124,7 @@ Después de editar, en este orden:
    - Los comentarios en inglés de `.gitignore` (`Project files should be...`, `# Project`)
    - `POSTGRES_DB=project_db` en el `.env` de la raíz, si ya existe: va a pendientes
    - `example.com` y `admin@example.com` donde el dominio o `DJANGO_ADMINS` quedaron pendientes (solo en ejemplos de entorno y docs, no en el código de denylist que debe quedarse)
-   - Defaults de denylist en `config/settings/production.py`, `config/settings/base.py` (From / asunto / firma) y `config/settings/guards.py`
+   - Defaults de denylist en `config/settings/env.py` (From / asunto / firma y el `FRONTEND_URL` de producción) y `config/settings/guards.py`
    - Casos de denylist en `core/tests/test_production_email_guard.py` (incluye `Project <noreply@example.com>` y `smtp.example.com`)
    - `config/settings/test.py` (`Project` y `example.com` fijos para los tests) y los valores fijos de fixtures en `apps/**/tests/` y `core/tests/` (`project_db`, `${PROJECT_NAME:-project-name}` en `core/tests/test_compose.py`)
    - Los fallbacks `${PROJECT_NAME:-project-name}` de `docker/dev/compose.yaml` y `docker/prod/compose.yaml`, y su mención en `docs/development/with-docker.md`: solo actúan sin `PROJECT_NAME`

@@ -194,7 +194,7 @@ sequenceDiagram
 | `config.settings.test` | pytest, mypy | locmem outbox | In memory (LocMem) | Inline, on an in-memory transport |
 | `config.settings.production` | the production image | SMTP from `DJANGO_MAILER_*` variables | Valkey (`VALKEY_URL`, DB 0) | The `celery_worker` service |
 
-All of them read the environment through `env` in `config/settings/base.py`. Email uses the `MAILERS` setting from Django 6.1. In production, error emails go through the `admin-logging` mailer, which drops the message when SMTP fails, so an SMTP outage never turns a 500 into a dropped connection. The cache is Valkey; see [Caching](#caching). The `celery` command has no `manage.py` to choose the settings for it: `config/celery.py` defaults to production, and the dev worker sets `config.settings.local` in its compose service.
+Each module reads the environment through its typed class in `config/settings/env.py` ([settings.md#environment-variables](settings.md#environment-variables)). Email uses the `MAILERS` setting from Django 6.1. In production, error emails go through the `admin-logging` mailer, which drops the message when SMTP fails, so an SMTP outage never turns a 500 into a dropped connection. The cache is Valkey; see [Caching](#caching). The `celery` command has no `manage.py` to choose the settings for it: `config/celery.py` defaults to production, and the dev worker sets `config.settings.local` in its compose service.
 
 ## Deployment
 

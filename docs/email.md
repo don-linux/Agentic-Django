@@ -83,13 +83,15 @@ The template sends through SMTP, which every provider offers. Switch to the prov
 
 1. On the host, `uv add --no-sync "django-anymail[postmark]==15.2"`, with your provider's extra (`amazon-ses`, `brevo`, `mailgun`, `postmark`, `resend`, ...), then `uv sync --locked` in the dev container.
 2. Add `"anymail"` to `THIRD_PARTY_APPS` in `config/settings/base.py`. Anymail asks for it always, and its webhook views need it.
-3. In `config/settings/production.py`, replace the SMTP `MAILERS["default"]` with the provider's backend and read the key from the environment. Option names differ per provider: Postmark takes `server_token`, Mailgun `api_key` and `sender_domain`, and Amazon SES uses boto3's credentials. Check your provider's page on anymail.dev.
+3. Add the key to `ProductionEnv` in `config/settings/env.py` (`DJANGO_POSTMARK_SERVER_TOKEN: SecretStr`, required). In `config/settings/production.py`, replace the SMTP `MAILERS["default"]` with the provider's backend and read the key from `_env`. Option names differ per provider: Postmark takes `server_token`, Mailgun `api_key` and `sender_domain`, and Amazon SES uses boto3's credentials. Check your provider's page on anymail.dev.
 
    ```python
    MAILERS: dict[str, dict[str, Any]] = {
        "default": {
            "BACKEND": "anymail.backends.postmark.EmailBackend",
-           "OPTIONS": {"server_token": env("DJANGO_POSTMARK_SERVER_TOKEN")},
+           "OPTIONS": {
+               "server_token": _env.DJANGO_POSTMARK_SERVER_TOKEN.get_secret_value()
+           },
        },
    }
    ```

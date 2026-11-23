@@ -10,12 +10,10 @@ Inside the dev container, run `scripts/check.sh lint`. On the host, or from CI, 
 uv run scripts/check.sh lint                               # every check below, as CI runs it
 uv run pyright                                             # pyright alone, on the whole repository
 uv run mypy .                                              # mypy with the django-stubs plugin
-MYPYPATH=typings uv run stubtest environ --ignore-missing-stub   # typings/ against the installed package
 ```
 
 - `pyright` is installed as `pyright[nodejs]`. The `nodejs` extra pulls `nodejs-wheel-binaries`, pinned in `uv.lock`, and pyright-python uses it before anything else, so Node.js is never downloaded at run time. `[tool.pyright]` in `pyproject.toml` sets `standard` mode and no `include` or `exclude`. pyright's defaults already skip hidden directories (`.venv`, `.agents`), `__pycache__` and `node_modules`. The API layer runs in `strict` mode ([below](#strict-api)).
 - `mypy` reads `[tool.mypy]`. Every module needs annotations (`disallow_untyped_defs`), and `enable_error_code` adds `possibly-undefined`, `truthy-bool`, `ignore-without-code`, `exhaustive-match` and `unimported-reveal`. Services, selectors, `core.exceptions` and `core.errors` also get the rest of `--strict` ([ARCHITECTURE.md#strict-typing](ARCHITECTURE.md#strict-typing)).
-- `stubtest` compares the stubs in `typings/` with the installed package, so a dependency bump that changes a signature fails `lint`.
 - ruff's `ANN` rules fail on a public function without annotations, also in pre-commit, before any checker runs.
 
 ## What each one catches
@@ -86,10 +84,6 @@ Without the annotation pyright sees the field as `Unknown` and lets any use of i
 
 This is a workaround with an expiry date; see [Tracked: model field annotations](#tracked-model-field-annotations).
 
-## Local stubs
-
-`typings/` holds stubs for packages that ship no types. Today that is only django-environ 0.14.0, which has no `py.typed` marker. pyright reads the stubs through `stubPath` and mypy through `mypy_path`. `stubtest` keeps them honest.
-
 ## Upstream workarounds
 
 These are the places where the code works around a limitation of django-stubs, pyright, Django Ninja or another dependency. The ones with an upstream issue or pull request to wait for are in [Tracked upstream](#tracked-upstream): one table, a command to check each one, and what to remove when the fix ships. The rest are permanent: each comes with its reason and its source. Check this section whenever django-stubs, Django Ninja or pyright is upgraded ([maintain-django-template](../.agents/skills/maintain-django-template/SKILL.md)).
@@ -123,7 +117,6 @@ Run each row's check on every django-stubs or django-ninja upgrade ([maintain-dj
 | Both comments on the `time_cost`, `memory_cost` and `parallelism` properties | `core/hashers.py` | Properties make `override_settings` reach the hasher. django-stubs declares them as plain `int` attributes. | django-stubs 6.1.2 `contrib/auth/hashers.pyi` |
 | Both comments on `before_send` and `before_send_transaction` | `core/sentry.py` | sentry-sdk types an event as a `TypedDict`. `scrub_event` walks arbitrary nested data as `dict[str, Any]`. | sentry-sdk 2.75.0 `sentry_sdk/_types.py` (`Event`, `EventProcessor`) |
 | `# type: ignore[misc]` on a factory's `__new__` under `TYPE_CHECKING` | `apps/*/tests/factories.py` | Calling a factory class returns a model instance. factory-boy 3.3.3 types `create()` and `build()` as returning the model, but not the metaclass `__call__` behind `UserFactory(...)`, so this `__new__` tells the checkers; mypy rejects a `__new__` that returns another type. | factory-boy 3.3.3 `factory/base.py` (`FactoryMetaClass.__call__`, `BaseFactory.create`) |
-| `typings/environ/` stubs | `typings/` | django-environ 0.14.0 ships no types. `stubtest` checks the stubs against each release. | PyPI wheel `django_environ-0.14.0` (no `py.typed`) |
 
 ### Django Ninja mechanisms
 

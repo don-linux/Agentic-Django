@@ -105,7 +105,7 @@ A non-nullable or unique column on a populated table takes three migrations (add
 
 ## Security, email, and files
 
-Read env vars through `env` in `config/settings/base.py`. New production variables also go in `docker/prod/.env.example`. Production refuses example or weak secrets (`config/settings/guards.py`). [docs/settings.md](docs/settings.md) · [docs/security.md](docs/security.md#production-secrets)
+Read env vars only through the typed classes in `config/settings/env.py` (pydantic-settings): a variable is a field of the class of the settings module that reads it, read as `_env.NAME`; never `os.environ` in settings. New production variables also go in `docker/prod/.env.example`. Production refuses example or weak secrets (`config/settings/guards.py`). [docs/settings.md](docs/settings.md#environment-variables) · [docs/security.md](docs/security.md#production-secrets)
 
 Email uses `MAILERS`, not `EMAIL_*`. Dev → Mailpit; tests → locmem. Send email in the request; Celery is a per-project option. [docs/email.md](docs/email.md). `FileField`/`ImageField`: `core.files.UploadTo` and `MaxFileSizeValidator`; never store the client filename; no unsanitized HTML/SVG. [docs/files.md](docs/files.md)
 
