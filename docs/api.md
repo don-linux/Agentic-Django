@@ -149,7 +149,22 @@ raise ConflictError(
 )
 ```
 
-The handler also maps Django `ValidationError` (including `full_clean()`) to `400 validation_error`, `ObjectDoesNotExist` to `404 not_found`, and `ProtectedError`/`RestrictedError` to `409 protected`. `IntegrityError` is not mapped: a constraint that can fail on user input is checked in the service and raised as an `ApplicationError`.
+The handler also maps Django `ValidationError` (including `full_clean()`) to `400 validation_error`, `ObjectDoesNotExist` to `404 not_found`, and `ProtectedError`/`RestrictedError` to `409 protected`. `IntegrityError` is not mapped: a constraint that can fail on user input is checked in the service and raised as an `ApplicationError`, or as a `ConflictError` when the request clashes with stored data ([duplicates](#duplicates)).
+
+### Duplicates
+
+A unique value that is already used is a conflict with the stored data, not an invalid request: it is a 409, never the 400 that `full_clean()` gives. The schema cannot say that a value must be unused, so a 400 would reject a request the schema allows; the conformance test reports that (ST202), and schemathesis accepts a 409 for it ([ADR 0023](decisions/0023-a-duplicate-is-a-409-conflict.md)). The service checks the value inside its transaction, before `full_clean()`, and raises the registered `already_exists` with the field in `extra`:
+
+```python
+if Thing.objects.filter(code=code).exists():
+    raise ConflictError(
+        "A thing with this code already exists.",
+        code="already_exists",
+        extra={"field": "code"},
+    )
+```
+
+`full_clean()` still runs, and the database constraint stays the last backstop: when two requests pass the check at the same moment, the constraint refuses the second with an `IntegrityError` (a 500). An operation that can create a duplicate declares `CONFLICT_ERRORS` from `core.api.responses`, and so does the delete of a model that `PROTECT` foreign keys point to (`protected`).
 
 ## Error codes
 
@@ -169,6 +184,7 @@ Every new code is added to this table in the same PR. Codes are never renamed on
 | `throttled` | 429 | Too many requests; retry after `Retry-After` seconds | Ninja throttling |
 | `idempotency_key_reused` | 409 | The `Idempotency-Key` was already used with a different payload | Create endpoints that follow [Idempotent retries](#idempotent-retries) |
 | `protected` | 409 | The resource has dependent records and cannot be deleted | `ProtectedError`, `RestrictedError` |
+| `already_exists` | 409 | A unique value the request sends is already used; `extra.field` names the field | Create and update endpoints that follow [Duplicates](#duplicates) |
 | `request_too_large` | 413 | The body is larger than the proxy accepts (`client_max_body_size`) | nginx (`docs/NEXT-STEPS.md`) |
 | `bad_request` | 400 | The request was rejected before reaching a view (for example a `Host` not in `ALLOWED_HOSTS`) | `handler400` |
 | `server_error` | 500 | Unhandled error; the body never includes exception details | `handler500` |

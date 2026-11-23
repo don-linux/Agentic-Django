@@ -52,6 +52,11 @@ WRITE_ERRORS: dict[int, Any] = {
     415: ErrorSchema,
 }
 
+# A request that clashes with the stored data: a unique value already used
+# (already_exists), or a delete that PROTECT foreign keys refuse (protected).
+# Add it to the operations that can (docs/api.md#duplicates, ADR 0023).
+CONFLICT_ERRORS: dict[int, Any] = {409: ErrorSchema}
+
 RESPONSE_DOCS: dict[str, dict[str, Any]] = {
     "400": {
         "description": (
@@ -76,6 +81,12 @@ RESPONSE_DOCS: dict[str, dict[str, Any]] = {
     },
     "404": {"description": "Not found, not visible, or a page past the last one."},
     "406": {"description": "The Accept header cannot be satisfied."},
+    "409": {
+        "description": (
+            "Conflicts with the stored data: a unique value already used, or "
+            "dependent records that protect the resource."
+        )
+    },
     "415": {"description": "The request Content-Type is not accepted."},
     "429": {
         "description": "Throttled.",

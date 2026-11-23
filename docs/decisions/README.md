@@ -26,6 +26,7 @@ Short records of why the template is the way it is, one decision per file (a lig
 | [0020](0020-options-allow-and-406-follow-django-and-rfc-9110.md) | OPTIONS, Allow and 406 follow Django and RFC 9110 | Accepted |
 | [0021](0021-what-stays-after-drf-parity-and-why.md) | What stays after DRF parity, and why | Accepted |
 | [0022](0022-request-fields-validate-strictly.md) | Request fields validate strictly | Accepted |
+| [0023](0023-a-duplicate-is-a-409-conflict.md) | A duplicate is a 409 conflict | Accepted |
 
 ## Writing one
 
