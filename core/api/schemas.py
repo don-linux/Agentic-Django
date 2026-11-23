@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+from collections.abc import Mapping
 from typing import Annotated
 from typing import Any
 from typing import Final
+from typing import TypeIs
 from uuid import UUID
 
 from ninja import Schema
@@ -16,6 +18,8 @@ from pydantic import ConfigDict
 from pydantic import Field
 from pydantic import PlainSerializer
 from pydantic import WithJsonSchema
+from pydantic import field_validator
+from pydantic_core import PydanticCustomError
 from pydantic_core import PydanticKnownError
 
 from core.api.converters import PublicIdConverter
@@ -127,11 +131,60 @@ class BaseSchema(Schema):
     model_config = ConfigDict(from_attributes=True)
 
 
+# PostgreSQL text cannot store NUL (\x00), and Pydantic has no check for it.
+# Django's form fields refuse it with this code and message
+# (ProhibitNullCharactersValidator); its model fields do not.
+NUL_CODE = "null_characters_not_allowed"
+NUL_DETAIL = "Null characters are not allowed."
+_STRING_UNICODE: Final = "string_unicode"
+
+
+def _is_mapping(value: object) -> TypeIs[Mapping[object, object]]:
+    return isinstance(value, Mapping)
+
+
+def _is_collection(
+    value: object,
+) -> TypeIs[list[object] | tuple[object, ...] | set[object] | frozenset[object]]:
+    return isinstance(value, list | tuple | set | frozenset)
+
+
+def storable_text[T](value: T) -> T:
+    """Return value, or raise for text PostgreSQL cannot store, at any depth.
+
+    A NUL, or a lone surrogate (U+D800 to U+DFFF on its own), which a JSON
+    escape can carry (RFC 8259, section 8.2): it is not Unicode text, and
+    psycopg cannot encode it. Without this check either one is a 500 when the
+    row is saved.
+    """
+    if isinstance(value, str):
+        if "\x00" in value:
+            raise PydanticCustomError(NUL_CODE, NUL_DETAIL)
+        try:
+            value.encode()
+        except UnicodeEncodeError:
+            raise PydanticKnownError(_STRING_UNICODE) from None
+    elif _is_mapping(value):
+        for key, item in value.items():
+            storable_text(key)
+            storable_text(item)
+    elif _is_collection(value):
+        for item in value:
+            storable_text(item)
+    return value
+
+
 class InputSchema(Schema):
     # A body key that is not a field is a 400 unknown_field, not a typo ignored.
     # Strings are kept as sent, so maxLength applies to the value the client
     # sent. See docs/api.md#representation and ADR 0018.
     model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    @field_validator("*")
+    @classmethod
+    def reject_unstorable_text(cls, value: object) -> object:
+        # Every field of every input schema; a nested one runs this itself.
+        return storable_text(value)
 
 
 class ErrorSchema(Schema):

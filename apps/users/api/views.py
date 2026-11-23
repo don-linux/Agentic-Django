@@ -42,9 +42,6 @@ router = Router(tags=["users"])
 # (https://docs.pydantic.dev/latest/errors/validation_errors/#string_type).
 STRING_TYPE_CODE = "string_type"
 STRING_TYPE_DETAIL = "Input should be a valid string"
-# PostgreSQL text cannot store NUL (\x00), and Pydantic has no check for it.
-NUL_CHAR_CODE = "null_characters_not_allowed"
-NUL_CHAR_DETAIL = "Null characters are not allowed."
 
 
 class UserOut(BaseSchema):
@@ -84,14 +81,6 @@ class UserUpdateIn(InputSchema):
     def reject_null(cls, value: object) -> object:
         if value is None:
             raise PydanticCustomError(STRING_TYPE_CODE, STRING_TYPE_DETAIL)
-        return value
-
-    @field_validator("name", mode="after")
-    @classmethod
-    def reject_null_characters(cls, value: str | None) -> str | None:
-        # PostgreSQL text cannot store NUL (\x00).
-        if value is not None and "\x00" in value:
-            raise PydanticCustomError(NUL_CHAR_CODE, NUL_CHAR_DETAIL)
         return value
 
 

@@ -54,7 +54,7 @@ Ninja validates a request with Pydantic in lax mode (`model_validate` on the par
 
 | Value | In a request body | In a query parameter | In a response |
 | --- | --- | --- | --- |
-| Text | `str`, with the model's `max_length` | `str` | `str` |
+| Text | `str`, with the model's `max_length`, and `min_length=1` for `blank=False` | `str` | `str` |
 | Integer | `StrictInt` | `int` | `int` |
 | Number | `StrictFloat` (takes an integer too) | `FiniteFloat` | `float` |
 | Boolean | `StrictBool` | `bool` | `bool` |
@@ -64,6 +64,8 @@ Ninja validates a request with Pydantic in lax mode (`model_validate` on the par
 | Decimal | `Decimal` | `Decimal` | `Decimal` (a string) |
 
 `StrictInt`, `StrictFloat`, `StrictBool` and `FiniteFloat` are Pydantic's; `UTCDateTime`, `ISODate` and `PublicId` are in `core.api.schemas`. A query parameter is text, so it keeps the types that parse text: `int` takes `"2"`, and `bool` takes `true`, `false` and Pydantic's other spellings (`1`, `yes`, `on`). `PublicId` takes the hyphenated form only, in either case; Pydantic's `UUID` also takes it without hyphens, in braces, or as a URN. `ConfigDict(strict=True)` is not an option: in Python mode it also refuses the strings a datetime, a date or a UUID arrives as.
+
+An input schema states every rule the model's `full_clean()` checks and a schema can express: `max_length` as `maxLength`, `blank=False` as `minLength` 1. Otherwise `full_clean()` answers 400 to a request the schema allows, which the conformance test reports as a schema-valid request rejected (ST202). Every `InputSchema` also refuses, at any depth, the text PostgreSQL cannot store: a NUL (`null_characters_not_allowed`, Django's code and message) and a lone surrogate, which a JSON escape can carry (Pydantic's `string_unicode`). Either one would be a 500 when the row is saved (`core.api.schemas.storable_text`).
 
 `apps.users.adapters.HeadlessAdapter` overrides `get_user_dataclass` and `user_as_dataclass` (not `serialize_user`), so allauth's user payload carries the public UUID as `"id"` and its schema stays in sync. The schema at `/api/v1/schema/` and Swagger UI at `/api/v1/docs/` are Ninja's own views, staff-only through `NinjaAPI(docs_decorator=staff_docs_required)` (`core/api/auth.py`), and production fills the schema's `servers` from `ALLOWED_HOSTS`.
 
@@ -233,7 +235,7 @@ It runs in `scripts/check.sh test` and in the `test` job, in about ten seconds.
 
 A failure prints the request as a `curl` command. Fix the server or the schema, whichever is wrong, and regenerate `docs/openapi.json` after a schema change ([Breaking changes](#breaking-changes)).
 
-The test has no exceptions: the API accepts exactly what the schema declares, and every schemathesis check runs ([ADR 0018](decisions/0018-the-api-accepts-exactly-what-its-contract-declares.md)). One generation setting stays: `generation.allow-x00` is off. PostgreSQL text cannot store NUL, so the API rejects `\x00` in a string with `null_characters_not_allowed`. schemathesis documents this setting for servers and drivers that reject NUL bytes ([schemathesis: triage](https://schemathesis.readthedocs.io/en/stable/guides/triage/)). A `pattern` in the schema would be a breaking change for the `api-contract` job. A test pins the NUL rejection directly.
+The test has no exceptions: the API accepts exactly what the schema declares, and every schemathesis check runs ([ADR 0018](decisions/0018-the-api-accepts-exactly-what-its-contract-declares.md)). One generation setting stays: `generation.allow-x00` is off. PostgreSQL text cannot store NUL, so every input schema rejects `\x00` in a string with `null_characters_not_allowed` ([field types](#field-types)). schemathesis documents this setting for servers and drivers that reject NUL bytes ([schemathesis: triage](https://schemathesis.readthedocs.io/en/stable/guides/triage/)). A `pattern` in the schema would be a breaking change for the `api-contract` job. `core/tests/ninja/test_storable_text.py` sends NUL and lone surrogates directly, since schemathesis generates neither.
 
 ## Deprecating endpoints and fields
 
