@@ -172,6 +172,8 @@ Every new endpoint needs:
 
 If the selector is cached, also test: a second read makes zero queries (`cache_writes` + `django_assert_num_queries(0)`), a write through the service returns fresh data, and a rolled-back write leaves the cache untouched. Behaviour that only a real Valkey can show belongs in `core/tests/test_valkey_integration.py` (marker `valkey`).
 
+`core/tests/test_openapi_conformance.py` already sends the new operations requests generated from the schema (schemathesis), and fails on any response the schema does not describe. Fix the server or the schema; never widen its `filter_failure` to make it pass ([api.md#contract-conformance](../../../docs/api.md#contract-conformance)).
+
 If the operation has a scoped throttle, test that the N+1th call returns `429` `throttled`. Set the rate with the `throttle_rates` fixture (`core/tests/ninja/adapters.py`); a test under `tests/http/` never patches Ninja itself.
 
 Fix N+1 queries in the selector (`select_related` / `prefetch_related`); do not widen `ZEAL_ALLOWLIST` except for third-party models (`config/settings/test.py`). Paginated querysets must be ordered (`UnorderedObjectListWarning` is an error). Do not add `pytest` markers without registering them in `pyproject.toml`. Do not change coverage `fail_under`: it stays at 98.

@@ -195,6 +195,33 @@ oasdiff changelog /tmp/openapi-base.json docs/openapi.json --flatten-allof    # 
 
 The same comparison checks a change of API framework: generate the new schema, then compare it with the last committed one. Component names that Ninja emits (`UserOut`, `ErrorSchema`, `ValidationErrorSchema`, and the like) are treated as non-breaking. oasdiff reports a removed response field only when the field is in its component's `required` list, so every response component lists each property the API always renders: all model fields, including optional ones such as `User.name`, and a page's `next` and `previous`, which are `null` at either end. `Error.extra` stays optional. Request schemas set `additionalProperties: false`.
 
+## Contract conformance
+
+`docs/openapi.json` says what the API accepts and returns, and `core/tests/test_openapi_conformance.py` checks that the running API keeps that promise. [schemathesis](https://schemathesis.readthedocs.io/) loads the schema the API publishes at `/api/v1/schema/`, which the `lint` check keeps identical to the committed file. It sends every operation generated requests through the WSGI application in the test process:
+
+- A request that is valid by the schema must get a declared status code, and a body, content type and headers that match it.
+- A request that violates the schema must be rejected with a 4xx.
+- No request may get a 5xx.
+- Each operation must refuse a request without credentials, or with a wrong token.
+
+It runs in `scripts/check.sh test` and in the `test` job, in about ten seconds.
+
+- Every run sends the same requests, until Hypothesis or schemathesis is upgraded.
+- A new endpoint is covered as soon as it is in the schema.
+- Half of the valid requests to a detail route use the caller's own user; the rest use unknown ids.
+
+A failure prints the request as a `curl` command. Fix the server or the schema, whichever is wrong, and regenerate `docs/openapi.json` after a schema change ([Breaking changes](#breaking-changes)).
+
+The API accepts three kinds of input that its schema calls invalid, on purpose, as DRF did. The test drops exactly those failures (`filter_failure`):
+
+| Input | What the API does | Test that pins it |
+| --- | --- | --- |
+| A `page_size` that is not an integer | Uses the default page size | `core/tests/ninja/test_parity_pins.py` |
+| A number for `name` in a user `PATCH` | Stores it as text | `core/tests/http/test_negative_paths.py` |
+| `id` or `url` in a user `PATCH`, as in a `GET` body sent back | Ignores them | `apps/users/tests/http/test_views.py` |
+
+A new row takes the same: a decision, and a test that pins the behavior. Why the test exists, and what was rejected: [ADR 0016](decisions/0016-api-checked-against-openapi-with-schemathesis.md).
+
 ## Deprecating endpoints and fields
 
 Mobile apps keep calling an endpoint for months after a release replaces it, so a v1 endpoint or field is deprecated before it is removed, and clients learn it two ways. This is a recipe; nothing is deprecated today.

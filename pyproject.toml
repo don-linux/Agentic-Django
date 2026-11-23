@@ -56,12 +56,16 @@ dev = [
   "django-upgrade==1.33.0",
   "django-zeal==2.3.0",
   "factory-boy==3.3.3",
+  # Imported by the schemathesis test for its settings; schemathesis requires it.
+  "hypothesis==6.170.17",
   "import-linter==2.17",
   "mypy==2.4.1",
   "pytest==9.2.0",
   "pytest-django==4.14.0",
   "pytest-sugar==1.1.1",
   "ruff==0.17.6",
+  # core/tests/test_openapi_conformance.py: the API against docs/openapi.json.
+  "schemathesis==4.34.0",
   "pyright[nodejs]==1.1.414",
 ]
 
