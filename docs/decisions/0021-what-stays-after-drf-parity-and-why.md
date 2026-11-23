@@ -32,7 +32,7 @@ These stay, each for the reason given:
 - **Request handling.**
   - HEAD runs the GET operation, as Django's `View` does.
   - With `ATOMIC_REQUESTS`, a handled error rolls the request back (`set_rollback`): the handler returns a response, so the transaction would otherwise commit.
-- **Parser.** It reads UTF-8 only and rejects NaN and Infinity, as RFC 8259, sections 8.1 and 6, require. Another `Content-Type` with a body is 415; Ninja does not inspect it.
+- **Parser.** It reads UTF-8 only and rejects NaN and Infinity, as RFC 8259, sections 8.1 and 6, require, including a number too large for a double, such as `1e400`, which would become infinity. The renderer refuses them too (`allow_nan=False`): a non-finite float in a response is a 500, never a body with a bare `NaN` token. Another `Content-Type` with a body is 415; Ninja does not inspect it.
 - **Authentication and throttling.**
   - A write without valid credentials is 401, not a CSRF 403, as AGENTS.md requires.
   - `ScopedThrottle` counts per user, or per client IP when anonymous.

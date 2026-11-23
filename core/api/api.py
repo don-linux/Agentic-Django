@@ -27,9 +27,17 @@ register_converter(PublicIdConverter, "public_id")
 
 class CompactJSONRenderer(JSONRenderer):
     """Compact JSON in UTF-8: no spaces after separators, no \\u escapes (RFC 8259,
-    section 8.1, makes UTF-8 the encoding). Smaller bodies; see ADR 0021."""
+    section 8.1, makes UTF-8 the encoding). Smaller bodies; see ADR 0021.
 
-    json_dumps_params = {"separators": (",", ":"), "ensure_ascii": False}
+    No NaN or Infinity either (RFC 8259, section 6): json.dumps would write
+    them as bare tokens, which no JSON parser accepts, so a non-finite float
+    is a 500 instead of a body the client cannot read."""
+
+    json_dumps_params = {
+        "separators": (",", ":"),
+        "ensure_ascii": False,
+        "allow_nan": False,
+    }
 
 
 class ContractAPI(NinjaAPI):

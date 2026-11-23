@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import override
@@ -19,9 +20,19 @@ def _reject_constant(name: str) -> object:
     raise ValueError(msg)
 
 
+def _finite_float(text: str) -> float:
+    # A number too large for a double, such as 1e400, would become infinity.
+    value = float(text)
+    if not math.isfinite(value):
+        msg = f"Out of range float values are not JSON compliant: {text!r}"
+        raise ValueError(msg)
+    return value
+
+
 class JSONParser(Parser):
     """
-    Ninja's json.loads, strict: UTF-8 only and no NaN or Infinity.
+    Ninja's json.loads, strict: UTF-8 only, and no NaN or Infinity, written as
+    such or as a number too large for a double.
 
     Any failure (malformed JSON, another encoding, a non-finite number, nesting
     too deep for the decoder) reaches Ninja's BodyModel, which answers
@@ -39,4 +50,8 @@ class JSONParser(Parser):
             raise HttpError(415, f'Unsupported media type "{raw}" in request.')
         # RFC 8259: JSON text is UTF-8 (section 8.1, no BOM) and its numbers
         # exclude NaN and Infinity (section 6).
-        return json.loads(request.body.decode("utf-8"), parse_constant=_reject_constant)
+        return json.loads(
+            request.body.decode("utf-8"),
+            parse_constant=_reject_constant,
+            parse_float=_finite_float,
+        )
