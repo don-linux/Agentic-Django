@@ -216,6 +216,30 @@ class TestUsersAPI:
         assert response.status_code == HTTPStatus.OK
         assert response.json()["name"] == "Echoed Back"
 
+    def test_an_invalid_body_for_another_user_is_400_before_the_lookup(
+        self, user_client: Client
+    ) -> None:
+        other = UserFactory()
+
+        invalid = user_client.patch(
+            f"/api/v1/users/{other.public_id}/",
+            {"name": ["Ada"]},
+            content_type="application/json",
+        )
+        valid = user_client.patch(
+            f"/api/v1/users/{other.public_id}/",
+            {"name": "Ada"},
+            content_type="application/json",
+        )
+
+        # The whole request is validated first, so the answer does not depend
+        # on whether the user exists; a valid one for another user is 404.
+        assert invalid.status_code == HTTPStatus.BAD_REQUEST
+        assert invalid.json()["fields"]["name"][0]["code"] == "string_type"
+        assert valid.status_code == HTTPStatus.NOT_FOUND
+        other.refresh_from_db()
+        assert other.name != "Ada"
+
     def test_multipart_body_is_unsupported(
         self, user: User, user_client: Client
     ) -> None:

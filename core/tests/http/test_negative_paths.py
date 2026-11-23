@@ -301,7 +301,7 @@ def test_staff_and_superuser_still_see_only_themselves() -> None:
         request = getattr(client, method)
         kwargs: dict[str, Any] = {}
         if method == "patch":
-            kwargs = {"data": {"name": "Nope"}, "format": "json"}
+            kwargs = {"data": {"name": "Nope"}, "content_type": "application/json"}
         response = request(f"/api/v1/users/{other.public_id}/", **kwargs)
         assert response.status_code == HTTPStatus.NOT_FOUND
         assert response.json()["code"] == "not_found"
@@ -421,7 +421,7 @@ def test_disallowed_methods_are_rejected(
     }
     kwargs: dict[str, Any] = {}
     if method in {"post", "put"}:
-        kwargs = {"data": {"name": "Nope"}, "format": "json"}
+        kwargs = {"data": {"name": "Nope"}, "content_type": "application/json"}
     response = getattr(user_client, method)(paths[path_key], **kwargs)
 
     assert response.status_code == HTTPStatus.METHOD_NOT_ALLOWED

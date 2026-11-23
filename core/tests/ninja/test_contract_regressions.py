@@ -1,6 +1,6 @@
 """Contract pins beyond test_parity_pins: OPTIONS metadata names, staff gate
-on OPTIONS, ScopedThrottle and explicit rates, error-code mapping, and the
-path lookup that answers 404 before the body is parsed.
+on OPTIONS, ScopedThrottle and explicit rates, error-code mapping, and Ninja
+validating the whole request before the view looks an object up.
 """
 
 from __future__ import annotations
@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 from http import HTTPStatus
 from typing import TYPE_CHECKING
-from typing import Annotated
 from typing import Any
 from uuid import UUID
 
@@ -22,8 +21,6 @@ from django.test import Client
 from ninja import Router
 from ninja import Schema
 from ninja.testing import TestClient
-from pydantic import AfterValidator
-from pydantic import ValidationInfo
 
 from apps.users.tests.factories import UserFactory
 from core.api.exceptions import _code_and_detail
@@ -181,7 +178,7 @@ def test_a_leaf_and_a_nested_error_on_the_same_key_keep_the_nested_one() -> None
     assert fields == {"address": {"city": [{"code": "missing", "detail": "m"}]}}
 
 
-# --- lookup before body: a public AfterValidator on the path argument -------
+# --- the whole request is validated before the view looks anything up -------
 
 
 class _Body(Schema):
@@ -189,19 +186,6 @@ class _Body(Schema):
 
 
 _seen: list[UUID] = []
-
-
-def _visible(value: UUID, info: ValidationInfo) -> UUID:
-    # The request is in info.context (ninja ParamModel.resolve passes it).
-    assert info.context is not None
-    assert "request" in info.context
-    _seen.append(value)
-    if value != UUID(int=1):
-        raise Http404
-    return value
-
-
-_VisibleId = Annotated[UUID, AfterValidator(_visible)]
 
 
 def _lookup_api() -> TestClient:
@@ -212,11 +196,15 @@ def _lookup_api() -> TestClient:
     @router.patch("/things/{uuid:thing_id}/", auth=None)
     def update(
         request: HttpRequest,
-        thing_id: _VisibleId,
+        thing_id: UUID,
         q: int,
         body: _Body,
         response: HttpResponse,
     ) -> dict[str, Any]:
+        # The view's own lookup, as apps/users/api/views.py does.
+        _seen.append(thing_id)
+        if thing_id != UUID(int=1):
+            raise Http404
         response["X-Seen"] = "1"
         return {"q": q, "title": body.title}
 
@@ -229,11 +217,15 @@ def _patch(client: TestClient, path: str, body: object) -> Any:
     return client.patch(path, json=body, content_type="application/json")
 
 
-def test_a_missing_object_is_404_before_the_body_is_parsed() -> None:
-    client = _lookup_api()
-    response = client.patch(
-        f"/things/{UUID(int=2)}/?q=1", body="{not json", content_type="text/plain"
-    )
+def test_an_invalid_body_is_400_before_the_view_looks_the_object_up() -> None:
+    # Ninja validates path, query and body together before calling the view.
+    response = _patch(_lookup_api(), f"/things/{UUID(int=2)}/?q=1", {"title": 1})
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert _seen == []
+
+
+def test_a_valid_request_for_a_missing_object_is_404() -> None:
+    response = _patch(_lookup_api(), f"/things/{UUID(int=2)}/?q=1", {"title": "t"})
     assert response.status_code == HTTPStatus.NOT_FOUND
     assert _seen == [UUID(int=2)]
 

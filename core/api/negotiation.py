@@ -331,7 +331,7 @@ class ApiContractMiddleware:
         operations = _route_operations(request)
         allow = _allow_header(operations) if operations is not None else None
         early = self._before(request, subpath, operations, allow)
-        # 415 is decided by core.api.parsers, after the path lookup validator.
+        # 415 is decided by core.api.parsers, when Ninja reads the body.
         # Every API route is in the schema (test_method_negotiation pins it), so
         # a method the route lacks never reaches Ninja: _before answered 405.
         response = early if early is not None else self._dispatch(request)

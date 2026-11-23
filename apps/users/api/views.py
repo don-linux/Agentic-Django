@@ -7,7 +7,6 @@ from typing import Annotated
 from typing import Any
 from typing import cast
 from uuid import UUID
-from weakref import WeakKeyDictionary
 
 from django.http import Http404
 from django.http import HttpRequest
@@ -17,9 +16,7 @@ from ninja import P
 from ninja import PathEx
 from ninja import Router
 from ninja.pagination import paginate
-from pydantic import AfterValidator
 from pydantic import Field
-from pydantic import ValidationInfo
 from pydantic import WithJsonSchema
 from pydantic import field_validator
 from pydantic import model_validator
@@ -117,16 +114,9 @@ class UserUpdateIn(InputSchema):
         return value
 
 
-# The user a request already looked up: the path validator runs before the
-# view, so a detail PATCH looks the object up once. Weak keys: an entry lives
-# only as long as its request, and no other request can read it.
-_VISIBLE_USERS: WeakKeyDictionary[HttpRequest, User] = WeakKeyDictionary()
-
-
 def _visible_user(request: HttpRequest, public_id: UUID) -> User:
-    cached = _VISIBLE_USERS.get(request)
-    if cached is not None and cached.public_id == public_id:
-        return cached
+    # Called by the view, after Ninja has validated the path, the query and the
+    # body together: an invalid request is a 400 whether or not the user exists.
     current = request.user
     if (
         not current.is_authenticated
@@ -137,7 +127,6 @@ def _visible_user(request: HttpRequest, public_id: UUID) -> User:
     user = user_list(user=current).filter(public_id=public_id).first()
     if user is None:
         raise Http404
-    _VISIBLE_USERS[request] = user
     return user
 
 
@@ -147,16 +136,6 @@ def _current_user(request: HttpRequest) -> User:
     if not isinstance(user, User):
         raise Http404
     return user
-
-
-def _validate_visible_id(value: UUID, info: ValidationInfo) -> UUID:
-    # Ninja passes {"request": request} to Pydantic validation. A public
-    # AfterValidator on a path argument runs before the body is parsed.
-    context: dict[str, Any] = info.context or {}
-    request: HttpRequest | None = context.get("request")
-    if request is not None:
-        _visible_user(request, value)
-    return value
 
 
 PublicUserId = Annotated[
@@ -171,12 +150,10 @@ PublicUserId = Annotated[
         }
     ),
 ]
-VisibleUserId = Annotated[PublicUserId, AfterValidator(_validate_visible_id)]
 # The contract names the path parameter id (/api/v1/users/{id}/); the alias
 # keeps that name without an argument that shadows the builtin (guide/path-params/:
 # Path accepts alias). PathEx is the type-checker spelling of Path[T, P(...)].
 UserIdPath = PathEx[PublicUserId, P(alias="id")]
-VisibleUserIdPath = PathEx[VisibleUserId, P(alias="id")]
 
 # An empty PATCH body is no change (DRF parity). BodyEx, exported in ninja.__all__,
 # is the type-checker spelling of Body[T, P(...)] (ninja/params/__init__.py,
@@ -256,7 +233,7 @@ def users_retrieve(request: HttpRequest, user_id: UserIdPath) -> User:
 )
 def users_partial_update(
     request: HttpRequest,
-    user_id: VisibleUserIdPath,
+    user_id: UserIdPath,
     body: UserPatchBody,
 ) -> User:
     user = _visible_user(request, user_id)
