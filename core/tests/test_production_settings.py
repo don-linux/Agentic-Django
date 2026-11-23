@@ -226,9 +226,8 @@ def test_production_rejects_unset_allowed_hosts() -> None:
             "ALLOWED_HOSTS",
             env={"DJANGO_ALLOWED_HOSTS": None},
         )
-    # django-environ raises if the required variable is missing; the message
-    # names the variable either way.
-    assert "DJANGO_ALLOWED_HOSTS" in excinfo.value.stderr
+    # read_env names every required variable that is missing (config/settings/env.py).
+    assert "Set the DJANGO_ALLOWED_HOSTS environment variable." in excinfo.value.stderr
 
 
 def test_production_rejects_shipped_csrf_origin() -> None:

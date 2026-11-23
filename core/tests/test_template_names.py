@@ -22,7 +22,6 @@ SCANNED = (
     "docs",
     "scripts",
     "templates",
-    "typings",
 )
 TOP_LEVEL = (
     ".env.example",

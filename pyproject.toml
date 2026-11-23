@@ -15,17 +15,23 @@ classifiers = [
 dependencies = [
   "argon2-cffi==25.1.0",
   "celery[redis]==5.7.0",
+  # DATABASE_URL into a DATABASES entry (config/settings/base.py).
+  "dj-database-url==3.1.2",
   "django==6.1.3",
   "django-allauth[headless,mfa]==65.22.1",
   "django-axes==9.1.0",
   "django-cors-headers==4.9.0",
-  "django-environ==0.14.0",
   "django-ninja==1.8.0",
   # Runtime: config/settings/base.py calls django_stubs_ext.monkeypatch(). Same
   # version as django-stubs in the dev group (django-stubs README, FAQ).
   "django-stubs-ext==6.1.2",
   "gunicorn==27.0.1",
   "pydantic==2.14.4",
+  # The settings modules read the environment through it (config/settings/env.py).
+  "pydantic-settings==2.16.3",
+  # Loads the root .env for local settings (config/settings/_env_file.py); also a
+  # dependency of pydantic-settings.
+  "python-dotenv==1.2.4",
   "pyyaml==6.0.4",
   "kombu==5.7.0",
   "psycopg[c]==3.3.9",
@@ -129,10 +135,11 @@ lint.isort.force-single-line = true
 # "Model _meta API") and Model._default_manager ("Default managers"). Ruff's
 # docs give this setting for Django.
 lint.flake8-self.extend-ignore-names = [ "_default_manager", "_meta" ]
-# Pydantic and Ninja read these annotations at run time: their imports stay
-# outside TYPE_CHECKING (TC001-TC003 would otherwise move them).
+# Pydantic, pydantic-settings and Ninja read these annotations at run time: their
+# imports stay outside TYPE_CHECKING (TC001-TC003 would otherwise move them).
 lint.flake8-type-checking.runtime-evaluated-base-classes = [
   "pydantic.BaseModel",
+  "pydantic_settings.BaseSettings",
   "ninja.Schema",
   "core.api.schemas.BaseSchema",
   "core.api.schemas.InputSchema",
@@ -208,10 +215,6 @@ exclude_also = [ "if TYPE_CHECKING:", "raise NotImplementedError", "@overload" ]
 
 [tool.mypy]
 python_version = "3.14"
-# typings/ holds local stubs for third-party packages without py.typed
-# (django-environ 0.14.0). Both checkers read them: pyright via stubPath, mypy
-# via mypy_path. scripts/check.sh lint runs stubtest against the installed package.
-mypy_path = "typings"
 check_untyped_defs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
@@ -335,7 +338,7 @@ ignore_imports = [
 
 [tool.pyright]
 # standard on the whole repository: apps, core, config, migrations, tests,
-# conftest.py, manage.py, scripts/ and the typings/ stubs. No include/exclude:
+# conftest.py, manage.py and scripts/. No include/exclude:
 # pyright's defaults already skip **/.* (.venv, .agents), **/__pycache__ and
 # **/node_modules. Errors get a real type; a suppression is a rule-scoped
 # `# pyright: ignore[rule]` that pyright reports once it is no longer needed.
@@ -343,7 +346,6 @@ ignore_imports = [
 # not read it. See docs/typing.md#suppressions.
 pythonVersion = "3.14"
 typeCheckingMode = "standard"
-stubPath = "typings"
 enableTypeIgnoreComments = false
 reportUnnecessaryTypeIgnoreComment = "error"
 # Each app's endpoints and schemas, and the base schemas they extend, get strict

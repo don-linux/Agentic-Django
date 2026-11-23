@@ -7,6 +7,9 @@ import re
 from pathlib import Path
 
 import pytest
+from pydantic_settings import BaseSettings
+
+from config.settings import env as env_classes
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 DOCS = BASE_DIR / "docs/environment"
@@ -16,6 +19,7 @@ TABLE_NAME = re.compile(r"^\| `([A-Z][A-Z0-9_]*)` \|", re.MULTILINE)
 COMPOSE_VARIABLE = re.compile(r"(?<!\$)\$\{([A-Z][A-Z0-9_]*)")
 SHELL_VARIABLE = re.compile(r"\$\{?([A-Z][A-Z0-9_]*)")
 ENV_READERS = ("os.environ.get", "os.getenv", "os.environ.setdefault", "_int_env")
+SETTINGS = BASE_DIR / "config/settings"
 
 
 def _example_keys(path: str) -> set[str]:
@@ -56,30 +60,42 @@ def test_each_example_matches_its_reference(
     assert documented - keys == set(), f"in {doc} under {heading}, not in {example}"
 
 
-def _read_by_python() -> set[str]:
+def _environment_reads(path: Path) -> set[str]:
+    """The variable names `path` reads straight from os.environ."""
     names: set[str] = set()
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.Subscript) and ast.unparse(node.value) == "os.environ":
+            key = node.slice
+        elif isinstance(node, ast.Call) and node.args:
+            if ast.unparse(node.func) not in ENV_READERS:
+                continue
+            key = node.args[0]
+        else:
+            continue
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            names.add(key.value)
+    return {name for name in names if name.isupper()}
+
+
+def _read_by_settings() -> set[str]:
+    """The fields of the settings classes: each is named after its variable."""
+    names: set[str] = set()
+    for value in vars(env_classes).values():
+        if isinstance(value, type) and issubclass(value, BaseSettings):
+            names |= set(value.model_fields)
+    return names
+
+
+def _read_by_python() -> set[str]:
+    names = _read_by_settings()
     paths = [BASE_DIR / "manage.py", BASE_DIR / "docker/prod/gunicorn.conf.py"]
     for folder in ("config", "core", "apps", "scripts"):
         paths += (BASE_DIR / folder).rglob("*.py")
     for path in paths:
         if "tests" in path.parts or "migrations" in path.parts:
             continue
-        for node in ast.walk(ast.parse(path.read_text())):
-            if (
-                isinstance(node, ast.Subscript)
-                and ast.unparse(node.value) == "os.environ"
-            ):
-                key = node.slice
-            elif isinstance(node, ast.Call) and node.args:
-                function = ast.unparse(node.func)
-                if not (function.startswith("env") or function in ENV_READERS):
-                    continue
-                key = node.args[0]
-            else:
-                continue
-            if isinstance(key, ast.Constant) and isinstance(key.value, str):
-                names.add(key.value)
-    return {name for name in names if name.isupper()}
+        names |= _environment_reads(path)
+    return names
 
 
 def _read_by_compose_and_scripts() -> set[str]:
@@ -97,3 +113,15 @@ def test_every_variable_the_stack_reads_is_documented() -> None:
     # The scan must see the code, or the check proves nothing.
     assert {"DJANGO_SECRET_KEY", "DJANGO_ENV_FILE", "HOST_UID"} <= read
     assert read - _documented() == set()
+
+
+def test_settings_read_the_environment_only_through_the_env_classes() -> None:
+    # A variable is a typed field in config/settings/env.py. Only _env_file.py
+    # reads one directly: DJANGO_ENV_FILE says which .env to load.
+    reads = {
+        path.name: _environment_reads(path)
+        for path in SETTINGS.glob("*.py")
+        if _environment_reads(path)
+    }
+
+    assert reads == {"_env_file.py": {"DJANGO_ENV_FILE"}}

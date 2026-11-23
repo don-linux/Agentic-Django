@@ -9,8 +9,11 @@ from .base import INSTALLED_APPS
 from .base import MIDDLEWARE
 from .base import NINJA_DEFAULT_THROTTLE_RATES
 from .base import build_headless_frontend_urls
-from .base import env
+from .env import TestEnv
+from .env import read_env
 
+# Every variable this module reads, typed (config/settings/_env.py).
+_env = read_env(TestEnv)
 DEBUG = False
 
 # Dev Compose injects the root .env into the containers, so the shell running the
@@ -30,10 +33,11 @@ EMAIL_SIGNATURE_NAME = "Project"
 MFA_TOTP_ISSUER = EMAIL_SIGNATURE_NAME
 ACCOUNT_ALLOW_REGISTRATION = True
 API_MAX_PAGE_NUMBER = 1000
-SECRET_KEY = env(
-    "DJANGO_SECRET_KEY",
+SECRET_KEY = (
     # Development/test only. Production requires DJANGO_SECRET_KEY.
-    default="django-insecure-otKr9mZP2VQewcgyiVcGv5qzNzkYhqXEz5_78Z_6grdsa9KFJKOtrxdAdDT0GQaM",
+    "django-insecure-otKr9mZP2VQewcgyiVcGv5qzNzkYhqXEz5_78Z_6grdsa9KFJKOtrxdAdDT0GQaM"
+    if _env.DJANGO_SECRET_KEY is None
+    else _env.DJANGO_SECRET_KEY.get_secret_value()
 )
 # No scan of every static file at startup, which slows each test process.
 WHITENOISE_AUTOREFRESH = True

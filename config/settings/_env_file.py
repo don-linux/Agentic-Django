@@ -13,10 +13,11 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-import environ
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
 
 ENV_FILE = os.environ.get("DJANGO_ENV_FILE", str(BASE_DIR / ".env"))
 if ENV_FILE:
-    environ.Env.read_env(ENV_FILE)
+    # Values are taken as written: "${OTHER}" stays literal, as in a secret.
+    load_dotenv(ENV_FILE, override=False, interpolate=False)

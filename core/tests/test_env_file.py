@@ -43,6 +43,28 @@ def test_the_environment_wins_over_the_env_file(tmp_path: Path) -> None:
     assert values["TIME_ZONE"] == "Europe/Madrid"
 
 
+def test_a_value_is_read_as_written(tmp_path: Path) -> None:
+    # No ${...} expansion and no $NAME lookup: a secret may contain either.
+    env_file = _env_file(
+        tmp_path,
+        "DJANGO_EMAIL_SIGNATURE_NAME=${DJANGO_TIME_ZONE}",
+        'DJANGO_EMAIL_SUBJECT_PREFIX="$DJANGO_TIME_ZONE "',
+        "DJANGO_TIME_ZONE=America/Mexico_City",
+    )
+
+    values = load_settings(
+        "config.settings.local",
+        "EMAIL_SIGNATURE_NAME",
+        "EMAIL_SUBJECT_PREFIX",
+        env={"DJANGO_ENV_FILE": env_file},
+    )
+
+    assert values == {
+        "EMAIL_SIGNATURE_NAME": "${DJANGO_TIME_ZONE}",
+        "EMAIL_SUBJECT_PREFIX": "$DJANGO_TIME_ZONE ",
+    }
+
+
 def test_an_empty_path_turns_the_read_off() -> None:
     values = load_settings("config.settings.local", "TIME_ZONE", "ENV_FILE")
 

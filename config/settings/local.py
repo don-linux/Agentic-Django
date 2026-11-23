@@ -6,16 +6,20 @@ from .base import INSTALLED_APPS
 from .base import LOGGING
 from .base import MIDDLEWARE
 from .base import VALKEY_URL
-from .base import env
+from .env import LocalEnv
+from .env import read_env
 from .guards import assert_local_targets
 
+# Every variable this module reads, typed (config/settings/_env.py).
+_env = read_env(LocalEnv)
 # The env file this process loaded; empty when DJANGO_ENV_FILE turned the read off.
 ENV_FILE = _env_file.ENV_FILE
-DEBUG = env.bool("DJANGO_DEBUG", default=True)
-SECRET_KEY = env(
-    "DJANGO_SECRET_KEY",
+DEBUG = _env.DJANGO_DEBUG
+SECRET_KEY = (
     # Development/test only. Production requires DJANGO_SECRET_KEY.
-    default="django-insecure-zoqf21oQqQcQBGuQ15G-TyeQ7W8wnJq7Rd9pI99hBrk91xRuF7IVvsCN3D88F5jl",
+    "django-insecure-zoqf21oQqQcQBGuQ15G-TyeQ7W8wnJq7Rd9pI99hBrk91xRuF7IVvsCN3D88F5jl"
+    if _env.DJANGO_SECRET_KEY is None
+    else _env.DJANGO_SECRET_KEY.get_secret_value()
 )
 ALLOWED_HOSTS = ["localhost", "0.0.0.0", "127.0.0.1"]  # noqa: S104
 
@@ -24,8 +28,8 @@ MAILERS = {
     "default": {
         "BACKEND": "django.core.mail.backends.smtp.EmailBackend",
         "OPTIONS": {
-            "host": env("DJANGO_MAILER_HOST", default="mailpit"),
-            "port": env.int("DJANGO_MAILER_PORT", default=1025),
+            "host": _env.DJANGO_MAILER_HOST,
+            "port": _env.DJANGO_MAILER_PORT,
             "timeout": 5,
         },
     },
@@ -45,7 +49,7 @@ ZEAL_SHOW_ALL_CALLERS = True
 ZEAL_ALLOWLIST = [{"model": "account.EmailAddress"}]
 
 # DJANGO_LOG_SQL=True prints every query. See docs/development.md#sql-log.
-if env.bool("DJANGO_LOG_SQL", default=False):
+if _env.DJANGO_LOG_SQL:
     LOGGING["loggers"] = {
         **LOGGING.get("loggers", {}),
         "django.db.backends": {
@@ -60,6 +64,6 @@ assert_local_targets(
     database_host=str(DATABASES["default"].get("HOST") or ""),
     valkey_url=VALKEY_URL,
     # Only an explicit override: the URL built from VALKEY_URL is already checked.
-    celery_broker_url=env("CELERY_BROKER_URL", default=""),
-    allow_remote=env.bool("DJANGO_ALLOW_REMOTE_LOCAL", default=False),
+    celery_broker_url=_env.CELERY_BROKER_URL.get_secret_value(),
+    allow_remote=_env.DJANGO_ALLOW_REMOTE_LOCAL,
 )
