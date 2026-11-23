@@ -40,7 +40,7 @@ Passwords are hashed with Argon2 (`core/hashers.py`), and every new password goe
 
 ## Reauthentication
 
-`ACCOUNT_REAUTHENTICATION_REQUIRED` is on: adding, removing or promoting an email answers 401 with a pending `reauthenticate` flow until the client sends the password to `POST /_allauth/app/v1/auth/reauthenticate`. A fresh login does not count; only an explicit reauthentication does, for `ACCOUNT_REAUTHENTICATION_TIMEOUT` (300 seconds). Without it, a stolen `X-Session-Token` could add an attacker's address, verify it, make it primary and then reset the password.
+`ACCOUNT_REAUTHENTICATION_REQUIRED` is on: adding, removing or promoting an email answers 401 with a pending `reauthenticate` flow until the client sends the password to `POST /_allauth/app/v1/auth/reauthenticate`, or an MFA code once the user has an authenticator. Reauthentication by an emailed code is off (`ACCOUNT_REAUTHENTICATION_METHODS`): the template ships no login-code email. A fresh login does not count; only an explicit reauthentication does, for `ACCOUNT_REAUTHENTICATION_TIMEOUT` (300 seconds). Without it, a stolen `X-Session-Token` could add an attacker's address, verify it, make it primary and then reset the password.
 
 ## Error tracking
 

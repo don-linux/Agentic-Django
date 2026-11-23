@@ -35,7 +35,7 @@ Every account email the template sends, and its files:
 Flows the template leaves off fall back to allauth's stock English templates, which talk about a browser and a site. Add your own `templates/account/email/` files before turning one on:
 
 - Account notifications (`ACCOUNT_EMAIL_NOTIFICATIONS`): `email_changed`, `email_confirm`, `email_deleted`, `password_changed`, `password_reset` and `password_set`, plus `base_notification.txt`.
-- Login by code (`ACCOUNT_LOGIN_BY_CODE_ENABLED`): `login_code`.
+- Login by code (`ACCOUNT_LOGIN_BY_CODE_ENABLED`), and reauthentication by code if `ACCOUNT_REAUTHENTICATION_METHODS` adds `"code"`: `login_code`.
 - MFA ([auth/mfa.md](auth/mfa.md)): its notifications live in `templates/mfa/email/` (`totp_activated`, `totp_deactivated`, `recovery_codes_generated`, `webauthn_added`, `webauthn_removed`).
 
 Each needs a `_subject.txt` and a `_message.txt` that extends `account/email/base_message.txt`.

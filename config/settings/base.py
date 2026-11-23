@@ -505,6 +505,10 @@ ACCOUNT_EMAIL_VERIFICATION_SUPPORTS_RESEND = True
 # /_allauth/app/v1/auth/reauthenticate), even right after login: a stolen session
 # token alone cannot take over the account. See docs/security.md#reauthentication.
 ACCOUNT_REAUTHENTICATION_REQUIRED = True
+# Reauthenticate by password, or by MFA once a user has an authenticator. Not
+# by an emailed code (allauth's default includes it): the template ships no
+# login-code email, and allauth's own text addresses a browser window.
+ACCOUNT_REAUTHENTICATION_METHODS = ("password", "mfa")
 # Hourly caps per address on top of allauth's defaults (merged per action). Every
 # email costs money and an unwanted one hurts the domain's reputation; without
 # them one IP could send 300 reset emails an hour to the same address.

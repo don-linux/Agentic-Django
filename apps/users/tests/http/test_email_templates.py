@@ -259,3 +259,19 @@ def test_custom_host_does_not_appear_in_enumeration_or_code_emails(settings) -> 
         assert host not in str(message.subject)
         assert host not in str(message.body)
         assert "testserver" not in str(message.body)
+
+
+def test_reauthentication_offers_the_password_not_an_emailed_code() -> None:
+    # ACCOUNT_REAUTHENTICATION_METHODS leaves out "code": the template ships no
+    # login-code email (docs/security.md#reauthentication).
+    _client, session = _signup_and_verify("tpl-reauth@example.com")
+    response = _client.post(
+        MANAGE_EMAIL_URL,
+        {"email": "tpl-reauth-second@example.com"},
+        content_type="application/json",
+        HTTP_X_SESSION_TOKEN=session,
+    )
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    flows = {flow["id"] for flow in response.json()["data"]["flows"]}
+    assert "reauthenticate" in flows
+    assert "reauthenticate_by_code" not in flows

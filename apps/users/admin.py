@@ -130,7 +130,8 @@ class UserAdmin(auth_admin.UserAdmin):
     ) -> bool:
         return False
 
-    @admin.action(description="Deactivate selected users")
+    # permissions: a staff user who may only view users must not run them.
+    @admin.action(description="Deactivate selected users", permissions=["change"])
     def deactivate_users(self, request: HttpRequest, queryset: QuerySet[User]) -> None:
         others = queryset.exclude(pk=request.user.pk) if request.user.pk else queryset
         if not _is_superuser(request.user):
@@ -148,7 +149,7 @@ class UserAdmin(auth_admin.UserAdmin):
             )
         self.message_user(request, f"Deactivated {count} user(s).", messages.SUCCESS)
 
-    @admin.action(description="Reactivate selected users")
+    @admin.action(description="Reactivate selected users", permissions=["change"])
     def reactivate_users(self, request: HttpRequest, queryset: QuerySet[User]) -> None:
         others = queryset
         if not _is_superuser(request.user):

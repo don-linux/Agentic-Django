@@ -64,6 +64,28 @@ class TestUserAdmin:
             verified=True,
         ).exists()
 
+    def test_add_refuses_another_users_verified_address(self, admin_client) -> None:
+        # allauth allows one verified EmailAddress per address
+        # (unique_verified_email): the form refuses it instead of a 500.
+        owner = UserFactory(email="owner@example.com")
+        EmailAddress.objects.create(
+            user=owner, email="taken@example.com", primary=False, verified=True
+        )
+        response = admin_client.post(
+            reverse("admin:users_user_add"),
+            data={
+                "email": "Taken@Example.com",
+                "usable_password": "true",
+                "password1": PASSWORD,
+                "password2": PASSWORD,
+            },
+        )
+        assert response.status_code == HTTPStatus.OK
+        assert response.context["adminform"].form.errors["email"] == [
+            "A user with this email already exists."
+        ]
+        assert not User.objects.filter(email="taken@example.com").exists()
+
     def test_add_supports_unusable_password(self, admin_client) -> None:
         url = reverse("admin:users_user_add")
         response = admin_client.post(
@@ -232,6 +254,40 @@ class TestUserDeactivationInAdmin:
 
         user.refresh_from_db()
         assert user.is_active is True
+
+
+def _staff_with_view_user(email: str) -> User:
+    staff = UserFactory(email=email, is_staff=True, is_superuser=False)
+    staff.user_permissions.add(
+        Permission.objects.get(content_type__app_label="users", codename="view_user")
+    )
+    return staff
+
+
+class TestStaffWhoMayOnlyView:
+    """The deactivate and reactivate actions need change_user, not view_user."""
+
+    def test_the_actions_are_not_offered(self, client) -> None:
+        client.force_login(_staff_with_view_user("staff-view@example.com"))
+        response = client.get(reverse("admin:users_user_changelist"))
+        assert response.status_code == HTTPStatus.OK
+        action_form = response.context["action_form"]
+        actions = (
+            {name for name, _ in action_form.fields["action"].choices}
+            if action_form
+            else set()
+        )
+        assert not {"deactivate_users", "reactivate_users"} & actions
+
+    def test_posting_an_action_changes_nothing(self, client) -> None:
+        client.force_login(_staff_with_view_user("staff-view-post@example.com"))
+        regular = UserFactory(email="regular-stays@example.com")
+        client.post(
+            reverse("admin:users_user_changelist"),
+            {"action": "deactivate_users", "_selected_action": [regular.pk]},
+        )
+        regular.refresh_from_db()
+        assert regular.is_active is True
 
 
 def _staff_with_change_user(email: str) -> User:
