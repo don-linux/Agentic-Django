@@ -153,6 +153,7 @@ Every new code is added to this table in the same PR. Codes are never renamed on
 | `request_too_large` | 413 | The body is larger than the proxy accepts (`client_max_body_size`) | nginx (`docs/NEXT-STEPS.md`) |
 | `bad_request` | 400 | The request was rejected before reaching a view (for example a `Host` not in `ALLOWED_HOSTS`) | `handler400` |
 | `server_error` | 500 | Unhandled error; the body never includes exception details | `handler500` |
+| `error` | The `HttpError`'s status | An `HttpError` whose status has no code of its own; nothing in Ninja 1.8.0 or the template raises one | Ninja `HttpError`, coded by status in `core.api.exceptions` |
 
 ## Error responses in OpenAPI
 

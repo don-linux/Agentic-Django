@@ -92,13 +92,14 @@ def test_http_error_codes_for_media_auth_and_generic() -> None:
         api.add_router("/", router)
         return TestClient(api)
 
+    # The code follows the status alone; the message is Ninja's, kept as detail.
     cases = [
         (HTTPStatus.BAD_REQUEST, "Cannot parse request body", "parse_error"),
-        (HTTPStatus.BAD_REQUEST, "nope", "error"),
+        (HTTPStatus.BAD_REQUEST, "nope", "parse_error"),
         (HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "nope", "unsupported_media_type"),
-        (HTTPStatus.NOT_ACCEPTABLE, "nope", "not_acceptable"),
         (HTTPStatus.FORBIDDEN, "CSRF check Failed", "permission_denied"),
-        (HTTPStatus.FORBIDDEN, "nope", "error"),
+        (HTTPStatus.FORBIDDEN, "nope", "permission_denied"),
+        (HTTPStatus.NOT_ACCEPTABLE, "nope", "error"),
         (HTTPStatus.IM_A_TEAPOT, "brew", "error"),
     ]
     for status, message, code in cases:

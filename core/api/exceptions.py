@@ -133,17 +133,21 @@ def _django_validation_fields(exc: DjangoValidationError) -> dict[str, Any]:
     }
 
 
-def _http_error_code(status: int, message: str) -> str:
-    """The {code} for an HttpError that is not a 401 (docs/api.md#error-codes)."""
-    if status == HTTPStatus.BAD_REQUEST and "parse" in message.lower():
-        return "parse_error"
-    if status == HTTPStatus.UNSUPPORTED_MEDIA_TYPE:
-        return "unsupported_media_type"
-    if status == HTTPStatus.NOT_ACCEPTABLE:
-        return "not_acceptable"
-    if status == HTTPStatus.FORBIDDEN and "csrf" in message.lower():
-        return "permission_denied"
-    return "error"
+# The code of an HttpError that is not a 401, from its status alone
+# (docs/api.md#error-codes). Ninja 1.8.0 raises HttpError for a body it cannot
+# parse (400) and a failed CSRF check (403), and core.api.parsers raises the
+# 415; core/tests/ninja/test_ninja_http_errors.py pins Ninja's raise sites.
+_HTTP_ERROR_CODES: dict[int, str] = {
+    HTTPStatus.BAD_REQUEST: "parse_error",
+    HTTPStatus.FORBIDDEN: "permission_denied",
+    HTTPStatus.UNSUPPORTED_MEDIA_TYPE: "unsupported_media_type",
+}
+# Any other status keeps "error"; nothing in Ninja 1.8.0 or the template sends one.
+_HTTP_ERROR_FALLBACK = "error"
+
+
+def _http_error_code(status: int) -> str:
+    return _HTTP_ERROR_CODES.get(status, _HTTP_ERROR_FALLBACK)
 
 
 class _ErrorHandlers:
@@ -247,7 +251,7 @@ class _ErrorHandlers:
         message = str(error)
         if error.status_code == HTTPStatus.UNAUTHORIZED:
             return self._not_authenticated(request, message)
-        code = _http_error_code(error.status_code, message)
+        code = _http_error_code(error.status_code)
         return self._json(request, error_body(code, message), error.status_code)
 
     def on_unhandled(self, request: HttpRequest, exc: Exception) -> NoReturn:
