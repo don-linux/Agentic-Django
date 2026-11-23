@@ -228,7 +228,7 @@ extra_checks = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 warn_unused_configs = true
-enable_error_code = ["possibly-undefined", "truthy-bool", "ignore-without-code", "exhaustive-match", "unimported-reveal", "explicit-override"]
+enable_error_code = ["possibly-undefined", "truthy-bool", "ignore-without-code", "exhaustive-match", "unimported-reveal", "explicit-override", "deprecated"]
 plugins = [
   "mypy_django_plugin.main",
 ]
@@ -356,6 +356,9 @@ reportUnnecessaryTypeIgnoreComment = "error"
 # when Django, Ninja or allauth renames or drops a hook, the override fails the
 # check instead of silently never being called. See docs/typing.md#overrides.
 reportImplicitOverride = "error"
+# A call to an API its library marks @deprecated (PEP 702) fails the check, before
+# a test meets the DeprecationWarning. See docs/typing.md#deprecated-apis.
+reportDeprecated = "error"
 # Each app's endpoints and schemas, and the base schemas they extend, get strict
 # mode: no Unknown types, no missing type arguments. See docs/typing.md#strict-api.
 strict = ["apps/*/api", "core/api/schemas.py"]

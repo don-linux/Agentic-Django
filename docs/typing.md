@@ -13,7 +13,7 @@ uv run mypy .                                              # mypy with the djang
 ```
 
 - `pyright` is installed as `pyright[nodejs]`. The `nodejs` extra pulls `nodejs-wheel-binaries`, pinned in `uv.lock`, and pyright-python uses it before anything else, so Node.js is never downloaded at run time. `[tool.pyright]` in `pyproject.toml` sets `standard` mode and no `include` or `exclude`. pyright's defaults already skip hidden directories (`.venv`, `.agents`), `__pycache__` and `node_modules`. The API layer runs in `strict` mode ([below](#strict-api)).
-- `mypy` reads `[tool.mypy]`. Every module needs annotations (`disallow_untyped_defs`), and `enable_error_code` adds `possibly-undefined`, `truthy-bool`, `ignore-without-code`, `exhaustive-match`, `unimported-reveal` and `explicit-override` ([Overrides](#overrides)). Services, selectors, `core.exceptions` and `core.errors` also get the rest of `--strict` ([ARCHITECTURE.md#strict-typing](ARCHITECTURE.md#strict-typing)).
+- `mypy` reads `[tool.mypy]`. Every module needs annotations (`disallow_untyped_defs`), and `enable_error_code` adds `possibly-undefined`, `truthy-bool`, `ignore-without-code`, `exhaustive-match`, `unimported-reveal`, `explicit-override` ([Overrides](#overrides)) and `deprecated` ([Deprecated APIs](#deprecated-apis)). Services, selectors, `core.exceptions` and `core.errors` also get the rest of `--strict` ([ARCHITECTURE.md#strict-typing](ARCHITECTURE.md#strict-typing)).
 - ruff's `ANN` rules fail on a public function without annotations, also in pre-commit, before any checker runs.
 
 ## What each one catches
@@ -30,6 +30,7 @@ What each tool reports for a typical mistake:
 | A variable that may be unbound | no | yes (`possibly-undefined`) | yes | no |
 | A value of unknown type in an endpoint or schema, such as a `dict` built from `Any` | no | no | yes, in `apps/*/api/` ([strict](#strict-api)) | no |
 | A hook that a dependency upgrade renamed or removed, so the method overrides nothing | no | yes ([`@override`](#overrides)) | yes | only if a test calls it |
+| A call to an API its library marks `@deprecated`, such as `datetime.utcnow()` | some (`DTZ`, `UP`) | yes ([`deprecated`](#deprecated-apis)) | yes | when a test runs it (warnings are errors) |
 | A setting that does not exist (`settings.API_MAX_PAGE_NUMBR`) | no | yes (plugin) | no | yes |
 | An ORM lookup on a field that does not exist (`filter(nmae=...)`) | no | yes (plugin) | no | yes |
 | `user.pk` used as something other than an `int` | no | yes | no (`Any`) | yes |
@@ -56,6 +57,13 @@ When a dependency upgrade renames or removes a hook the template overrides, the 
 
 - Put `@override` above the method's other decorators. With `@property`, put it below `@property`: `override` takes a function, not a `property`.
 - ruff does not ask for keyword-only booleans (`FBT001`) in a method marked `@override`: its signature belongs to the base class.
+
+## Deprecated APIs
+
+A call to a function, class or overload that its library marks `@deprecated` ([PEP 702](https://peps.python.org/pep-0702/)) fails both checkers: pyright through `reportDeprecated`, mypy through the `deprecated` error code. typeshed and django-stubs mark deprecations this way, so a deprecated call shows up before any test runs it. The tests catch the same calls only when they execute them (warnings are errors).
+
+- pyright also reports a deprecated overload that mypy does not. One example: `@contextmanager` on a function annotated `-> Iterator[T]`, which should be `-> Generator[T]`.
+- Replace the call with what the deprecation message names. Do not suppress it.
 
 ## Suppressions
 
