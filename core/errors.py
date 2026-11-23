@@ -33,6 +33,16 @@ NOT_FOUND_DETAIL = "Not Found"
 SERVER_ERROR_DETAIL = "Server Error"
 
 
+# The API's JSON bytes (core.api.api.CompactJSONRenderer, ADR 0021), for the
+# error responses built outside Ninja: no spaces, UTF-8 without \\u escapes,
+# and never NaN or Infinity.
+COMPACT_JSON: dict[str, object] = {
+    "separators": (",", ":"),
+    "ensure_ascii": False,
+    "allow_nan": False,
+}
+
+
 class ErrorItem(TypedDict):
     code: str
     detail: str
@@ -79,22 +89,27 @@ def validation_error_body(fields: dict[str, object]) -> ValidationErrorBody:
 # view. See docs/api.md#errors-outside-api-views.
 
 
-def _error(code: str, detail: str, status: HTTPStatus) -> JsonResponse:
-    return JsonResponse(error_body(code, detail), status=status)
+def json_error(code: str, detail: str, status: int) -> JsonResponse:
+    """An error body as the API renders it, for a response built outside Ninja."""
+    return JsonResponse(
+        error_body(code, detail), status=status, json_dumps_params=COMPACT_JSON
+    )
 
 
 def bad_request(request: HttpRequest, exception: Exception) -> JsonResponse:
-    return _error("bad_request", BAD_REQUEST_DETAIL, HTTPStatus.BAD_REQUEST)
+    return json_error("bad_request", BAD_REQUEST_DETAIL, HTTPStatus.BAD_REQUEST)
 
 
 def permission_denied(request: HttpRequest, exception: Exception) -> JsonResponse:
-    return _error("permission_denied", FORBIDDEN_DETAIL, HTTPStatus.FORBIDDEN)
+    return json_error("permission_denied", FORBIDDEN_DETAIL, HTTPStatus.FORBIDDEN)
 
 
 def page_not_found(request: HttpRequest, exception: Exception) -> JsonResponse:
-    return _error("not_found", NOT_FOUND_DETAIL, HTTPStatus.NOT_FOUND)
+    return json_error("not_found", NOT_FOUND_DETAIL, HTTPStatus.NOT_FOUND)
 
 
 def server_error(request: HttpRequest) -> JsonResponse:
     # Never echo the exception: it can contain internal details.
-    return _error("server_error", SERVER_ERROR_DETAIL, HTTPStatus.INTERNAL_SERVER_ERROR)
+    return json_error(
+        "server_error", SERVER_ERROR_DETAIL, HTTPStatus.INTERNAL_SERVER_ERROR
+    )

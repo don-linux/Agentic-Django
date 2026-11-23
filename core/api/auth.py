@@ -10,12 +10,11 @@ from typing import override
 from allauth.headless.contrib.ninja.security import (
     XSessionTokenAuth as AllauthXSessionTokenAuth,
 )
-from django.http import JsonResponse
 from ninja.errors import AuthenticationError
 from ninja.errors import AuthorizationError
 from ninja.security import SessionAuth
 
-from core.errors import error_body
+from core.errors import json_error
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -68,15 +67,6 @@ django_auth = cookieAuth()
 API_AUTH: list[XSessionTokenAuth | cookieAuth] = [x_session_token_auth, django_auth]
 
 
-def _json_error(code: str, detail: str, status: int) -> JsonResponse:
-    # The API's compact JSON (core.api.api.CompactJSONRenderer).
-    return JsonResponse(
-        error_body(code, detail),
-        status=status,
-        json_dumps_params={"separators": (",", ":"), "ensure_ascii": False},
-    )
-
-
 def staff_docs_required(
     view: Callable[..., HttpResponse],
 ) -> Callable[..., HttpResponse]:
@@ -100,7 +90,7 @@ def staff_docs_required(
             user = x_session_token_auth(request)
         if user is None:
             # The texts of Ninja's own AuthenticationError and AuthorizationError.
-            response = _json_error(
+            response = json_error(
                 "not_authenticated",
                 AuthenticationError().message,
                 HTTPStatus.UNAUTHORIZED,
@@ -108,7 +98,7 @@ def staff_docs_required(
             response["WWW-Authenticate"] = "X-Session-Token"
             return response
         if not getattr(user, "is_staff", False):
-            return _json_error(
+            return json_error(
                 "permission_denied",
                 AuthorizationError().message,
                 HTTPStatus.FORBIDDEN,

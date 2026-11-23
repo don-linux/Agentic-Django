@@ -10,7 +10,6 @@ client (tests/http/test_openapi.py).
 from __future__ import annotations
 
 import functools
-import json
 import re
 from http import HTTPStatus
 from typing import TYPE_CHECKING
@@ -18,14 +17,13 @@ from typing import Any
 
 from django.http import HttpRequest
 from django.http import HttpResponse
-from django.http import HttpResponseNotAllowed
 from django.http import JsonResponse
 from django.urls import Resolver404
 from django.urls import get_script_prefix
 from django.urls import resolve
 
 from core.api.api import api
-from core.errors import error_body
+from core.errors import json_error
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -213,17 +211,8 @@ def _acceptable(request: HttpRequest, produces: list[str]) -> bool:
     return any(_is_acceptable(media_type, ranges) for media_type in produces)
 
 
-_COMPACT: dict[str, Any] = {"separators": (",", ":"), "ensure_ascii": False}
-
-
-def _error(code: str, detail: str, status: int) -> JsonResponse:
-    return JsonResponse(
-        error_body(code, detail), status=status, json_dumps_params=_COMPACT
-    )
-
-
 def _not_acceptable() -> JsonResponse:
-    return _error(
+    return json_error(
         "not_acceptable",
         "Could not satisfy the request Accept header.",
         HTTPStatus.NOT_ACCEPTABLE,
@@ -300,14 +289,10 @@ class ApiContractMiddleware:
         return response
 
     def _not_allowed(self, method: str, allow: str) -> HttpResponse:
-        body = json.dumps(
-            error_body("method_not_allowed", METHOD_NOT_ALLOWED_DETAIL),
-            separators=(",", ":"),
-            ensure_ascii=False,
+        response = json_error(
+            "method_not_allowed",
+            METHOD_NOT_ALLOWED_DETAIL,
+            HTTPStatus.METHOD_NOT_ALLOWED,
         )
-        # HttpResponseNotAllowed joins the list in order: Allow keeps that order.
-        return HttpResponseNotAllowed(
-            [m.strip() for m in allow.split(",")],
-            content=body.encode(),
-            content_type="application/json",
-        )
+        response["Allow"] = allow
+        return response

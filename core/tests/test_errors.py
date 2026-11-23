@@ -16,6 +16,7 @@ from core.errors import PROTECTED_CODE
 from core.errors import VALIDATION_ERROR_CODE
 from core.errors import application_error_body
 from core.errors import error_body
+from core.errors import json_error
 from core.errors import page_not_found
 from core.errors import protected_error_body
 from core.errors import validation_error_body
@@ -70,3 +71,12 @@ def test_the_plain_django_handlers_answer_the_same_body() -> None:
     assert response.status_code == HTTPStatus.NOT_FOUND
     assert response["Content-Type"] == "application/json"
     assert json.loads(response.content) == {"code": "not_found", "detail": "Not Found"}
+
+
+def test_errors_built_outside_ninja_are_compact_utf8_json() -> None:
+    # The same bytes as the API's renderer (ADR 0021): no spaces, no \\u escapes.
+    response = page_not_found(RequestFactory().get("/nowhere/"), Exception())
+    assert response.content == b'{"code":"not_found","detail":"Not Found"}'
+    assert json_error("not_found", "Où?", HTTPStatus.NOT_FOUND).content == (
+        '{"code":"not_found","detail":"Où?"}'.encode()
+    )

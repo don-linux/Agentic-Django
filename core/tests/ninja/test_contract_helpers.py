@@ -51,7 +51,7 @@ def test_scoped_throttle_takes_the_rate_of_its_scope() -> None:
     assert throttle.rate == settings.NINJA_DEFAULT_THROTTLE_RATES["user"]
 
 
-def test_json_parser_reraises_request_data_too_big(
+def test_json_parser_lets_request_data_too_big_through(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def boom(self):

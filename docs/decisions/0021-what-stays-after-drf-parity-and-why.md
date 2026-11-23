@@ -24,7 +24,7 @@ These stay, each for the reason given:
 - **Optional `PATCH` body.** An empty `PATCH` changes nothing, as `{}` does. A required body is an oasdiff ERR (`request-body-became-required`), so the one-item `allOf` and `--flatten-allof` stay.
 - **`UTCDateTime`.** Output is UTC with `Z`. Microseconds are kept, so a client can send a timestamp back exactly, for example in a filter; Ninja's encoder would cut them to milliseconds. Input is exact RFC 3339 with a time zone ([0022](0022-request-fields-validate-strictly.md)); this record first read a value without one as UTC.
 - **JSON bytes.**
-  - The body is compact UTF-8 with no `\u` escapes; RFC 8259, section 8.1, makes UTF-8 the encoding.
+  - The body is compact UTF-8 with no `\u` escapes; RFC 8259, section 8.1, makes UTF-8 the encoding. Error bodies built outside Ninja use the same bytes (`core.errors.json_error`). The schema document is Ninja's own view ([0019](0019-the-schema-and-docs-are-ninja-s-own-views.md)), with Django's default separators.
   - The Content-Type is `application/json` without `charset`, which RFC 8259, section 11, does not define.
 - **Error body and the 405.**
   - The body is `{code, detail}` plus `fields` with `non_field_errors`, or `extra` ([0006](0006-one-error-body.md)).
