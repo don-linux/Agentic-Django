@@ -13,11 +13,17 @@ http:
     type: json
     data: |-
       {
-        "email": "nobody@example.com",
+        "email": "{{correoInexistente}}",
         "password": "wrong-password-xxx"
       }
 
 runtime:
+  scripts:
+    - type: before-request
+      code: |-
+        // Un correo nuevo en cada ejecución: allauth limita los inicios de sesión
+        // fallidos por correo (5 cada 5 minutos), y el smoke se repite.
+        bru.setVar("correoInexistente", `nadie-${Date.now()}@example.com`);
   assertions:
     - expression: res.status
       operator: eq
