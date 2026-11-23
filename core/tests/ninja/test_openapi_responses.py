@@ -1,9 +1,9 @@
 """docs/openapi.json declares every status the runtime answers (docs/api.md).
 
-Every operation lists 401/403/406/429, writes add 400/415, lookups add 404,
-paginated lists add 404 and 400, and the WWW-Authenticate and Retry-After
-headers are documented. oasdiff does not flag a removed error response, so
-this test is the only guard.
+Every operation lists 406/429, and 401/403 unless it is public; writes add
+400/415, lookups add 404, paginated lists (a page or cursor parameter) add 404
+and 400, and the WWW-Authenticate and Retry-After headers are documented.
+oasdiff does not flag a removed error response, so this test is the only guard.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
 COMMON = {"401", "403", "406", "429"}
 WRITE = {"400", "415"}
+PAGE_PARAMETERS = {"page", "cursor"}
 
 
 def _operations() -> dict[tuple[str, str], dict[str, Any]]:
@@ -37,10 +38,12 @@ def _expected_codes(path: str, method: str, op: dict[str, Any]) -> set[str]:
         expected -= {"401", "403"}
     if method in {"POST", "PUT", "PATCH"}:
         expected |= WRITE
-    if "{" in path or op["operationId"].endswith("_list"):
+    query = {p["name"] for p in op.get("parameters", []) if p["in"] == "query"}
+    paginated = bool(query & PAGE_PARAMETERS)
+    if "{" in path or paginated:
         expected.add("404")
-    if op["operationId"].endswith("_list"):
-        # A malformed page or page_size (docs/api.md#pagination).
+    if paginated:
+        # A malformed page, page_size or cursor (docs/api.md#pagination).
         expected.add("400")
     return expected
 
@@ -59,6 +62,16 @@ def test_only_a_public_operation_may_leave_out_401_and_403() -> None:
     private = {**public, "security": [{"XSessionTokenAuth": []}]}
     assert _expected_codes("/api/v1/things/", "GET", public) == {"406", "429"}
     assert {"401", "403"} <= _expected_codes("/api/v1/things/", "GET", private)
+
+
+@pytest.mark.parametrize("parameter", ["page", "cursor"])
+def test_a_paginated_list_is_recognized_by_its_parameters(parameter: str) -> None:
+    op: dict[str, Any] = {
+        "operationId": "things_feed",
+        "parameters": [{"name": parameter, "in": "query"}],
+        "security": [{"XSessionTokenAuth": []}],
+    }
+    assert {"400", "404"} <= _expected_codes("/api/v1/things/", "GET", op)
 
 
 def test_error_responses_document_their_headers() -> None:

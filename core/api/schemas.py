@@ -15,6 +15,7 @@ from typing import TypeIs
 from uuid import UUID
 
 from ninja import FilterSchema
+from ninja import HeaderEx
 from ninja import P
 from ninja import PathEx
 from ninja import Schema
@@ -160,18 +161,34 @@ PublicIdPath = PathEx[
 ]
 
 
+# The If-Match header of a write that checks a precondition (core.concurrency).
+# Required in the contract, so a request without it is a 400 like any missing
+# parameter, and a stale one is a 412 (docs/api.md#optimistic-concurrency).
+IfMatch = HeaderEx[
+    str,
+    P(alias="If-Match", description="The ETag of the version the client read."),
+]
+
+
 def _json_integer(value: object) -> object:
-    # Pydantic would also take true (a bool is an int in Python), "1" and 1.0;
-    # the schema publishes an integer.
-    if isinstance(value, bool) or not isinstance(value, int):
+    # JSON Schema's integer is any number with a zero fractional part, so 2.0
+    # is one (JSON Schema 2020-12, section 4.2.1), and Pydantic turns it into 2
+    # and refuses 2.5 (int_from_float). Pydantic would also take true (a bool is
+    # an int in Python) and "2", which the schema does not allow.
+    if isinstance(value, bool) or not isinstance(value, int | float):
         raise PydanticKnownError(_INT_TYPE)
     return value
 
 
 # Annotated metadata for an IntegerChoices or an integer Literal in a request
-# body, `Annotated[Priority, JsonInteger]`: only a JSON integer passes
-# (docs/api.md#field-types). Text choices need nothing.
+# body, `Annotated[Priority, JsonInteger]`: only a JSON number with no
+# fraction passes (docs/api.md#field-types). Text choices need nothing.
 JsonInteger = BeforeValidator(_json_integer)
+
+# Use for every integer field of a request body, with the model field's range
+# as ge and le (docs/api.md#field-types). Pydantic's StrictInt refuses 2.0,
+# which the schema allows.
+JsonInt = Annotated[int, JsonInteger]
 
 
 def _plain_decimal(value: Decimal) -> str:

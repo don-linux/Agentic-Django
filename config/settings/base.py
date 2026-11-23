@@ -584,11 +584,23 @@ CORS_ALLOW_HEADERS = (
     "x-session-token",
     "x-email-verification-key",
     "x-password-reset-key",
+    # A write that checks a precondition (core.api.schemas.IfMatch).
+    "if-match",
 )
 # Response headers of the contract that a browser client must read: Location on
-# a 201 and Retry-After on a 429. Cross-origin, a browser shows JavaScript only
-# the CORS-safelisted response headers and the ones listed here (Fetch standard).
-CORS_EXPOSE_HEADERS = ("Location", "Retry-After")
+# a 201, Retry-After on a 429, the ETag to send back in If-Match
+# (core.concurrency), and Deprecation, Sunset and Link on a deprecated
+# operation (core.api.deprecation). Cross-origin, a browser shows JavaScript
+# only the CORS-safelisted response headers and the ones listed here (Fetch
+# standard).
+CORS_EXPOSE_HEADERS = (
+    "Location",
+    "Retry-After",
+    "ETag",
+    "Deprecation",
+    "Sunset",
+    "Link",
+)
 
 # For the admin and Swagger UI, which run with staff sessions; styles allow
 # 'unsafe-inline' for the admin's style attributes, scripts never do.

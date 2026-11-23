@@ -80,6 +80,19 @@ def api_schema(caller_token: str, settings: Settings) -> BaseSchema:
                 # (request-property-pattern-added). See ADR 0018.
                 "allow-x00": False,
             },
+            # A valid request may meet state the generator cannot know. Its
+            # defaults already take a conflict with stored data (409); add a
+            # deprecated operation past its sunset (410) and an If-Match that
+            # names another version (412). 5xx stays a failure of
+            # not_a_server_error (docs/api.md#contract-conformance).
+            "checks": {
+                "positive_data_acceptance": {
+                    "expected-statuses": [
+                        *("2xx", "3xx", "401", "403", "404", "409"),
+                        *("410", "412", "429", "5xx"),
+                    ]
+                }
+            },
             # Half of the positive requests to a detail route use an id the caller
             # can see (OWNED_IDS); the rest are unknown ids, which must be 404.
             "dictionaries": {"caller": {"values": owned_ids}},

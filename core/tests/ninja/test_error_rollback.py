@@ -46,12 +46,12 @@ def _post_inside_a_request_transaction(client: TestClient) -> int:
 def test_a_handled_error_rolls_back_with_atomic_requests(monkeypatch) -> None:
     monkeypatch.setitem(connection.settings_dict, "ATOMIC_REQUESTS", value=True)
     status = _post_inside_a_request_transaction(_client())
-    assert status == HTTPStatus.BAD_REQUEST
+    assert status == HTTPStatus.CONFLICT
     assert not User.objects.filter(email="partial@example.com").exists()
 
 
 def test_without_atomic_requests_an_outer_atomic_block_is_left_alone() -> None:
     assert connection.settings_dict["ATOMIC_REQUESTS"] is False
     status = _post_inside_a_request_transaction(_client())
-    assert status == HTTPStatus.BAD_REQUEST
+    assert status == HTTPStatus.CONFLICT
     assert User.objects.filter(email="partial@example.com").exists()

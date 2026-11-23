@@ -1,14 +1,18 @@
 """Error responses every operation declares, so docs/openapi.json lists them.
 
-Spread them into `response=` (Ninja's documented way to declare several status
-codes: https://django-ninja.dev/guide/responses/#multiple-response-schemas):
+Spread a map into `response=` (Ninja's documented way to declare several
+status codes: https://django-ninja.dev/guide/responses/#multiple-response-schemas),
+and pass the same map to response_docs(), which the documented operation
+openapi_extra option uses for the descriptions and the WWW-Authenticate and
+Retry-After headers:
 
-    @router.get("/", response={200: list[ThingOut], **LIST_ERRORS})
-    @router.get("/{id}/", response={200: ThingOut, **LOOKUP_ERRORS})
-    @router.patch("/{id}/", response={200: ThingOut, **LOOKUP_ERRORS, **WRITE_ERRORS})
+    @router.get(
+        "/{public_id:id}/",
+        response={200: ThingOut, **LOOKUP_ERRORS},
+        openapi_extra=response_docs(LOOKUP_ERRORS),
+    )
 
-The descriptions and the WWW-Authenticate / Retry-After headers are added by
-the documented operation openapi_extra option, from RESPONSE_DOCS.
+See docs/api.md#error-responses-in-openapi.
 """
 
 from __future__ import annotations
@@ -22,18 +26,18 @@ from pydantic import Field
 from core.api.schemas import ErrorSchema
 from core.api.schemas import ValidationErrorSchema
 
-# 401/403/406/429 can answer any authenticated operation (core.api.exceptions,
-# core.api.negotiation and the throttles).
-READ_ERRORS: dict[int, Any] = {
-    401: ErrorSchema,
-    403: ErrorSchema,
-    406: ErrorSchema,
-    429: ErrorSchema,
-}
+# 406/429 can answer any operation, a public one (auth=None) included
+# (core.api.negotiation and the throttles).
+PUBLIC_ERRORS: dict[int, Any] = {406: ErrorSchema, 429: ErrorSchema}
+# Plus 401/403 on an authenticated operation (core.api.exceptions).
+READ_ERRORS: dict[int, Any] = {401: ErrorSchema, 403: ErrorSchema, **PUBLIC_ERRORS}
 LOOKUP_ERRORS: dict[int, Any] = {**READ_ERRORS, 404: ErrorSchema}
-# A malformed page or page_size is a 400 with fields; a page past the last one
-# is a 404 (docs/api.md#pagination).
-LIST_ERRORS: dict[int, Any] = {**LOOKUP_ERRORS, 400: ValidationErrorSchema}
+# A paginated list: a malformed page, page_size or cursor parameter is a 400
+# with fields, and a page past the last one, or a cursor the server did not
+# issue, is a 404 (docs/api.md#pagination). A public list spreads
+# {**PUBLIC_ERRORS, **PAGE_ERRORS}.
+PAGE_ERRORS: dict[int, Any] = {404: ErrorSchema, 400: ValidationErrorSchema}
+LIST_ERRORS: dict[int, Any] = {**READ_ERRORS, **PAGE_ERRORS}
 
 
 def _one_of(schema: dict[str, Any]) -> None:
@@ -52,10 +56,16 @@ WRITE_ERRORS: dict[int, Any] = {
     415: ErrorSchema,
 }
 
-# A request that clashes with the stored data: a unique value already used
-# (already_exists), or a delete that PROTECT foreign keys refuse (protected).
-# Add it to the operations that can (docs/api.md#duplicates, ADR 0023).
+# A request that breaks a business rule (ApplicationError, ConflictError), a
+# unique value already used (already_exists), or a delete that PROTECT foreign
+# keys refuse (protected). Add it to the operations that can
+# (docs/api.md#domain-errors, ADR 0023).
 CONFLICT_ERRORS: dict[int, Any] = {409: ErrorSchema}
+# A deprecated operation past its sunset date (core.api.deprecation).
+GONE_ERRORS: dict[int, Any] = {410: ErrorSchema}
+# A write whose If-Match names a version that is no longer current
+# (core.concurrency, core.api.schemas.IfMatch).
+PRECONDITION_ERRORS: dict[int, Any] = {412: ErrorSchema}
 
 RESPONSE_DOCS: dict[str, dict[str, Any]] = {
     "400": {
@@ -79,12 +89,18 @@ RESPONSE_DOCS: dict[str, dict[str, Any]] = {
             "Hidden objects are 404, not 403."
         )
     },
-    "404": {"description": "Not found, not visible, or a page past the last one."},
+    "404": {"description": "Not found, or not visible to the caller."},
     "406": {"description": "The Accept header cannot be satisfied."},
     "409": {
         "description": (
-            "Conflicts with the stored data: a unique value already used, or "
-            "dependent records that protect the resource."
+            "Conflicts with the stored data: a business rule, a unique value "
+            "already used, or dependent records that protect the resource."
+        )
+    },
+    "410": {"description": "Gone: the operation was removed after its sunset date."},
+    "412": {
+        "description": (
+            "Precondition failed: If-Match does not name the current version."
         )
     },
     "415": {"description": "The request Content-Type is not accepted."},
@@ -100,22 +116,44 @@ RESPONSE_DOCS: dict[str, dict[str, Any]] = {
 }
 
 
-# A 400 whose only body is ValidationErrorSchema (LIST_ERRORS: query parameters,
-# no request body to parse).
-_VALIDATION_ONLY_400 = {"description": "Validation error; `fields` lists each error."}
-
-
-def response_docs(errors: dict[int, Any]) -> dict[str, Any]:
-    """Operation openapi_extra (guide/operations/#openapi_extra), no schema rewrite."""
-    return {
-        "responses": {
-            code: _VALIDATION_ONLY_400
-            if code == HTTPStatus.BAD_REQUEST and schema is ValidationErrorSchema
-            else RESPONSE_DOCS[str(code)]
-            for code, schema in errors.items()
-            if str(code) in RESPONSE_DOCS
+# A list's 400 has only ValidationErrorSchema (PAGE_ERRORS: query parameters,
+# no request body to parse), and its 404 may be a page.
+_LIST_DOCS: dict[int, dict[str, Any]] = {
+    400: {"description": "Validation error; `fields` lists each error."},
+    404: {
+        "description": (
+            "Not found or not visible, a page past the last one, or a cursor "
+            "the server did not issue."
+        )
+    },
+}
+_ETAG_HEADER = {
+    "headers": {
+        "ETag": {
+            "schema": {"type": "string"},
+            "description": "The version to send back in If-Match.",
         }
     }
+}
+
+
+def response_docs(errors: dict[int, Any], *, etag: bool = False) -> dict[str, Any]:
+    """Operation openapi_extra (guide/operations/#openapi_extra), no schema rewrite.
+
+    etag=True documents the ETag header of the 200 (core.concurrency).
+    """
+    is_list = errors.get(HTTPStatus.BAD_REQUEST) is ValidationErrorSchema
+    responses: dict[int, Any] = {
+        code: _LIST_DOCS[code]
+        if is_list and code in _LIST_DOCS
+        else RESPONSE_DOCS[str(code)]
+        for code in errors
+        if str(code) in RESPONSE_DOCS
+    }
+    if etag:
+        # Ninja deep-merges openapi_extra: the 200 keeps its body.
+        responses[HTTPStatus.OK] = _ETAG_HEADER
+    return {"responses": responses}
 
 
 def download_docs(media_type: str, errors: dict[int, Any]) -> dict[str, Any]:

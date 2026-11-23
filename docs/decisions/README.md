@@ -26,8 +26,9 @@ Short records of why the template is the way it is, one decision per file (a lig
 | [0020](0020-options-allow-and-406-follow-django-and-rfc-9110.md) | OPTIONS, Allow and 406 follow Django and RFC 9110 | Accepted |
 | [0021](0021-contract-details-the-template-keeps.md) | Contract details the template keeps, and why | Accepted |
 | [0022](0022-request-fields-validate-strictly.md) | Request fields validate strictly | Accepted |
-| [0023](0023-a-duplicate-is-a-409-conflict.md) | A duplicate is a 409 conflict | Accepted |
+| [0023](0023-a-business-rule-never-answers-400.md) | A business rule answers 409, 403 or 404, never 400 | Accepted |
 | [0024](0024-one-api-on-api-v1.md) | One API, on `/api/v1/`, with its contract as native OpenAPI 3.1.0 JSON | Accepted |
+| [0025](0025-preconditions-and-removed-operations.md) | A precondition is a required `If-Match`; a stale one is a 412, a removed operation a 410 | Accepted |
 
 ## Writing one
 

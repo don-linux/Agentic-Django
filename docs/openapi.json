@@ -118,7 +118,7 @@
             }
           },
           "404": {
-            "description": "Not found, not visible, or a page past the last one.",
+            "description": "Not found or not visible, a page past the last one, or a cursor the server did not issue.",
             "content": {
               "application/json": {
                 "schema": {
@@ -447,7 +447,7 @@
             }
           },
           "404": {
-            "description": "Not found, not visible, or a page past the last one.",
+            "description": "Not found, or not visible to the caller.",
             "content": {
               "application/json": {
                 "schema": {
@@ -552,7 +552,7 @@
             }
           },
           "404": {
-            "description": "Not found, not visible, or a page past the last one.",
+            "description": "Not found, or not visible to the caller.",
             "content": {
               "application/json": {
                 "schema": {

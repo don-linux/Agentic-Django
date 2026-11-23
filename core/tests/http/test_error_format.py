@@ -5,8 +5,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from core.exceptions import ApplicationError
-
 if TYPE_CHECKING:
     from django.test import Client
 
@@ -86,18 +84,3 @@ class TestErrorCodesThroughTheApi:
             "code": "string_too_long",
             "detail": "String should have at most 255 characters",
         }
-
-
-@pytest.mark.parametrize("code", ["Bad Code", "already-exists", "1st", "", "Upper"])
-def test_application_error_rejects_codes_that_are_not_snake_case(code: str) -> None:
-    with pytest.raises(ValueError, match="snake_case"):
-        ApplicationError("Message.", code=code)
-
-
-def test_application_error_keeps_message_and_defaults_to_400() -> None:
-    error = ApplicationError("Message.", code="some_rule")
-
-    assert error.message == "Message."
-    assert str(error) == "Message."
-    assert error.status_code == HTTPStatus.BAD_REQUEST
-    assert error.extra is None

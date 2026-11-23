@@ -57,7 +57,7 @@ Ninja validates a request with Pydantic in lax mode (`model_validate` on the par
 | Value | In a request body | In a query parameter | In a response |
 | --- | --- | --- | --- |
 | Text | `str`, with the model's `max_length`, and `min_length=1` for `blank=False` | `QueryText` | `str` |
-| Integer | `StrictInt` | `int` | `int` |
+| Integer | `JsonInt`, with the model field's range as `ge` and `le` | `int` | `int` |
 | Integer choice | `Annotated[Priority, JsonInteger]` | `Priority` | `Priority` |
 | Number | `StrictFloat` (takes an integer too) | `FiniteFloat` | `float` |
 | Boolean | `StrictBool` | `bool` | `bool` |
@@ -66,7 +66,7 @@ Ninja validates a request with Pydantic in lax mode (`model_validate` on the par
 | UUID (a `public_id`) | `PublicId` | `PublicId` | `UUID` |
 | Decimal | `Annotated[Decimal, DecimalString(...)]` | `Annotated[Decimal, DecimalString(...)]` | `Annotated[Decimal, DecimalString(...)]` (a string) |
 
-`StrictInt`, `StrictFloat`, `StrictBool` and `FiniteFloat` are Pydantic's; `UTCDateTime`, `ISODate`, `PublicId`, `JsonInteger`, `DecimalString` and `QueryText` are in `core.api.schemas`. `DecimalString(max_digits=10, decimal_places=2)` takes the model field's precision: a decimal travels as a string such as `"12.50"`, never as a JSON number, which the parser would read through a float and round, and the request schema publishes the exact `pattern`, so `full_clean()` never refuses a value the schema allows (`negative=True` lets a minus sign through). A response writes it in positional notation, never with an exponent. `JsonInteger` goes on an `IntegerChoices`, an `IntEnum` or an integer `Literal` in a request body, which would otherwise take `true`, `"2"` and `2.0`; text choices need nothing. `QueryText` keeps a NUL out of the SQL, as `InputSchema` does for a body. A query parameter is text, so it keeps the types that parse text: `int` takes `"2"`, and `bool` takes `true`, `false` and Pydantic's other spellings (`1`, `yes`, `on`). `UTCDateTime` takes years 1000 to 9998 in a request, and the request schema publishes that as a `pattern`: Python's `datetime` ends at years 1 and 9999, and an offset would push `0001-01-01T00:00:00+00:01` past it in UTC, a 500. A response is any UTC date-time. `PublicId` takes the hyphenated form only, in either case; Pydantic's `UUID` also takes it without hyphens, in braces, or as a URN. `ConfigDict(strict=True)` is not an option: in Python mode it also refuses the strings a datetime, a date or a UUID arrives as.
+`StrictFloat`, `StrictBool` and `FiniteFloat` are Pydantic's; `JsonInt`, `JsonInteger`, `UTCDateTime`, `ISODate`, `PublicId`, `DecimalString` and `QueryText` are in `core.api.schemas`. `JsonInt` takes any JSON number with a zero fractional part, `2.0` included, which JSON Schema 2020-12 counts as an integer, and refuses `true`, `"2"` and `2.5`; Pydantic's `StrictInt` refuses `2.0`, which the schema allows. An integer states the model field's range, as text states its `max_length`: PostgreSQL's `integer` is 32 bits, and `full_clean()` refuses a value outside it. `DecimalString(max_digits=10, decimal_places=2)` takes the model field's precision: a decimal travels as a string such as `"12.50"`, never as a JSON number, which the parser would read through a float and round, and the request schema publishes the exact `pattern`, so `full_clean()` never refuses a value the schema allows (`negative=True` lets a minus sign through). A response writes it in positional notation, never with an exponent. `JsonInteger` goes on an `IntegerChoices`, an `IntEnum` or an integer `Literal` in a request body, which would otherwise take `true` and `"2"`; text choices need nothing. `QueryText` keeps a NUL out of the SQL, as `InputSchema` does for a body. A query parameter is text, so it keeps the types that parse text: `int` takes `"2"`, and `bool` takes `true`, `false` and Pydantic's other spellings (`1`, `yes`, `on`). `UTCDateTime` takes years 1000 to 9998 in a request, and the request schema publishes that as a `pattern`: Python's `datetime` ends at years 1 and 9999, and an offset would push `0001-01-01T00:00:00+00:01` past it in UTC, a 500. A response is any UTC date-time. `PublicId` takes the hyphenated form only, in either case; Pydantic's `UUID` also takes it without hyphens, in braces, or as a URN. `ConfigDict(strict=True)` is not an option: in Python mode it also refuses the strings a datetime, a date or a UUID arrives as.
 
 An input schema states every rule the model's `full_clean()` checks and a schema can express: `max_length` as `maxLength`, `blank=False` as `minLength` 1. Otherwise `full_clean()` answers 400 to a request the schema allows, which the conformance test reports as a schema-valid request rejected (ST202). Every `InputSchema` also refuses, at any depth, the text PostgreSQL cannot store: a NUL (`null_characters_not_allowed`, Django's code and message) and a lone surrogate, which a JSON escape can carry (Pydantic's `string_unicode`). Either one would be a 500 when the row is saved (`core.api.schemas.storable_text`).
 
@@ -196,7 +196,13 @@ An item from request validation carries Pydantic's error type as `code` and its 
 
 ## Domain errors
 
-Services reject a request that breaks a business rule by raising `core.exceptions.ApplicationError` (default `400`) or `ConflictError` (`409`). The class does not import Django Ninja; `core.api.exceptions` is the only place that turns it into HTTP, with the body that `core.errors.application_error_body` builds:
+Services reject a request that breaks a business rule by raising `core.exceptions.ApplicationError` or its subclass `ConflictError`. A request that reaches a service already matched the schema, so a broken rule is never a 400, which says the request does not match the contract ([ADR 0023](decisions/0023-a-business-rule-never-answers-400.md)):
+
+- **409** by default: a conflict with the stored data, such as stock that is not enough or an order that already shipped. `ConflictError` is always 409.
+- **403** for a caller who may see the object but not change it ([Permissions](#permissions-and-public-endpoints)), **404** to hide one.
+- **410** for an operation past its sunset date, and **412** for a stale `If-Match`, which `core.api.deprecation` and `core.concurrency` raise.
+
+`ApplicationError(..., status_code=400)` raises `ValueError`. The class does not import Django Ninja; `core.api.exceptions` is the only place that turns it into HTTP, with the body that `core.errors.application_error_body` builds:
 
 ```python
 from core.exceptions import ConflictError
@@ -206,11 +212,13 @@ raise ConflictError(
 )
 ```
 
-The handler also maps Django `ValidationError` (including `full_clean()`) to `400 validation_error`, `ObjectDoesNotExist` to `404 not_found`, and `ProtectedError`/`RestrictedError` to `409 protected`. `IntegrityError` is not mapped: a constraint that can fail on user input is checked in the service and raised as an `ApplicationError`, or as a `ConflictError` when the request clashes with stored data ([duplicates](#duplicates)).
+The operation declares the status with `CONFLICT_ERRORS` (or `GONE_ERRORS`, `PRECONDITION_ERRORS`), and the conformance test accepts 409, 410 and 412 for a valid request: the generator cannot know the stored data ([Contract conformance](#contract-conformance)).
+
+The handler also maps Django `ValidationError` (including `full_clean()`) to `400 validation_error`, `ObjectDoesNotExist` to `404 not_found`, and `ProtectedError`/`RestrictedError` to `409 protected`. `full_clean()` is the backstop: an input schema states every rule it checks that a schema can express ([Field types](#field-types)), and the service checks the others first. `IntegrityError` is not mapped: a constraint that can fail on user input is checked in the service and raised as a `ConflictError` ([duplicates](#duplicates)).
 
 ### Duplicates
 
-A unique value that is already used is a conflict with the stored data, not an invalid request: it is a 409, never the 400 that `full_clean()` gives. The schema cannot say that a value must be unused, so a 400 would reject a request the schema allows; the conformance test reports that (ST202), and schemathesis accepts a 409 for it ([ADR 0023](decisions/0023-a-duplicate-is-a-409-conflict.md)). The service checks the value inside its transaction, before `full_clean()`, and raises the registered `already_exists` with the field in `extra`:
+A unique value that is already used is a conflict with the stored data, not an invalid request: it is a 409, never the 400 that `full_clean()` gives. The schema cannot say that a value must be unused, so a 400 would reject a request the schema allows; the conformance test reports that (ST202), and schemathesis accepts a 409 for it ([ADR 0023](decisions/0023-a-business-rule-never-answers-400.md)). The service checks the value inside its transaction, before `full_clean()`, and raises the registered `already_exists` with the field in `extra`:
 
 ```python
 if Thing.objects.filter(code=code).exists():
@@ -231,9 +239,11 @@ Every new code is added to this table in the same PR. Codes are never renamed on
 | --- | --- | --- | --- |
 | `validation_error` | 400 | The body failed validation; see `fields` | Pydantic request schemas, Django `ValidationError` |
 | `unknown_field` | 400 | Field-level code inside the `fields` of a `validation_error`: the body has a key that is not a field of this endpoint | Pydantic request schemas with `extra="forbid"` |
+| `null_characters_not_allowed` | 400 | Field-level code: a string has a NUL, which PostgreSQL cannot store (Django's code and message) | `core.api.schemas.storable_text`, through `InputSchema`, `BaseFilterSchema` and `QueryText` |
+| `invalid` | 400 | Field-level code of a Django `ValidationError` raised without a code | `core.api.exceptions`, for `full_clean()` and other Django validators |
 | `parse_error` | 400 | The body is not valid for its content type (for example malformed JSON, or JSON nested too deeply to decode) | Ninja's request body parsing, through `core.api.parsers.JSONParser` |
 | `not_authenticated` | 401 | No valid credentials were sent (none, an unknown or expired token, or no session) | Ninja authentication (`core.api.auth`) |
-| `permission_denied` | 403 | Authenticated, but not allowed, or a cookie-authenticated write without a valid CSRF token | Ninja `AuthorizationError`, Django `PermissionDenied`, Ninja's CSRF check (also `handler403`) |
+| `permission_denied` | 403 | Authenticated, but not allowed, or a cookie-authenticated write without a valid CSRF token | Ninja `AuthorizationError`, Django `PermissionDenied`, Ninja's CSRF check (also `handler403`), and services that follow [Permissions](#permissions-and-public-endpoints) |
 | `not_found` | 404 | The resource does not exist or is not visible to the caller | `Http404`, `ObjectDoesNotExist`, pagination, unknown routes (`handler404`) |
 | `method_not_allowed` | 405 | The HTTP method is not supported on this route | `core.api.negotiation.ApiContractMiddleware` |
 | `not_acceptable` | 406 | The `Accept` header asks for a format the API does not produce | `core.api.negotiation.ApiContractMiddleware` |
@@ -242,6 +252,8 @@ Every new code is added to this table in the same PR. Codes are never renamed on
 | `idempotency_key_reused` | 409 | The `Idempotency-Key` was already used with a different payload | Create endpoints that follow [Idempotent retries](#idempotent-retries) |
 | `protected` | 409 | The resource has dependent records and cannot be deleted | `ProtectedError`, `RestrictedError` |
 | `already_exists` | 409 | A unique value the request sends is already used; `extra.field` names the field | Create and update endpoints that follow [Duplicates](#duplicates) |
+| `gone` | 410 | The operation was deprecated and its sunset date has passed | `core.api.deprecation.deprecate` |
+| `precondition_failed` | 412 | `If-Match` does not name the current version of the resource | `core.concurrency.check_if_match` |
 | `request_too_large` | 413 | The body is larger than the proxy accepts (`client_max_body_size`) | nginx (`docs/NEXT-STEPS.md`) |
 | `bad_request` | 400 | The request was rejected before reaching a view (for example a `Host` not in `ALLOWED_HOSTS`) | `handler400` |
 | `server_error` | 500 | Unhandled error; the body never includes exception details | `handler500` |
@@ -253,17 +265,32 @@ The schema documents error responses with the `ErrorSchema` and `ValidationError
 
 - `400` → a `oneOf` of `ValidationErrorSchema` (field errors, `fields` present) and `ErrorSchema` (malformed JSON, `parse_error`) for `POST`, `PUT`, and `PATCH`;
 - `401` and `403` → `ErrorSchema` on authenticated operations. `401` declares the `WWW-Authenticate` header;
-- `404` → `ErrorSchema` for operations with a path parameter, and for page-number list endpoints (a page past the last one, or deeper than `DJANGO_API_MAX_PAGE_NUMBER`, is 404);
-- `400` → `ValidationErrorSchema` on page-number list endpoints too (a malformed `page` or `page_size`);
+- `404` → `ErrorSchema` for operations with a path parameter, and for paginated lists (a page past the last one, deeper than `DJANGO_API_MAX_PAGE_NUMBER`, or a cursor the server did not issue);
+- `400` → `ValidationErrorSchema` on paginated lists too (a malformed `page`, `page_size` or `cursor` parameter);
 - `406` → `ErrorSchema` when the operation only renders JSON;
+- `409`, `410` and `412` → `ErrorSchema` on the operations that can answer them ([Domain errors](#domain-errors));
 - `415` → `ErrorSchema` on write operations that only parse JSON;
 - `429` → `ErrorSchema` when throttles apply (the global ones count), with the `Retry-After` header.
 
 `405` is not listed on every operation: the allowed methods are the operation keys themselves, and a wrong method still returns `method_not_allowed` with `Allow`.
 
-Nothing adds them automatically: each operation spreads the error map that fits it into `response=` ([Ninja: multiple response schemas](https://django-ninja.dev/guide/responses/#multiple-response-schemas)) and passes the same map to `openapi_extra=response_docs(...)` ([Ninja: openapi_extra](https://django-ninja.dev/guide/operations/#openapi_extra)), which adds the descriptions and the headers. The maps live in `core/api/responses.py`: `READ_ERRORS` (401, 403, 406, 429), `LOOKUP_ERRORS` (plus 404), `LIST_ERRORS` (plus 404 and 400), and `WRITE_ERRORS` (plus 400 and 415); combine them, for example `response={200: ThingOut, **LOOKUP_ERRORS, **WRITE_ERRORS}`. `core/tests/ninja/test_openapi_responses.py` fails when an operation leaves out the common ones. Request and response bodies are separate components: `UserUpdateIn` carries only writable fields, while `UserOut` also has the read-only `id` and `url`. The Swagger UI at `/api/v1/docs/` is staff-only and is not itself an entry in the committed contract.
+Nothing adds them automatically: each operation spreads the error map that fits it into `response=` ([Ninja: multiple response schemas](https://django-ninja.dev/guide/responses/#multiple-response-schemas)) and passes the same map to `openapi_extra=response_docs(...)` ([Ninja: openapi_extra](https://django-ninja.dev/guide/operations/#openapi_extra)), which adds the descriptions and the headers. The maps live in `core/api/responses.py`; combine them, for example `response={200: ThingOut, **LOOKUP_ERRORS, **WRITE_ERRORS}`:
 
-Every operation sets `operation_id` explicitly, `<app>_<resource>_<action>` (for example `users_me_retrieve` under the `users` tag), so a renamed function never changes the contract ([Ninja: operation_id](https://django-ninja.dev/guide/operations/#operation_id)).
+| Map | Statuses | For |
+| --- | --- | --- |
+| `PUBLIC_ERRORS` | 406, 429 | Every operation, a public one (`auth=None`) included |
+| `READ_ERRORS` | 401, 403, plus `PUBLIC_ERRORS` | Every authenticated operation |
+| `LOOKUP_ERRORS` | 404, plus `READ_ERRORS` | An operation with a path id |
+| `PAGE_ERRORS` | 404, 400 | A paginated list; a public list spreads `{**PUBLIC_ERRORS, **PAGE_ERRORS}` |
+| `LIST_ERRORS` | `READ_ERRORS` and `PAGE_ERRORS` | An authenticated paginated list |
+| `WRITE_ERRORS` | 400, 415, plus `READ_ERRORS` | `POST`, `PUT` and `PATCH` |
+| `CONFLICT_ERRORS` | 409 | A business rule, a duplicate, or a delete that `PROTECT` refuses |
+| `GONE_ERRORS` | 410 | A deprecated operation ([Deprecating](#deprecating-endpoints-and-fields)) |
+| `PRECONDITION_ERRORS` | 412 | A write that takes `If-Match` ([Optimistic concurrency](#optimistic-concurrency)) |
+
+`response_docs` gives a list's 404 and 400 their own descriptions, and `response_docs(..., etag=True)` documents the `ETag` header of the 200. `core/tests/ninja/test_openapi_responses.py` fails when an operation leaves out the common ones; it knows a paginated list by its `page` or `cursor` parameter. Request and response bodies are separate components: `UserUpdateIn` carries only writable fields, while `UserOut` also has the read-only `id` and `url`. The Swagger UI at `/api/v1/docs/` is staff-only and is not itself an entry in the committed contract.
+
+Every operation sets `operation_id` explicitly, so a renamed function never changes the contract ([Ninja: operation_id](https://django-ninja.dev/guide/operations/#operation_id)): `<app>_<action>` for the app's own resource (`users_list`, `users_retrieve`, `users_partial_update`), and `<app>_<resource>_<action>` for another one (`users_me_retrieve`, `projects_members_list`), under the app's tag. The action is `list`, `retrieve`, `create`, `update`, `partial_update`, `destroy`, or a verb for an extra action.
 
 The schema is Ninja 1.8.0's own output; nothing rewrites it afterwards. Contract details come from documented options: `response=` maps (`core.api.responses`), `openapi_extra` for descriptions and headers, Pydantic `WithJsonSchema` for the path `id` pattern and `json_schema_extra` for `readOnly` and the 400 `oneOf`. An optional body (`BodyEx[T, P(default_factory=T)]`, the type-checker spelling of `Body(default_factory=...)`, [Ninja: request body](https://django-ninja.dev/guide/body/)) is a one-item `allOf` around its `$ref`, so the `api-contract` job runs oasdiff with `--flatten-allof` ([Breaking changes](#breaking-changes)).
 
@@ -286,7 +313,7 @@ if project.owner_id != user.pk:
 
 Every operation already declares 403 (`READ_ERRORS`). Do not raise Django's `PermissionDenied` or Ninja's `AuthorizationError` for a domain rule; they stay for authentication and CSRF.
 
-A public operation sets `auth=None` and keeps the API's throttles, so `AnonThrottle` counts by client IP ([Ninja: authentication](https://django-ninja.dev/guide/authentication/)). It answers neither 401 nor 403, so it declares only what it can answer, for example `response={200: ThingOut, 406: ErrorSchema, 429: ErrorSchema}` with the same map in `response_docs(...)`. The published operation has no `security`, and `core/tests/ninja/test_openapi_responses.py` then does not ask it for 401 or 403. A public operation reads only public data, so its selector takes no user.
+A public operation sets `auth=None` and keeps the API's throttles, so `AnonThrottle` counts by client IP ([Ninja: authentication](https://django-ninja.dev/guide/authentication/)). It answers neither 401 nor 403, so it declares only what it can answer: `response={200: ThingOut, **PUBLIC_ERRORS}` with `openapi_extra=response_docs(PUBLIC_ERRORS)`, and `{**PUBLIC_ERRORS, **PAGE_ERRORS}` for a public list. The published operation has no `security`, and `core/tests/ninja/test_openapi_responses.py` then does not ask it for 401 or 403. A public operation reads only public data, so its selector takes no user.
 
 ## Throttling
 
@@ -329,109 +356,72 @@ It runs in `scripts/check.sh test` and in the `test` job, in about ten seconds.
 
 A failure prints the request as a `curl` command. Fix the server or the schema, whichever is wrong, and regenerate `docs/openapi.json` after a schema change ([Breaking changes](#breaking-changes)).
 
-The test has no exceptions: the API accepts exactly what the schema declares, and every schemathesis check runs ([ADR 0018](decisions/0018-the-api-accepts-exactly-what-its-contract-declares.md)). One generation setting stays: `generation.allow-x00` is off. PostgreSQL text cannot store NUL, so every input schema rejects `\x00` in a string with `null_characters_not_allowed` ([field types](#field-types)). schemathesis documents this setting for servers and drivers that reject NUL bytes ([schemathesis: triage](https://schemathesis.readthedocs.io/en/stable/guides/triage/)). A `pattern` in the schema would be a breaking change for the `api-contract` job. `core/tests/ninja/test_storable_text.py` sends NUL and lone surrogates directly, since schemathesis generates neither.
+The test has no exceptions: the API accepts exactly what the schema declares, and every schemathesis check runs ([ADR 0018](decisions/0018-the-api-accepts-exactly-what-its-contract-declares.md)). For a valid request, the positive-data check takes the statuses that depend on state the generator cannot know: its defaults already include 409, and the test adds 410 for an operation past its sunset and 412 for a stale `If-Match` ([ADR 0025](decisions/0025-preconditions-and-removed-operations.md)). One generation setting stays: `generation.allow-x00` is off. PostgreSQL text cannot store NUL, so every input schema rejects `\x00` in a string with `null_characters_not_allowed` ([field types](#field-types)). schemathesis documents this setting for servers and drivers that reject NUL bytes ([schemathesis: triage](https://schemathesis.readthedocs.io/en/stable/guides/triage/)). A `pattern` in the schema would be a breaking change for the `api-contract` job. `core/tests/ninja/test_storable_text.py` sends NUL and lone surrogates directly, since schemathesis generates neither.
 
 ## Deprecating endpoints and fields
 
-Mobile apps keep calling an endpoint for months after a release replaces it, so a v1 endpoint or field is deprecated before it is removed, and clients learn it two ways. This is a recipe; nothing is deprecated today.
+Mobile apps keep calling an endpoint for months after a release replaces it, so an endpoint or field is deprecated before it goes, and clients learn it two ways. Nothing is deprecated today; the pieces ship in `core` ([ADR 0025](decisions/0025-preconditions-and-removed-operations.md)).
 
-**In the schema**, so generated clients flag it at compile time: `deprecated=True` on the route decorator ([Ninja: deprecated](https://django-ninja.dev/guide/operations/#deprecated)). Mark a removed field in the input or output schema (for example drop it from the model and document the replacement in the operation description).
+**In the schema**, so generated clients flag it at compile time: `deprecated=True` on the route decorator ([Ninja: deprecated](https://django-ninja.dev/guide/operations/#deprecated)), or `Field(deprecated=True)` on a field of an input or output schema, which the schema publishes as `deprecated: true`. A deprecated field stays in the model and in the schema; its replacement is added next to it first.
 
-**In the response**, while the endpoint is deprecated:
+**In the response**, while the operation is deprecated, `core.api.deprecation.deprecate` sets:
 
 - `Deprecation: @<unix timestamp>` ([RFC 9745](https://www.rfc-editor.org/rfc/rfc9745)): when it was deprecated.
 - `Sunset: <HTTP date>` ([RFC 8594](https://www.rfc-editor.org/rfc/rfc8594)): when it stops working, once that date is decided.
 - `Link: <https://.../docs/api#...>; rel="deprecation"`: where the replacement is explained.
 
-The operation takes Ninja's temporal `response: HttpResponse` argument and sets the headers on it ([Ninja: setting headers](https://django-ninja.dev/guide/temporal-response/#setting-headers)). This helper is a recipe, not shipped; add it as `core/api/deprecation.py` with the first deprecation:
+After the sunset date it raises `410 Gone` with the code `gone` instead, so the operation declares `GONE_ERRORS`. The operation takes Ninja's temporal `response: HttpResponse` argument ([Ninja: setting headers](https://django-ninja.dev/guide/temporal-response/#setting-headers)):
 
 ```python
-# core/api/deprecation.py
-from __future__ import annotations
+from datetime import UTC, datetime
 
-from datetime import UTC
-from email.utils import format_datetime
-from typing import TYPE_CHECKING
+from core.api.deprecation import deprecate
+from core.api.responses import GONE_ERRORS, READ_ERRORS, response_docs
 
-if TYPE_CHECKING:
-    from datetime import datetime
-
-    from django.http import HttpResponse
+_LEGACY_ERRORS = {**READ_ERRORS, **GONE_ERRORS}
 
 
-def set_deprecation_headers(
-    response: HttpResponse,
-    *,
-    since: datetime,
-    link: str,
-    sunset: datetime | None = None,
-) -> None:
-    """Add the Deprecation, Sunset and Link headers (RFC 9745, RFC 8594)."""
-    response["Deprecation"] = f"@{int(since.timestamp())}"
-    if sunset is not None:
-        response["Sunset"] = format_datetime(sunset.astimezone(UTC), usegmt=True)
-    response["Link"] = f'<{link}>; rel="deprecation"'
-```
-
-```python
 @router.get(
     "/legacy-export/",
-    response={200: ExportOut, **READ_ERRORS},
-    openapi_extra=response_docs(READ_ERRORS),
+    response={200: ExportOut, **_LEGACY_ERRORS},
+    openapi_extra=response_docs(_LEGACY_ERRORS),
     operation_id="exports_legacy_retrieve",
     deprecated=True,
 )
 def exports_legacy_retrieve(request: HttpRequest, response: HttpResponse) -> Export:
-    set_deprecation_headers(
+    deprecate(
         response,
         since=datetime(2027, 1, 1, tzinfo=UTC),
         link="https://example.com/docs/api#legacy-export",
+        sunset=datetime(2027, 7, 1, tzinfo=UTC),
     )
     return export_latest()
 ```
 
-Browsers expose these headers to JavaScript only when they are listed in `CORS_EXPOSE_HEADERS` (django-cors-headers), so add `"Deprecation"`, `"Sunset"` and `"Link"` there, next to `Location` and `Retry-After`, with the first deprecation.
+`CORS_EXPOSE_HEADERS` lists `Deprecation`, `Sunset` and `Link`, so a browser client can read them. After the sunset the operation stays in the contract, answering 410, until the project drops it ([ADR 0024](decisions/0024-one-api-on-api-v1.md)).
 
-After the sunset date the endpoint answers `410 Gone` with the code `gone` (register it in [Error codes](#error-codes) when it is first used), for example `raise ApplicationError("This endpoint was removed; use /api/v1/exports/.", code="gone", status_code=410)`. Its replacement is a new endpoint or field on `/api/v1/`, added next to it before the deprecation starts.
+## Optimistic concurrency
 
-## Optimistic concurrency (opt-in)
+When several clients edit the same resource, the last `PATCH` wins even when it was based on stale data (the "lost update" of [RFC 9110, section 13.1](https://www.rfc-editor.org/rfc/rfc9110#section-13.1)). A resource where that matters makes its writes conditional ([ADR 0025](decisions/0025-preconditions-and-removed-operations.md)):
 
-When several clients edit the same resource, the last `PATCH` wins even when it was based on stale data (the "lost update" of [RFC 9110 §13.1](https://www.rfc-editor.org/rfc/rfc9110#section-13.1)). For resources where that matters, require a precondition:
+- `GET` and write responses carry an `ETag` from `core.concurrency.etag(version=...)`: the row's `updated_at`, in microseconds (it comes from the database clock), or an integer `version` field that the services increment, for a representation that depends on other rows. The tag is strong, because `If-Match` compares strongly.
+- A write takes `if_match: IfMatch` (`core.api.schemas`), a required header in the contract: a request without it is a 400 `validation_error` on `If-Match`, like any missing parameter. The service passes it to `core.concurrency.check_if_match` inside its `transaction.atomic()`, after `select_for_update()`, so the check and the write cannot interleave with another request. A version that is no longer current is a `412 precondition_failed`; `*` matches any version.
+- The write declares `PRECONDITION_ERRORS`, and both operations document the header with `response_docs(..., etag=True)`. CORS already allows `If-Match` and exposes `ETag`.
 
-- `GET` and `PATCH` responses carry `ETag: W/"<version>"`, derived from `updated_at` (microseconds since the epoch; it comes from the database clock) or from an integer `version` field that the service increments.
-- `PATCH` and `DELETE` require `If-Match` with that value. Missing: `428 Precondition Required` with the code `precondition_required`. Different: `412 Precondition Failed` with the code `precondition_failed`. Register both in [Error codes](#error-codes) when they are first used.
-- The service compares inside its `transaction.atomic()`, after `select_for_update()`, so the check and the write cannot interleave with another request.
-- CORS: add `if-match` to `CORS_ALLOW_HEADERS` and `ETag` to `CORS_EXPOSE_HEADERS`.
-
-It is not on by default: API responses are `no-store`, so there is nothing to revalidate, and Django's `ConditionalGetMiddleware` would hash each body after the view has done all the work.
+It is not on by default: API responses are `no-store`, so there is nothing to revalidate, and Django's `ConditionalGetMiddleware` would hash each body after the view has done all the work. Requiring `If-Match` on an existing write is a breaking change, which oasdiff reports; add it with the endpoint.
 
 ```python
 # apps/items/services.py
-from datetime import UTC
-from datetime import datetime
-from datetime import timedelta
-
 from django.db import transaction
 
 from apps.items.models import Item
-from core.exceptions import ApplicationError
-
-_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
-
-
-def item_etag(item: Item) -> str:
-    return f'W/"{(item.updated_at - _EPOCH) // timedelta(microseconds=1)}"'
+from core.concurrency import check_if_match, etag
 
 
 @transaction.atomic
-def item_update(*, item: Item, if_match: str | None, name: str) -> Item:
+def item_update(*, item: Item, if_match: str, name: str) -> Item:
     locked = Item.objects.select_for_update().get(pk=item.pk)
-    if if_match is None:
-        msg = "This update needs an If-Match header."
-        raise ApplicationError(msg, code="precondition_required", status_code=428)
-    if if_match != item_etag(locked):
-        msg = "The item changed since you read it."
-        raise ApplicationError(msg, code="precondition_failed", status_code=412)
+    check_if_match(if_match=if_match, current=etag(version=locked.updated_at))
     locked.name = name
     locked.full_clean()
     locked.save(update_fields=["name"])
@@ -440,43 +430,39 @@ def item_update(*, item: Item, if_match: str | None, name: str) -> Item:
 
 ```python
 # apps/items/api/views.py
+_PATCH_ERRORS = {**LOOKUP_ERRORS, **WRITE_ERRORS, **PRECONDITION_ERRORS}
 
 
 @router.get(
     "/{public_id:id}/",
     response={200: ItemOut, **LOOKUP_ERRORS},
-    openapi_extra=response_docs(LOOKUP_ERRORS),
+    openapi_extra=response_docs(LOOKUP_ERRORS, etag=True),
     operation_id="items_retrieve",
 )
 def items_retrieve(
     request: HttpRequest, response: HttpResponse, item_id: PublicIdPath
 ) -> Item:
-    item = get_object_or_404(
-        item_list(user=request_user(request, User)), public_id=item_id
-    )
-    response["ETag"] = item_etag(item)
+    item = item_visible(user=request_user(request, User), public_id=item_id)
+    response["ETag"] = etag(version=item.updated_at)
     return item
 
 
 @router.patch(
     "/{public_id:id}/",
-    response={200: ItemOut, **LOOKUP_ERRORS, **WRITE_ERRORS},
-    openapi_extra=response_docs({**LOOKUP_ERRORS, **WRITE_ERRORS}),
+    response={200: ItemOut, **_PATCH_ERRORS},
+    openapi_extra=response_docs(_PATCH_ERRORS, etag=True),
     operation_id="items_partial_update",
 )
 def items_partial_update(
     request: HttpRequest,
     response: HttpResponse,
     item_id: PublicIdPath,
+    if_match: IfMatch,
     body: ItemUpdateIn,
 ) -> Item:
-    item = get_object_or_404(
-        item_list(user=request_user(request, User)), public_id=item_id
-    )
-    item = item_update(
-        item=item, if_match=request.headers.get("If-Match"), name=body.name
-    )
-    response["ETag"] = item_etag(item)
+    item = item_visible(user=request_user(request, User), public_id=item_id)
+    item = item_update(item=item, if_match=if_match, name=body.name)
+    response["ETag"] = etag(version=item.updated_at)
     return item
 ```
 
@@ -501,15 +487,15 @@ def test_a_patch_based_on_a_stale_etag_gets_412(
     assert second.json()["code"] == "precondition_failed"
 
 
-def test_a_patch_without_if_match_gets_428(user_client: Client, item: Item) -> None:
+def test_a_patch_without_if_match_is_a_400(user_client: Client, item: Item) -> None:
     response = user_client.patch(
         f"/api/v1/items/{item.public_id}/",
         {"name": "A"},
         content_type="application/json",
     )
 
-    assert response.status_code == HTTPStatus.PRECONDITION_REQUIRED
-    assert response.json()["code"] == "precondition_required"
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert list(response.json()["fields"]) == ["If-Match"]
 ```
 
 ## Errors outside API views

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from http import HTTPStatus
 
+import pytest
 from django.test import RequestFactory
 
 from core.errors import PROTECTED_CODE
@@ -80,3 +81,25 @@ def test_errors_built_outside_ninja_are_compact_utf8_json() -> None:
     assert json_error("not_found", "Où?", HTTPStatus.NOT_FOUND).content == (
         '{"code":"not_found","detail":"Où?"}'.encode()
     )
+
+
+@pytest.mark.parametrize("code", ["Bad Code", "already-exists", "1st", "", "Upper"])
+def test_application_error_rejects_codes_that_are_not_snake_case(code: str) -> None:
+    with pytest.raises(ValueError, match="snake_case"):
+        ApplicationError("Message.", code=code)
+
+
+def test_application_error_keeps_its_message_and_defaults_to_409() -> None:
+    error = ApplicationError("Message.", code="some_rule")
+
+    assert error.message == "Message."
+    assert str(error) == "Message."
+    assert error.status_code == HTTPStatus.CONFLICT
+    assert error.extra is None
+
+
+def test_a_business_rule_never_answers_400() -> None:
+    # The request matched the schema: a 400 would refuse what the contract
+    # allows (ADR 0023).
+    with pytest.raises(ValueError, match="never answers 400"):
+        ApplicationError("Message.", code="some_rule", status_code=400)

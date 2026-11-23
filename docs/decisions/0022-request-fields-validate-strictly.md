@@ -7,7 +7,7 @@
 
 Ninja validates a request with Pydantic's `model_validate` on the parsed JSON, which is Pydantic's lax Python mode. Lax mode converts between JSON types:
 
-- a string, a boolean or a float with no fraction for an integer, an integer choice included;
+- a string or a boolean for an integer, an integer choice included;
 - a number for a boolean;
 - a JSON number for a decimal, read through a float, which rounds it;
 - a Unix time (a number or a numeric string) for a datetime;
@@ -20,7 +20,7 @@ The schema publishes `integer`, `boolean`, `date-time` (RFC 3339, which requires
 
 ## Decision
 
-- **JSON-native types in a body are Pydantic's strict types:** `StrictInt`, `StrictFloat` (which takes an integer, as JSON Schema's `number` does) and `StrictBool`.
+- **JSON-native types in a body take their own JSON type only:** `core.api.schemas.JsonInt` for an integer, which takes any number with a zero fractional part (`2.0`), as JSON Schema 2020-12's `integer` does, and Pydantic's `StrictFloat` (which takes an integer, as JSON Schema's `number` does) and `StrictBool`. Pydantic's `StrictInt` refuses `2.0`, which the schema allows.
 - **A query parameter keeps the lax type,** because its value is text: `int`, `bool`, and `FiniteFloat`, which refuses `nan` and `inf`.
 - **Datetimes are exact RFC 3339.** `core.api.schemas.UTCDateTime` takes the date, `T`, the time with seconds, and a time zone (`Z` or `±hh:mm`). Anything else is a 400 with Pydantic's error types (`datetime_type`, `datetime_parsing`): a number, a date alone, a space for `T`, or no time zone. The year is 1000 to 9998, which the request schema publishes as a `pattern`. Python's `datetime` ends at years 1 and 9999, so an offset would push `0001-01-01T00:00:00+00:01` past it in UTC, an `OverflowError`. Output is unchanged: UTC with `Z`, microseconds kept, and its schema has no `pattern`.
 - **Dates are exact too.** `core.api.schemas.ISODate` takes a full-date only.

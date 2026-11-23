@@ -26,7 +26,6 @@ from ninja.testing import TestClient
 from pydantic import FiniteFloat
 from pydantic import StrictBool
 from pydantic import StrictFloat
-from pydantic import StrictInt
 
 from core.api.schemas import DATE_TIME_PATTERN
 from core.api.schemas import BaseFilterSchema
@@ -34,6 +33,7 @@ from core.api.schemas import BaseSchema
 from core.api.schemas import DecimalString
 from core.api.schemas import InputSchema
 from core.api.schemas import ISODate
+from core.api.schemas import JsonInt
 from core.api.schemas import JsonInteger
 from core.api.schemas import PublicId
 from core.api.schemas import QueryText
@@ -66,7 +66,7 @@ Amount = Annotated[Decimal, DecimalString(max_digits=6, decimal_places=2)]
 
 
 class _Typed(InputSchema):
-    count: StrictInt
+    count: JsonInt
     ratio: StrictFloat
     flag: StrictBool
     at: UTCDateTime
@@ -185,12 +185,19 @@ def test_strict_types_accept_their_own_json_type() -> None:
     assert response.status_code == HTTPStatus.OK, response.content
 
 
+def test_a_number_with_no_fraction_is_an_integer() -> None:
+    # JSON Schema 2020-12 counts 2.0 as an integer: the schema allows it.
+    body = {**VALID, "count": 1.0, "priority": 2.0, "level": 2.0}
+    response = _post(_client(), "/typed/", body)
+    assert response.status_code == HTTPStatus.OK, response.content
+
+
 @pytest.mark.parametrize(
     ("field", "value", "code"),
     [
         ("count", "1", "int_type"),
         ("count", True, "int_type"),
-        ("count", 1.0, "int_type"),
+        ("count", 1.5, "int_from_float"),
         ("ratio", "1.5", "float_type"),
         ("ratio", False, "float_type"),
         ("flag", 0, "bool_type"),
@@ -216,7 +223,6 @@ def test_strict_types_accept_their_own_json_type() -> None:
         ("amount", "NaN", "string_pattern_mismatch"),
         ("priority", True, "int_type"),
         ("priority", "2", "int_type"),
-        ("priority", 2.0, "int_type"),
         ("priority", 3, "enum"),
         ("level", True, "int_type"),
         ("level", "1", "int_type"),
