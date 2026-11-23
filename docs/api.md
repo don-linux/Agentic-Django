@@ -32,7 +32,7 @@ A request without valid credentials gets 401 with `WWW-Authenticate: X-Session-T
 
 `core.api.negotiation.ApiContractMiddleware` answers these for every route under `/api/v1/`, so an operation declares only its real method. Ninja's guide adds them with `api_operation(["HEAD", "OPTIONS"], ...)` per route ([Ninja: handling multiple methods](https://django-ninja.dev/guide/operations/#handling-multiple-methods)), which would repeat every route and publish duplicate `operationId`s.
 
-- The methods come from the operations registered on the API (its OpenAPI document), so a new router needs no entry anywhere. `Allow` lists them in the order `GET, POST, PUT, PATCH, DELETE`, then `HEAD` when there is a `GET`, then `OPTIONS`, and is sent on every response of the route.
+- The methods come from the operations registered on the API (its OpenAPI document), so a new router needs no entry anywhere. `Allow` lists them in the order `GET, POST, PUT, PATCH, DELETE`, then `HEAD` when there is a `GET`, then `OPTIONS`, the order of Django's `View.http_method_names`. It is sent on the 405 and on `OPTIONS`, as Django and Ninja send it; RFC 9110 (section 10.2.1) requires it on a 405.
 - A method the route does not declare is 405 `method_not_allowed` with `Allow`, before authentication. A path that matches no route is 404.
 - `HEAD` runs the `GET` operation without a body.
 - `OPTIONS` is 200 with `Allow`, `Content-Length: 0` and no body, as Django's `View.options()` answers it ([Django: View.options](https://docs.djangoproject.com/en/6.1/ref/class-based-views/base/#django.views.generic.base.View.options)). It needs no credentials, on `docs/` and `schema/` too, because it only lists the methods. A CORS preflight is answered earlier by django-cors-headers.

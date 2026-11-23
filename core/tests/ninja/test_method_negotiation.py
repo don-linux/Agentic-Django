@@ -55,38 +55,25 @@ def test_a_method_the_route_lacks_is_a_json_405_with_allow(user_client: Client) 
 
 
 @pytest.mark.django_db
-def test_allow_is_on_the_operation_responses_too(
+def test_allow_goes_on_the_405_and_options_only(
     client: Client, user_client: Client
 ) -> None:
-    # DRF sent Allow on every response of a resource, not only on 405 and OPTIONS:
-    # here the operation's own 200 and its 401.
+    # As Django and Ninja: RFC 9110 requires Allow on a 405 and OPTIONS lists the
+    # methods; the operation's own answers, a 401 and a 406 do not carry it.
     ok = user_client.get(ME)
     unauthenticated = client.get(ME)
+    not_acceptable = user_client.get(ME, headers={"Accept": "text/html"})
+    not_allowed = user_client.delete(ME)
+    options = client.options(ME)
 
     assert ok.status_code == HTTPStatus.OK
     assert unauthenticated.status_code == HTTPStatus.UNAUTHORIZED
-    assert ok["Allow"] == "GET, PATCH, HEAD, OPTIONS"
-    assert unauthenticated["Allow"] == "GET, PATCH, HEAD, OPTIONS"
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize(
-    ("path", "accept", "allow"),
-    [
-        (ME, "text/html", "GET, PATCH, HEAD, OPTIONS"),
-        ("/api/v1/docs/", "application/json", "GET, HEAD, OPTIONS"),
-    ],
-)
-def test_allow_is_on_the_early_406_too(
-    client: Client, user_client: Client, path: str, accept: str, allow: str
-) -> None:
-    # DRF's APIView set Allow in finalize_response, also on the 406 that content
-    # negotiation raised before the handler ran (docs/api.md: every response).
-    for caller in (client, user_client):
-        response = caller.get(path, headers={"Accept": accept})
-        assert response.status_code == HTTPStatus.NOT_ACCEPTABLE
-        assert response.json()["code"] == "not_acceptable"
-        assert response["Allow"] == allow
+    assert not_acceptable.status_code == HTTPStatus.NOT_ACCEPTABLE
+    for response in (ok, unauthenticated, not_acceptable):
+        assert "Allow" not in response
+    assert not_allowed.status_code == HTTPStatus.METHOD_NOT_ALLOWED
+    assert not_allowed["Allow"] == "GET, PATCH, HEAD, OPTIONS"
+    assert options["Allow"] == "GET, PATCH, HEAD, OPTIONS"
 
 
 @pytest.mark.django_db
@@ -174,26 +161,3 @@ def test_every_api_route_answers_its_own_json_405(user_client: Client, user) -> 
             "detail": "Method not allowed",
         }, name
         assert response["Allow"].endswith("OPTIONS"), name
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize(
-    ("accept", "script_name"),
-    [
-        ("text/html", "/app"),
-        ("application/json;q=0", ""),
-        (", ".join([*(f"text/x-{i}" for i in range(64)), "application/json"]), ""),
-        ("*/*, application/json;q=0", ""),
-    ],
-    ids=["script-prefix", "q-0", "65th-member", "most-specific-q-0"],
-)
-def test_allow_is_on_every_early_406(
-    client: Client, accept: str, script_name: str
-) -> None:
-    # The 406 under a script prefix, for q=0 (also when the most specific
-    # range has it) and past DRF's Accept limits is the same early 406: it
-    # lists the route's methods too.
-    response = client.get(ME, headers={"Accept": accept}, SCRIPT_NAME=script_name)
-    assert response.status_code == HTTPStatus.NOT_ACCEPTABLE
-    assert response.json()["code"] == "not_acceptable"
-    assert response["Allow"] == "GET, PATCH, HEAD, OPTIONS"

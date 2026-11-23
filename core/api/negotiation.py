@@ -40,8 +40,9 @@ SCHEMA_JSON = "application/vnd.oai.openapi+json"
 # The schema's media types: SpectacularAPIView's four renderers, in their order.
 SCHEMA_MEDIA_TYPES = (SCHEMA_YAML, "application/yaml", SCHEMA_JSON, JSON)
 
-# Allow lists the route's operations in DRF's order, then HEAD (served by the
-# GET operation) and OPTIONS (answered here). The methods come from the
+# Allow lists the route's operations in the order of Django's
+# View.http_method_names, then HEAD (served by the GET operation) and OPTIONS
+# (answered here). The methods come from the
 # project API's OpenAPI document, so a new router needs no entry here.
 _METHOD_ORDER = ("GET", "POST", "PUT", "PATCH", "DELETE")
 _DOCS_ROUTES = {"api-schema", "api-docs"}
@@ -313,12 +314,9 @@ class ApiContractMiddleware:
         # 415 is decided by core.api.parsers, when Ninja reads the body.
         # Every API route is in the schema (test_method_negotiation pins it), so
         # a method the route lacks never reaches Ninja: _before answered 405.
-        response = early if early is not None else self._dispatch(request)
-        # DRF sent Allow on every response of a resource, the early 406 included
-        # (APIView.finalize_response sets it after the handler or the exception).
-        if allow is not None and not response.has_header("Allow"):
-            response["Allow"] = allow
-        return response
+        # Allow goes on the 405 and on OPTIONS only, as in Django and Ninja (RFC
+        # 9110, section 10.2.1, requires it on a 405).
+        return early if early is not None else self._dispatch(request)
 
     def _before(
         self,
@@ -373,7 +371,7 @@ class ApiContractMiddleware:
             separators=(",", ":"),
             ensure_ascii=False,
         )
-        # HttpResponseNotAllowed joins the list in order: Allow keeps DRF's order.
+        # HttpResponseNotAllowed joins the list in order: Allow keeps that order.
         return HttpResponseNotAllowed(
             [m.strip() for m in allow.split(",")],
             content=body.encode(),
