@@ -5,6 +5,9 @@ from contextlib import suppress
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 from typing import override
+from urllib.parse import parse_qs
+from urllib.parse import urlencode
+from urllib.parse import urlsplit
 
 import pytest
 from django.contrib.auth.models import Group
@@ -164,18 +167,32 @@ def test_without_a_proxy_django_streams_the_private_file() -> None:
     assert b"".join(response) == b"secret"
 
 
+class _SignedStorage(InMemoryStorage):
+    """S3Storage's url(): the signed parameters go in the query string."""
+
+    querystring_auth = True
+
+    @override
+    def url(self, name: str | None, parameters: dict[str, str] | None = None) -> str:
+        query = urlencode({**(parameters or {}), "X-Amz-Signature": "abc"})
+        return f"https://bucket.example.org/{name}?{query}"
+
+
 def test_signed_url_storages_redirect() -> None:
-    class SignedStorage(InMemoryStorage):
-        querystring_auth = True
-
-        @override
-        def url(self, name: str | None) -> str:
-            return f"https://bucket.example.org/{name}?X-Amz-Signature=abc"
-
-    response = protected_file_response(_field_file(SignedStorage(), "invoices/a.pdf"))
+    response = protected_file_response(_field_file(_SignedStorage(), "invoices/a.pdf"))
 
     assert response.status_code == HTTPStatus.FOUND
-    assert response["Location"].endswith("invoices/a.pdf?X-Amz-Signature=abc")
+    assert response["Location"].startswith("https://bucket.example.org/invoices/a.pdf?")
+    assert "X-Amz-Signature=abc" in response["Location"]
+
+
+def test_a_signed_url_names_the_download() -> None:
+    # The object store serves the file, so the name goes in the signed URL.
+    response = protected_file_response(
+        _field_file(_SignedStorage(), "invoices/abc123.pdf"), filename="invoice.pdf"
+    )
+    query = parse_qs(urlsplit(response["Location"]).query)
+    assert query["ResponseContentDisposition"] == ['attachment; filename="invoice.pdf"']
 
 
 def _private_on_disk(tmp_path: Path) -> override_settings:

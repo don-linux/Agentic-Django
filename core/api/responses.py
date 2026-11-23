@@ -116,3 +116,28 @@ def response_docs(errors: dict[int, Any]) -> dict[str, Any]:
             if str(code) in RESPONSE_DOCS
         }
     }
+
+
+def download_docs(media_type: str, errors: dict[int, Any]) -> dict[str, Any]:
+    """openapi_extra for a download operation (docs/files.md#endpoint).
+
+    The 200 is the file in media_type, which ApiContractMiddleware also
+    negotiates Accept against; the 302 is the redirect to a signed URL when
+    the file is on object storage. Declare both: response={200: None,
+    302: None, **errors}.
+    """
+    docs = response_docs(errors)
+    docs["responses"][HTTPStatus.OK] = {
+        "description": "The file.",
+        "content": {media_type: {"schema": {"type": "string", "format": "binary"}}},
+    }
+    docs["responses"][HTTPStatus.FOUND] = {
+        "description": "A redirect to a signed URL of the file, on object storage.",
+        "headers": {
+            "Location": {
+                "schema": {"type": "string", "format": "uri"},
+                "description": "The signed URL.",
+            }
+        },
+    }
+    return docs

@@ -16,6 +16,8 @@ from functools import partial
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import Protocol
+from typing import TypeGuard
 from typing import cast
 from typing import override
 
@@ -141,6 +143,18 @@ def private_storage() -> Storage:
     return cast("Storage", _private_storage)
 
 
+class _SignedURLStorage(Protocol):
+    """A storage that signs its URLs: django-storages' S3Storage (the s3 extra)."""
+
+    querystring_auth: bool
+
+    def url(self, name: str, parameters: dict[str, str] | None = None) -> str: ...
+
+
+def _signs_urls(storage: object) -> TypeGuard[_SignedURLStorage]:
+    return bool(getattr(storage, "querystring_auth", False))
+
+
 def protected_file_response(
     field_file: FieldFile,
     *,
@@ -154,8 +168,18 @@ def protected_file_response(
     """
     storage = field_file.storage
     download_name = filename or PurePosixPath(field_file.name or "").name
-    if getattr(storage, "querystring_auth", False):
-        return HttpResponseRedirect(field_file.url)
+    if _signs_urls(storage):
+        # The object store serves the file, so it must name it: S3 sets the
+        # Content-Disposition from this signed parameter.
+        disposition = content_disposition_header(
+            as_attachment=True, filename=download_name
+        )
+        return HttpResponseRedirect(
+            storage.url(
+                field_file.name or "",
+                parameters={"ResponseContentDisposition": disposition or "attachment"},
+            )
+        )
     prefix = settings.PRIVATE_MEDIA_ACCEL_REDIRECT_PREFIX
     if prefix and isinstance(storage, FileSystemStorage):
         content_type, _ = mimetypes.guess_type(download_name)

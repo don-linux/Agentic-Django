@@ -27,9 +27,11 @@ document = models.FileField(
 - Public (`default` storage, served by nginx at `MEDIA_URL`): only files meant to be world-readable, such as avatars or product images.
 - Private (`storage=private_storage`): everything user-sensitive (IDs, invoices, contracts). When in doubt, private.
 
-A private file is downloaded through an operation that scopes the lookup to the caller and returns `protected_file_response(...)`. With local storage behind nginx it answers with `X-Accel-Redirect` and nginx streams the file from an `internal` location; with S3 it redirects to a short-lived signed URL; in development Django streams it. Never serialize a private file's `.url`. Before it writes `X-Accel-Redirect`, it refuses a stored name with `..`, a NUL byte or no file name (`SuspiciousFileOperation`: Django answers 400 and logs it to `django.security`), so a name planted in the database cannot point nginx elsewhere.
+A private file is downloaded through an operation that scopes the lookup to the caller and returns `protected_file_response(...)`. With local storage behind nginx it answers with `X-Accel-Redirect` and nginx streams the file from an `internal` location; with S3 it redirects to a short-lived signed URL that names the file (`ResponseContentDisposition`); in development Django streams it. Never serialize a private file's `.url`. Before it writes `X-Accel-Redirect`, it refuses a stored name with `..`, a NUL byte or no file name (`SuspiciousFileOperation`: Django answers 400 and logs it to `django.security`), so a name planted in the database cannot point nginx elsewhere.
 
 ```python
+from core.api.responses import LOOKUP_ERRORS
+from core.api.responses import download_docs
 from core.files import private_storage
 from core.files import protected_file_response
 
@@ -43,20 +45,10 @@ class Invoice(BaseModel):
 
 @router.get(
     "/{public_id:id}/download/",
-    response={200: None, **LOOKUP_ERRORS},
-    openapi_extra={
-        "responses": {
-            **response_docs(LOOKUP_ERRORS)["responses"],
-            # The file's media type: the contract, and what Accept negotiates.
-            200: {
-                "content": {
-                    "application/pdf": {
-                        "schema": {"type": "string", "format": "binary"}
-                    }
-                }
-            },
-        }
-    },
+    response={200: None, 302: None, **LOOKUP_ERRORS},
+    # The file's media type (the contract, and what Accept negotiates), and
+    # the 302 to a signed URL when the file is on S3.
+    openapi_extra=download_docs("application/pdf", LOOKUP_ERRORS),
     operation_id="invoices_download",
 )
 def invoices_download(
@@ -79,7 +71,7 @@ Django writes uploaded files with mode `0o644` and directories with `0o755` (`FI
 
 - The API accepts `application/json` bodies only (`core.api.parsers.JSONParser`), so an upload is a dedicated operation that takes `file: File[UploadedFile]` (both from `ninja`; Django's own `UploadedFile` class fails schema generation) and `Form[...]` fields instead of a JSON body ([Ninja: file uploads](https://django-ninja.dev/guide/files/)). Every operation with a JSON body answers a multipart body with 415 `unsupported_media_type`. Metadata next to the file goes in `Form[...]` fields, not a `Body` schema: Ninja parses a schema part of a multipart request through a request with no content type, which `core.api.parsers.JSONParser` answers with 415 (`ninja/params/models.py` in 1.8.0).
 - Pass the upload operation `response=` and `openapi_extra=response_docs(...)` like any other; an operation that returns an `HttpResponse` (a download) keeps it as is ([Ninja: returning an HttpResponse](https://django-ninja.dev/guide/responses/#returning-a-django-httpresponse)).
-- A download declares the file's media type on its 200, through `openapi_extra` as above (Ninja merges it into the generated response). `ApiContractMiddleware` negotiates `Accept` against it, so `Accept: application/pdf` gets the file and `Accept: application/json` a 406. A download that declares no type is not negotiated.
+- A download declares `response={200: None, 302: None, **LOOKUP_ERRORS}` and `openapi_extra=download_docs(<media type>, LOOKUP_ERRORS)` from `core.api.responses`. The 200 carries the file's media type, which `ApiContractMiddleware` negotiates `Accept` against: `Accept: application/pdf` gets the file, `Accept: application/json` a 406. The 302 is the redirect to a signed URL on S3, whose `ResponseContentDisposition` names the file (`core.files.protected_file_response`).
 - The output schema returns the file's absolute URL, built from the request when the view has one.
 
 ## Images
