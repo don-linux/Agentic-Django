@@ -64,6 +64,21 @@ def test_pages_beyond_the_cap_are_404() -> None:
 
 
 @override_settings(API_MAX_PAGE_NUMBER=2)
+def test_a_page_beyond_the_cap_is_404_before_counting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The cap guards against the COUNT(*) and OFFSET of a deep page, so it is
+    # checked first.
+    def never(*_args: object) -> int:
+        msg = "counted a page beyond the cap"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(LimitPageNumberPagination, "count_items", never)
+    response = _list(ordered_api(), "?page_size=1&page=3")
+    assert response.status_code == HTTPStatus.NOT_FOUND
+
+
+@override_settings(API_MAX_PAGE_NUMBER=2)
 def test_the_deepest_allowed_page_still_works() -> None:
     _create_users(5)
 

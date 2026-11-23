@@ -133,11 +133,13 @@ class LimitPageNumberPagination(PageNumberPagination):
         # PageNumberPagination._get_page_size does.
         page_size = min(pagination.page_size or self.page_size, self.max_page_size)
         page = pagination.page or 1
+        # Deeper than DJANGO_API_MAX_PAGE_NUMBER is a 404 before any query:
+        # every page runs COUNT(*) and OFFSET (docs/api.md#pagination).
+        if page > self.max_page_number:
+            raise Http404
         count = self.count_items(queryset)
         total_pages = max(1, ceil(count / page_size))
-        # Past the last page, or deeper than DJANGO_API_MAX_PAGE_NUMBER: every
-        # page runs COUNT(*) and OFFSET (docs/api.md#pagination).
-        if page > total_pages or page > self.max_page_number:
+        if page > total_pages:
             raise Http404
 
         offset = (page - 1) * page_size

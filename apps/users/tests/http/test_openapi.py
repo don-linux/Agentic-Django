@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from core.tests.session_tokens import session_token
+
 if TYPE_CHECKING:
     from django.test import Client
 
@@ -68,3 +70,16 @@ def test_schema_is_json_whatever_the_query_string(admin_client) -> None:
     assert response.status_code == HTTPStatus.OK
     assert response.headers["Content-Type"] == "application/json"
     assert response.json()["openapi"] == "3.1.0"
+
+
+@pytest.mark.django_db
+def test_a_staff_token_opens_the_docs_next_to_another_users_session(
+    user_client,
+) -> None:
+    # The X-Session-Token comes first, as on every API route: a non-staff
+    # session cookie in the same browser does not hide a staff token.
+    staff_token = session_token("docs-staff@example.com", is_staff=True)
+    response = user_client.get(
+        "/api/v1/schema/", headers={"X-Session-Token": staff_token}
+    )
+    assert response.status_code == HTTPStatus.OK

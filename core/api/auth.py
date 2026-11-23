@@ -74,20 +74,16 @@ def staff_docs_required(
     The NinjaAPI docs_decorator: staff-only schema and docs, with the API's JSON
     401 and 403 (https://django-ninja.dev/guide/openapi/#protecting-the-docs).
 
-    staff_member_required would redirect to the admin login. Session or
-    X-Session-Token is accepted; the token goes through the API's own
-    x_session_token_auth, which sets request.user, as on every other route.
+    staff_member_required would redirect to the admin login. The
+    X-Session-Token comes first, then the session, in API_AUTH's order: a
+    staff token is staff even next to another user's session cookie. The token
+    goes through the API's own x_session_token_auth, which sets request.user.
     """
 
     def wrapped(request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
-        user = (
-            request.user
-            if getattr(request, "user", None) is not None
-            and request.user.is_authenticated
-            else None
-        )
-        if user is None:
-            user = x_session_token_auth(request)
+        user = x_session_token_auth(request)
+        if user is None and getattr(request, "user", None) is not None:
+            user = request.user if request.user.is_authenticated else None
         if user is None:
             # The texts of Ninja's own AuthenticationError and AuthorizationError.
             response = json_error(
