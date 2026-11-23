@@ -346,3 +346,6 @@ typeCheckingMode = "standard"
 stubPath = "typings"
 enableTypeIgnoreComments = false
 reportUnnecessaryTypeIgnoreComment = "error"
+# Each app's endpoints and schemas, and the base schemas they extend, get strict
+# mode: no Unknown types, no missing type arguments. See docs/typing.md#strict-api.
+strict = ["apps/*/api", "core/api/schemas.py"]

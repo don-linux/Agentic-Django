@@ -89,7 +89,7 @@ Why: [ARCHITECTURE.md#caching](../../../docs/ARCHITECTURE.md#caching). Outages: 
 
 ## 5. Schemas
 
-In `apps/<app>/api/views.py`, above the operations (pattern: `UserOut` and `UserUpdateIn` in `apps/users/api/views.py`):
+In `apps/<app>/api/views.py`, above the operations (pattern: `UserOut` and `UserUpdateIn` in `apps/users/api/views.py`). pyright checks `apps/<app>/api/` in strict mode, so a validator gives its raw `Any` input a real type before using it ([typing.md#strict-api](../../../docs/typing.md#strict-api)):
 
 - Output schemas subclass `core.api.schemas.BaseSchema`; input schemas subclass `core.api.schemas.InputSchema`, so an unknown body key is a 400 with code `unknown_field`, not a silent ignore ([Ninja: schemas](https://django-ninja.dev/guide/schemas/)).
 - Expose `public_id` as `id`, a string, read-only: `id: UUID = Field(json_schema_extra={"readOnly": True})` with a `resolve_id(obj) -> UUID` static method that returns `obj.public_id` ([Ninja: resolvers](https://django-ninja.dev/guide/schemas/#resolvers)). Mark every other server-set field `readOnly` the same way.
@@ -231,7 +231,7 @@ python manage.py export_openapi_schema --settings config.settings.test --api con
 scripts/check.sh
 ```
 
-`scripts/check.sh` runs ruff (with the `ANN` annotation rules), the `cache.clear()` guard, mypy, stubtest, pyright, the import contracts, django-upgrade, the OpenAPI drift check, `makemigrations --check`, and pytest with coverage. Both type checkers must pass with no new suppression; when one is unavoidable, scope it to the rule and record it in [typing.md#upstream-workarounds](../../../docs/typing.md#upstream-workarounds). After a dependency change: `uv lock`, then `uv sync --locked` in the container. Commits follow Conventional Commits in English (`feat:`, `fix:`, `test:`, `docs:`), imperative mood.
+`scripts/check.sh` runs ruff (with the `ANN` annotation rules), the `cache.clear()` guard, mypy, stubtest, pyright, the import contracts, django-upgrade, the OpenAPI drift check, `makemigrations --check`, and pytest with coverage. Both type checkers must pass with no new suppression, pyright in strict mode on `apps/<app>/api/`; when one is unavoidable, scope it to the rule and record it in [typing.md#upstream-workarounds](../../../docs/typing.md#upstream-workarounds). After a dependency change: `uv lock`, then `uv sync --locked` in the container. Commits follow Conventional Commits in English (`feat:`, `fix:`, `test:`, `docs:`), imperative mood.
 
 ## When the endpoint also enqueues work
 

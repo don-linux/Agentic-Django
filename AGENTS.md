@@ -43,7 +43,7 @@ python manage.py export_openapi_schema --settings config.settings.test --api con
 
 Tests marked `valkey` need the dev-stack Valkey; `pytest -m "not valkey"` runs the rest.
 
-Typing: pyright and mypy (django-stubs plugin) both pass in `scripts/check.sh lint`. Annotate every model field with its django-stubs generic type. Prefer a real type to a suppression; a suppression is rule-scoped and per checker (`# pyright: ignore[rule]`, `# type: ignore[code]`), and one that stays goes in [docs/typing.md#upstream-workarounds](docs/typing.md#upstream-workarounds).
+Typing: pyright and mypy (django-stubs plugin) both pass in `scripts/check.sh lint`. pyright is strict on `apps/*/api/` and `core/api/schemas.py`: no `Unknown` types ([docs/typing.md#strict-api](docs/typing.md#strict-api)). Annotate every model field with its django-stubs generic type. Prefer a real type to a suppression; a suppression is rule-scoped and per checker (`# pyright: ignore[rule]`, `# type: ignore[code]`), and one that stays goes in [docs/typing.md#upstream-workarounds](docs/typing.md#upstream-workarounds).
 
 ## API
 

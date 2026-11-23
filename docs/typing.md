@@ -13,7 +13,7 @@ uv run mypy .                                              # mypy with the djang
 MYPYPATH=typings uv run stubtest environ --ignore-missing-stub   # typings/ against the installed package
 ```
 
-- `pyright` is installed as `pyright[nodejs]`. The `nodejs` extra pulls `nodejs-wheel-binaries`, pinned in `uv.lock`, and pyright-python uses it before anything else, so Node.js is never downloaded at run time. `[tool.pyright]` in `pyproject.toml` sets `standard` mode and no `include` or `exclude`. pyright's defaults already skip hidden directories (`.venv`, `.agents`), `__pycache__` and `node_modules`.
+- `pyright` is installed as `pyright[nodejs]`. The `nodejs` extra pulls `nodejs-wheel-binaries`, pinned in `uv.lock`, and pyright-python uses it before anything else, so Node.js is never downloaded at run time. `[tool.pyright]` in `pyproject.toml` sets `standard` mode and no `include` or `exclude`. pyright's defaults already skip hidden directories (`.venv`, `.agents`), `__pycache__` and `node_modules`. The API layer runs in `strict` mode ([below](#strict-api)).
 - `mypy` reads `[tool.mypy]`. Every module needs annotations (`disallow_untyped_defs`), and `enable_error_code` adds `possibly-undefined`, `truthy-bool`, `ignore-without-code`, `exhaustive-match` and `unimported-reveal`. Services, selectors, `core.exceptions` and `core.errors` also get the rest of `--strict` ([ARCHITECTURE.md#strict-typing](ARCHITECTURE.md#strict-typing)).
 - `stubtest` compares the stubs in `typings/` with the installed package, so a dependency bump that changes a signature fails `lint`.
 - ruff's `ANN` rules fail on a public function without annotations, also in pre-commit, before any checker runs.
@@ -30,12 +30,24 @@ What each tool reports for a typical mistake:
 | `.first().name` without a `None` check | no | yes | yes | yes |
 | A method of the wrong type on a model field (`obj.public_id.upper()`) | no | yes | yes, with the field annotation ([below](#model-field-annotations)) | yes |
 | A variable that may be unbound | no | yes (`possibly-undefined`) | yes | no |
+| A value of unknown type in an endpoint or schema, such as a `dict` built from `Any` | no | no | yes, in `apps/*/api/` ([strict](#strict-api)) | no |
 | A setting that does not exist (`settings.API_MAX_PAGE_NUMBR`) | no | yes (plugin) | no | yes |
 | An ORM lookup on a field that does not exist (`filter(nmae=...)`) | no | yes (plugin) | no | yes |
 | `user.pk` used as something other than an `int` | no | yes | no (`Any`) | yes |
 | An operation that returns a status code missing from its `response=` map | no | no | no | yes |
 
 Only mypy with the plugin sees the settings and the ORM. Only the tests see what Ninja does at run time.
+
+## Strict API
+
+pyright checks `apps/*/api/` and `core/api/schemas.py` in `strict` mode (`strict` in `[tool.pyright]`). Every endpoint and schema an app adds lives under `apps/<app>/api/`, so new API code gets it without any change. In strict mode an `Unknown` type is an error: a value whose type pyright cannot work out, such as a `dict` taken from an `Any`, or a generic class used without its type arguments.
+
+The raw input of a Pydantic validator is `Any`, so it needs a real type before you use it:
+
+- After `isinstance(data, dict)`, `cast("dict[str, object]", data)`: a JSON object's keys are always strings.
+- Annotate what you read from a context: `context: dict[str, Any] = info.context or {}`, then `request: HttpRequest | None = context.get("request")`.
+
+The rest of `core/api/` stays in `standard` mode. Strict would demand stubs for django-allauth, which ships no types (`reportMissingTypeStubs`), and it would reject Django Ninja's own partially unknown types. Neither has a fix in this repository that is not a local stub or a suppression.
 
 ## Suppressions
 
