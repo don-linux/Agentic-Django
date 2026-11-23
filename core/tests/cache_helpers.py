@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from core.cache_backend import ValkeyCache
-from core.tests.session_tokens import session_token
+from core.tests.accounts import session_token
 
 # A closed port: building the backend opens no connection, and every call to it
 # fails at once, as when Valkey is down.

@@ -6,7 +6,6 @@ from http import HTTPStatus
 
 import pytest
 from allauth.account.models import EmailAddress
-from allauth.headless.adapter import get_adapter
 from django.apps import apps
 from django.core import mail
 from django.test import Client
@@ -205,7 +204,7 @@ def test_duplicate_email_signup_prevents_enumeration_and_sends_reset_link(
     )
 
 
-def test_password_reset_by_code_updates_password_and_authenticates() -> None:
+def test_password_reset_by_code_sets_the_password_the_user_logs_in_with() -> None:
     old_password = "Old_Str0ng-P@ssw0rd!"  # noqa: S105
     new_password = "New_Str0ng-P@ssw0rd!"  # noqa: S105
     user = UserFactory(email="reset-me@example.com", password=old_password)
@@ -237,7 +236,9 @@ def test_password_reset_by_code_updates_password_and_authenticates() -> None:
         HTTP_X_SESSION_TOKEN=reset_session_token,
     )
 
-    assert completed.status_code in {HTTPStatus.OK, HTTPStatus.UNAUTHORIZED}
+    # allauth's ACCOUNT_LOGIN_ON_PASSWORD_RESET is off: the reset itself does not
+    # log in, so the client logs in with the new password next.
+    assert completed.status_code == HTTPStatus.UNAUTHORIZED
     user.refresh_from_db()
     assert user.check_password(new_password)
 
@@ -366,16 +367,6 @@ def test_login_and_session_identify_the_user_by_public_uuid(
         payload_user = response.json()["data"]["user"]
         assert payload_user["id"] == str(user.public_id)
         assert payload_user["id"] != user.pk
-
-
-def test_allauth_openapi_documents_the_user_id_as_a_uuid_string() -> None:
-    user_dataclass = get_adapter().get_user_dataclass()
-    id_field = next(
-        f for f in user_dataclass.__dataclass_fields__.values() if f.name == "id"
-    )
-
-    assert id_field.type == str | None
-    assert id_field.metadata["description"] == "The public user ID (UUID)."
 
 
 def test_sites_framework_is_not_installed() -> None:

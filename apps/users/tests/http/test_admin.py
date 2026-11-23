@@ -10,6 +10,7 @@ from apps.users.models import User
 from apps.users.selectors import user_get
 from apps.users.services import user_reactivate
 from apps.users.tests.factories import UserFactory
+from core.tests.accounts import log_in
 from core.tests.credentials import PASSWORD
 
 pytestmark = pytest.mark.django_db
@@ -361,7 +362,7 @@ class TestStaffWithoutSuperuser:
         target.refresh_from_db()
         assert target.email == "privileged@example.com"
         assert target.is_superuser is (role == "superuser")
-        assert response.status_code in {HTTPStatus.OK, HTTPStatus.FORBIDDEN}
+        assert response.status_code == HTTPStatus.FORBIDDEN
 
     def test_cannot_promote_itself(self, client) -> None:
         staff = _staff_with_change_user("staff-self@example.com")
@@ -449,16 +450,6 @@ class TestAdminActiveFlag:
     """Unticking is_active in the change form goes through the services."""
 
     @staticmethod
-    def _login(user: User, password: str) -> str:
-        response = Client().post(
-            "/_allauth/app/v1/auth/login",
-            {"email": user.email, "password": password},
-            content_type="application/json",
-        )
-        assert response.status_code == HTTPStatus.OK, response.content
-        return response.json()["meta"]["session_token"]
-
-    @staticmethod
     def _me(token: str) -> int:
         return Client().get("/api/v1/users/me/", HTTP_X_SESSION_TOKEN=token).status_code
 
@@ -470,7 +461,7 @@ class TestAdminActiveFlag:
         EmailAddress.objects.create(
             user=target, email=target.email, primary=True, verified=True
         )
-        token = self._login(target, password)
+        token = log_in(target, password)
         data = _change_data(target)
         del data["is_active"]
 

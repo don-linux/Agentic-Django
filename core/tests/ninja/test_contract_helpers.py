@@ -23,10 +23,6 @@ from core.tests.ninja.pagination_views import _list
 from core.tests.ninja.pagination_views import cached_count_api
 from core.tests.ninja.support import make_api
 
-REF_VALIDATION = "#/components/schemas/ValidationErrorSchema"
-REF_ERROR = "#/components/schemas/ErrorSchema"
-REF_UPDATE = "#/components/schemas/UserUpdateIn"
-
 
 def test_set_query_param_sorts_keeps_lists_and_removes() -> None:
     url = "http://testserver/api/v1/users/?foo=b&foo=a&page_size=1&page=2"

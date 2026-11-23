@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from contextlib import suppress
 from http import HTTPStatus
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from typing import override
 from urllib.parse import parse_qs
@@ -89,6 +90,20 @@ def test_helpers_serialize_into_migrations() -> None:
     assert UploadTo("/invoices/document/") == UploadTo("invoices/document")
 
 
+def test_helpers_compare_and_hash_by_value() -> None:
+    # Django asks deconstructible validators for __eq__; hash follows it.
+    assert UploadTo("a") == UploadTo("a")
+    assert UploadTo("a") != UploadTo("b")
+    assert UploadTo("a") != SimpleNamespace(prefix="a")
+    assert hash(UploadTo("a")) == hash(UploadTo("a"))
+    assert hash(UploadTo("a")) != hash(UploadTo("b"))
+    assert MaxFileSizeValidator(10) == MaxFileSizeValidator(10)
+    assert MaxFileSizeValidator(10) != MaxFileSizeValidator(11)
+    assert MaxFileSizeValidator(10) != SimpleNamespace(max_bytes=10)
+    assert hash(MaxFileSizeValidator(10)) == hash(MaxFileSizeValidator(10))
+    assert hash(MaxFileSizeValidator(10)) != hash(MaxFileSizeValidator(11))
+
+
 def test_max_file_size_validator() -> None:
     validator = MaxFileSizeValidator(10)
 
@@ -98,6 +113,7 @@ def test_max_file_size_validator() -> None:
 
     assert excinfo.value.code == "file_too_large"
     assert excinfo.value.params == {"max_bytes": 10}
+    assert excinfo.value.messages == ["Ensure this file is at most 10 bytes."]
 
 
 def test_tests_store_uploads_in_memory() -> None:
@@ -155,12 +171,28 @@ def test_x_accel_redirect_refuses_an_unsafe_stored_name(
         protected_file_response(_field_file(storage, name), filename="a.pdf")
 
 
+@override_settings(PRIVATE_MEDIA_ACCEL_REDIRECT_PREFIX="/protected-media/")
+def test_x_accel_redirect_joins_the_prefix_and_the_name_with_one_slash(
+    tmp_path: Path,
+) -> None:
+    storage = FileSystemStorage(location=tmp_path)
+    name = storage.save("invoices/a.xyzzy", ContentFile(b"x"))
+
+    response = protected_file_response(_field_file(storage, "/" + name))
+
+    assert response["X-Accel-Redirect"] == "/protected-media/invoices/a.xyzzy"
+    # An extension mimetypes does not know is served as plain bytes.
+    assert response["Content-Type"] == "application/octet-stream"
+
+
+@override_settings(PRIVATE_MEDIA_ACCEL_REDIRECT_PREFIX="")
 def test_without_a_proxy_django_streams_the_private_file() -> None:
     storage = private_storage()
     name = storage.save("invoices/document/abc.txt", ContentFile(b"secret"))
 
     response = protected_file_response(_field_file(storage, name))
 
+    assert "X-Accel-Redirect" not in response
     assert response["Content-Disposition"] == 'attachment; filename="abc.txt"'
     # Iterating the response is how Django documents reading a streamed body.
     assert isinstance(response, FileResponse)

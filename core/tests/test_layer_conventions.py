@@ -16,7 +16,8 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 LAYERS = ("services", "selectors")
 # Transport objects: the API layer turns them into plain values first.
 HTTP_MODULES = ("django.http", "ninja")
-HTTP_PARAMETERS = frozenset({"request", "serializer", "validated_data", "response"})
+# A request schema cannot reach them either: import-linter forbids the API layer.
+HTTP_PARAMETERS = frozenset({"request", "response"})
 
 
 def _layer_modules(root: Path) -> list[Path]:
@@ -81,7 +82,7 @@ def test_services_and_selectors_follow_the_conventions() -> None:
     assert modules, "no services.py or selectors.py was found"
     assert found == [], (
         "Services and selectors take keyword-only plain values and model "
-        "instances, never a request, a serializer or a response "
+        "instances, never a request or a response "
         f"(docs/ARCHITECTURE.md#services-and-selectors): {found}"
     )
 
@@ -93,7 +94,7 @@ def test_services_and_selectors_follow_the_conventions() -> None:
         "def user_update(user, /, *, name):\n    pass\n",
         "def user_list(*args):\n    pass\n",
         "def user_update(*, request, name):\n    pass\n",
-        "def user_create(*, validated_data):\n    pass\n",
+        "def user_create(*, response):\n    pass\n",
         "async def user_get(public_id):\n    pass\n",
         "from django.http import HttpRequest\n",
         "import ninja.pagination\n",

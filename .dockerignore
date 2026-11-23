@@ -40,7 +40,6 @@ scripts/
 /dist/
 .graphify_*.json
 .graphify_python
-/mutants/
 **/id_rsa*
 **/id_ed25519*
 **/id_ecdsa*

@@ -1,8 +1,8 @@
 """Allow, 405, HEAD and OPTIONS come from the registered operations.
 
-core.api.negotiation used to hard-code the users routes: any path under
-/api/v1/users/ answered 405 to a write (even one that is not a route, which
-must be 404), and a new router got Ninja's text/plain 405 and no HEAD.
+core.api.negotiation reads them from the API's schema, so a new router gets
+the JSON 405, HEAD and OPTIONS without a change, and a path that is not a
+route stays a 404.
 """
 
 from __future__ import annotations

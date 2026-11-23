@@ -44,7 +44,7 @@ def test_client_ip_trusts_only_the_configured_proxies(
         assert get_client_ip(_request(xff)) == expected
 
 
-@pytest.mark.parametrize("xff", ["   ", ",", "  ,  "])
+@pytest.mark.parametrize("xff", ["", "   ", ",", "  ,  "])
 def test_a_header_without_an_address_falls_back_to_remote_addr(
     xff: str, trusted_proxies: TrustedProxies
 ) -> None:
@@ -78,3 +78,13 @@ def test_the_proxy_count_is_the_django_setting() -> None:
     # The client IP must not depend on the API framework (docs/api.md#throttling).
     with override_settings(TRUSTED_PROXY_COUNT=1):
         assert get_client_ip(_request("6.6.6.6, 203.0.113.7")) == "203.0.113.7"
+
+
+def test_without_remote_addr_the_client_ip_is_empty(
+    trusted_proxies: TrustedProxies,
+) -> None:
+    request = RequestFactory().get("/")
+    del request.META["REMOTE_ADDR"]
+
+    with trusted_proxies(0):
+        assert get_client_ip(request) == ""

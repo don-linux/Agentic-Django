@@ -19,6 +19,7 @@ def _build_sample_model() -> Any:
 
     class SampleItem(BaseModel):
         title = models.CharField(max_length=100)
+        note = models.CharField(max_length=100, default="original")
 
         class Meta(BaseModel.Meta, TypedModelMeta):
             app_label = "core"
@@ -28,7 +29,7 @@ def _build_sample_model() -> Any:
 
 
 @pytest.mark.django_db
-def test_save_with_update_fields_automatically_updates_updated_at() -> None:
+def test_save_with_update_fields_writes_only_them_and_updated_at() -> None:
     sample_model = _build_sample_model()
     with connection.schema_editor() as schema_editor:
         schema_editor.create_model(sample_model)
@@ -40,10 +41,12 @@ def test_save_with_update_fields_automatically_updates_updated_at() -> None:
     assert item.updated_at == past
 
     item.title = "Renamed"
+    item.note = "not in update_fields"
     item.save(update_fields=["title"])
     item.refresh_from_db()
 
     assert item.title == "Renamed"
+    assert item.note == "original"
     assert item.updated_at > past
 
 

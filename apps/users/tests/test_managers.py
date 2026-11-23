@@ -53,11 +53,24 @@ class TestUserManager:
         with pytest.raises(IntegrityError):
             duplicate.save()
 
+    def test_create_user_honors_extra_fields(self) -> None:
+        user = User.objects.create_user(
+            email="staff@example.com",
+            password=PASSWORD,
+            name="Ada",
+            is_staff=True,
+        )
+
+        assert user.name == "Ada"
+        assert user.is_staff is True
+        assert user.is_superuser is False
+
     def test_create_superuser(self) -> None:
         user = User.objects.create_superuser(
             email="Admin@Example.com",
             password=PASSWORD,
         )
+        assert user.check_password(PASSWORD)
         assert user.email == "admin@example.com"
         assert user.is_staff
         assert user.is_superuser

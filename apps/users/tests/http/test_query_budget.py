@@ -1,5 +1,5 @@
 """
-Exact query budgets per endpoint (AGENTS.md, "Conventions").
+Exact query budgets per endpoint (AGENTS.md, Testing).
 
 Measured with the test cache (LocMem) and cached_db sessions. Production has the
 same shape: Valkey serves the session, the throttles and the rate limits, so none

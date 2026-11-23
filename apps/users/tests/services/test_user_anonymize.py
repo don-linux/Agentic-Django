@@ -17,7 +17,7 @@ from apps.users.models import User
 from apps.users.selectors import user_get
 from apps.users.services import user_anonymize
 from apps.users.tests.factories import UserFactory
-from core.tests.credentials import PASSWORD
+from core.tests.accounts import verified_user
 
 if TYPE_CHECKING:
     from conftest import CacheWrites
@@ -28,9 +28,7 @@ EMAIL = "erase-me@example.com"
 
 
 def _verified_user() -> User:
-    user = UserFactory(email=EMAIL, name="Ada Lovelace", password=PASSWORD)
-    EmailAddress.objects.create(user=user, email=EMAIL, primary=True, verified=True)
-    return user
+    return verified_user(EMAIL, name="Ada Lovelace")
 
 
 def test_anonymize_erases_personal_data_and_keeps_the_row() -> None:

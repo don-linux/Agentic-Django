@@ -15,8 +15,9 @@ import yaml
 BASE_DIR = Path(__file__).resolve().parents[2]
 SKILLS = sorted((BASE_DIR / ".agents" / "skills").glob("*/SKILL.md"))
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n", re.DOTALL)
-# A smoke floor: the glob must keep finding the skills the repository ships.
-MIN_SKILLS = 4
+# A smoke floor: the glob must keep finding the skills every copy keeps
+# (graphify is optional).
+MIN_SKILLS = 3
 
 
 def _skills_section() -> str:

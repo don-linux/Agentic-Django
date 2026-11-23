@@ -9,21 +9,16 @@ from __future__ import annotations
 
 import time
 from http import HTTPStatus
-from typing import TYPE_CHECKING
 from typing import Any
 
 import pytest
-from allauth.account.models import EmailAddress
 from django.test import Client
 from django.test import override_settings
 from django.urls import get_resolver
 
-from apps.users.tests.factories import UserFactory
+from core.tests.accounts import verified_user
 from core.tests.credentials import PASSWORD
 from core.tests.routes import _routes
-
-if TYPE_CHECKING:
-    from apps.users.models import User
 
 pytestmark = pytest.mark.django_db
 
@@ -87,23 +82,12 @@ def test_allauth_login_without_slash_is_not_404(client: Client) -> None:
     assert response.status_code == HTTPStatus.BAD_REQUEST
 
 
-def _verified_user(*, email: str, password: str) -> User:
-    user = UserFactory(email=email, password=password)
-    EmailAddress.objects.create(
-        user=user,
-        email=user.email,
-        primary=True,
-        verified=True,
-    )
-    return user
-
-
 def test_password_reset_429_is_bare_status_without_retry_after(
     settings: Any,
     client: Client,
 ) -> None:
     settings.ACCOUNT_RATE_LIMITS = {"reset_password": "100/m/ip,2/m/key,100/h/key"}
-    user = _verified_user(email="reset@example.com", password=PASSWORD)
+    user = verified_user("reset@example.com")
 
     responses = [
         client.post(
@@ -127,7 +111,7 @@ def test_login_lockout_is_400_too_many_login_attempts_without_retry_after(
     client: Client,
 ) -> None:
     settings.ACCOUNT_RATE_LIMITS = {"login_failed": "2/m/key"}
-    user = _verified_user(email="lock@example.com", password=PASSWORD)
+    user = verified_user("lock@example.com")
 
     responses = [
         client.post(
@@ -157,7 +141,7 @@ def test_verify_resend_without_pending_flow_is_bare_409(client: Client) -> None:
 @override_settings(TIME_ZONE="America/Mexico_City")
 def test_allauth_login_method_at_is_a_unix_timestamp(client: Client) -> None:
     password = PASSWORD
-    user = _verified_user(email="ts@example.com", password=password)
+    user = verified_user("ts@example.com", password=password)
     before = time.time()
 
     response = client.post(

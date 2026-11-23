@@ -4,17 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
-import socket
-import threading
 import time
-from contextlib import contextmanager
 from datetime import timedelta
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 from typing import Any
 
 import pytest
-from allauth.account.models import EmailAddress
 from axes.handlers.proxy import AxesProxyHandler
 from django.contrib.messages import get_messages
 from django.contrib.sessions.backends.base import UpdateError
@@ -22,51 +18,32 @@ from django.contrib.sessions.backends.cached_db import KEY_PREFIX as SESSION_PRE
 from django.contrib.sessions.models import Session
 from django.core.cache import caches
 from django.core.mail.backends.locmem import EmailBackend
-from django.core.management import call_command
 from django.db import IntegrityError
 from django.db import OperationalError
 from django.template import TemplateSyntaxError
 from django.test import Client
-from django.test import RequestFactory
-from django.test import override_settings
-from django.urls import NoReverseMatch
-from django.urls import Resolver404
-from django.urls import resolve
 from django.urls import reverse
 from django.utils import timezone
 from redis.exceptions import ConnectionError as ValkeyConnectionError
 
 from apps.users.models import User
-from apps.users.selectors import USER_NAMESPACE
 from apps.users.services import user_deactivate
 from apps.users.services import user_reactivate
 from apps.users.tests.factories import UserFactory
-from config import celery_app
-from core.admin_lockout import is_outside_admin
-from core.cache import build_key
-from core.middleware import NO_REQUEST_ID
-from core.middleware import RequestIdMiddleware
-from core.middleware import request_id_var
-from core.net import get_client_ip
-from core.tasks import enqueue_on_commit
-from core.tasks import ping
+from core.tests.accounts import log_in
+from core.tests.accounts import verified_user
 from core.tests.cache_helpers import DEAD_VALKEY
 from core.tests.cache_helpers import SESSION_URL
 from core.tests.cache_helpers import _login
 from core.tests.cache_helpers import _root_cause
 from core.tests.credentials import PASSWORD
+from core.tests.sockets import hanging_tcp_server
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
-
-    from django.http import HttpRequest
-    from django.http import HttpResponse
     from pytest_django.fixtures import DjangoCaptureOnCommitCallbacks
     from pytest_django.fixtures import Settings
 
-    from conftest import CacheWrites
     from conftest import ThrottleRates
-    from conftest import TrustedProxies
 
 LOGIN_URL = "/_allauth/app/v1/auth/login"
 SIGNUP_URL = "/_allauth/app/v1/auth/signup"
@@ -74,8 +51,6 @@ VERIFY_URL = "/_allauth/app/v1/auth/email/verify"
 ME_URL = "/api/v1/users/me/"
 # An outage answers fast: the connect timeouts bound it, not a hung socket.
 OUTAGE_ANSWER_SECONDS = 3
-# A broker outage must not hold the request that enqueues.
-ENQUEUE_ANSWER_SECONDS = 2
 CACHED_DB = "django.contrib.sessions.backends.cached_db"
 
 
@@ -84,55 +59,6 @@ def valkey_outage(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
     settings.CACHES = DEAD_VALKEY
     settings.SESSION_ENGINE = CACHED_DB
     monkeypatch.setattr(AxesProxyHandler, "implementation", None)
-
-
-def _verified_user(email: str, **kwargs: Any) -> User:
-    user = UserFactory(email=email, password=PASSWORD, **kwargs)
-    EmailAddress.objects.create(
-        user=user, email=user.email, primary=True, verified=True
-    )
-    return user
-
-
-def _session_token(user: User, password: str = PASSWORD) -> str:
-    response = Client().post(
-        LOGIN_URL,
-        {"email": user.email, "password": password},
-        content_type="application/json",
-    )
-    assert response.status_code == HTTPStatus.OK, response.content
-    return response.json()["meta"]["session_token"]
-
-
-@contextmanager
-def hanging_tcp_server() -> Generator[int]:
-    sock = socket.socket()
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("127.0.0.1", 0))
-    sock.listen(8)
-    port = sock.getsockname()[1]
-    stop = threading.Event()
-    held: list[socket.socket] = []
-
-    def serve() -> None:
-        sock.settimeout(0.1)
-        while not stop.is_set():
-            try:
-                conn, _ = sock.accept()
-                held.append(conn)
-            except TimeoutError:
-                continue
-        for conn in held:
-            conn.close()
-        sock.close()
-
-    thread = threading.Thread(target=serve, daemon=True)
-    thread.start()
-    try:
-        yield port
-    finally:
-        stop.set()
-        thread.join(timeout=2)
 
 
 @pytest.mark.django_db
@@ -152,8 +78,8 @@ def test_invalid_session_token_is_401_with_authenticate_header(
 
 @pytest.mark.django_db
 def test_expired_session_token_is_401() -> None:
-    user = _verified_user("expired-token@example.com")
-    token = _session_token(user)
+    user = verified_user("expired-token@example.com")
+    token = log_in(user)
     Session.objects.filter(session_key=token).update(
         expire_date=timezone.now() - timedelta(days=1)
     )
@@ -165,41 +91,6 @@ def test_expired_session_token_is_401() -> None:
     assert response.status_code == HTTPStatus.UNAUTHORIZED
     assert response.headers["WWW-Authenticate"] == "X-Session-Token"
     assert response.json()["code"] == "not_authenticated"
-
-
-def test_empty_header_falls_back_to_remote_addr(
-    trusted_proxies: TrustedProxies,
-) -> None:
-    request = RequestFactory().get(
-        "/", REMOTE_ADDR="172.18.0.1", HTTP_X_FORWARDED_FOR=""
-    )
-    with trusted_proxies(1):
-        assert get_client_ip(request) == "172.18.0.1"
-
-
-@override_settings(DEBUG=True)
-@pytest.mark.django_db
-def test_seed_dev_rolls_back_users_when_an_app_hook_fails(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def boom() -> None:
-        msg = "hook failed"
-        raise RuntimeError(msg)
-
-    monkeypatch.setattr(
-        "apps.users.management.commands.seed_dev.importlib.util.find_spec",
-        lambda name: object() if name == "apps.users.seed" else None,
-    )
-    monkeypatch.setattr(
-        "apps.users.management.commands.seed_dev.importlib.import_module",
-        lambda name: type("Seed", (), {"seed_dev": staticmethod(boom)}),
-    )
-
-    with pytest.raises(RuntimeError, match="hook failed"):
-        call_command("seed_dev", "--password", PASSWORD)
-
-    assert not User.objects.filter(email="admin@example.com").exists()
-    assert not User.objects.filter(email="user@example.com").exists()
 
 
 @pytest.mark.django_db
@@ -260,31 +151,6 @@ def test_health_cache_unavailable_on_oserror(
     assert b"Network" not in response.content
 
 
-def test_resets_the_context_when_the_view_raises() -> None:
-    def view(_request: HttpRequest) -> HttpResponse:
-        msg = "view boom"
-        raise RuntimeError(msg)
-
-    request = RequestFactory().get("/")
-    with pytest.raises(RuntimeError, match="view boom"):
-        RequestIdMiddleware(view)(request)
-
-    assert request_id_var.get() == NO_REQUEST_ID
-
-
-def test_is_outside_admin_when_the_admin_is_not_routed(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def no_admin(_name: str) -> str:
-        msg = "admin:index"
-        raise NoReverseMatch(msg)
-
-    monkeypatch.setattr("core.admin_lockout.reverse", no_admin)
-    request = RequestFactory().get("/_allauth/app/v1/auth/login")
-
-    assert is_outside_admin(request, {}) is True
-
-
 @pytest.mark.django_db
 def test_staff_and_superuser_still_see_only_themselves() -> None:
     other = UserFactory()
@@ -319,7 +185,7 @@ def test_anonymous_get_of_user_detail_is_401(user: User, client: Client) -> None
 @pytest.mark.django_db
 def test_inactive_user_cannot_log_in_and_reactivate_restores_it() -> None:
 
-    user = _verified_user("deactivated-login@example.com")
+    user = verified_user("deactivated-login@example.com")
     user_deactivate(user=user)
 
     denied = Client().post(
@@ -432,12 +298,14 @@ def test_name_is_stored_as_sent_and_its_length_counts_spaces(
         ("delete", "detail", "GET, PATCH, HEAD, OPTIONS"),
     ],
 )
+@pytest.mark.parametrize("anonymous", [False, True])
 def test_disallowed_methods_are_rejected(
     user: User,
-    user_client: Client,
     method: str,
     path_key: str,
     allow: str,
+    *,
+    anonymous: bool,
 ) -> None:
     paths = {
         "list": "/api/v1/users/",
@@ -447,11 +315,18 @@ def test_disallowed_methods_are_rejected(
     kwargs: dict[str, Any] = {}
     if method in {"post", "put"}:
         kwargs = {"data": {"name": "Nope"}, "content_type": "application/json"}
-    response = getattr(user_client, method)(paths[path_key], **kwargs)
+    # An undeclared method is a 405 before authentication.
+    caller = Client()
+    if not anonymous:
+        caller.force_login(user)
+    response = getattr(caller, method)(paths[path_key], **kwargs)
 
     assert response.status_code == HTTPStatus.METHOD_NOT_ALLOWED
     assert response.headers["Allow"] == allow
-    assert response.json()["code"] == "method_not_allowed"
+    assert response.json() == {
+        "code": "method_not_allowed",
+        "detail": "Method not allowed",
+    }
 
 
 @pytest.mark.django_db
@@ -567,7 +442,7 @@ def test_login_rejects_missing_and_invalid_fields(
 
 @pytest.mark.django_db
 def test_login_rejects_a_wrong_password_without_enumeration() -> None:
-    user = _verified_user("known@example.com")
+    user = verified_user("known@example.com")
     wrong = Client().post(
         LOGIN_URL,
         {"email": user.email, "password": "Wrong-Password-1"},
@@ -584,43 +459,6 @@ def test_login_rejects_a_wrong_password_without_enumeration() -> None:
     assert all(
         error["code"] == "email_password_mismatch" for error in wrong.json()["errors"]
     )
-
-
-@pytest.mark.django_db
-def test_change_email_promotes_an_existing_non_primary_address(
-    admin_client: Any,
-) -> None:
-    target = UserFactory(email="old-primary@example.com", name="Target")
-    EmailAddress.objects.create(
-        user=target, email="old-primary@example.com", primary=True, verified=True
-    )
-    EmailAddress.objects.create(
-        user=target, email="secondary@example.com", primary=False, verified=False
-    )
-    url = reverse("admin:users_user_change", kwargs={"object_id": target.pk})
-    response = admin_client.post(
-        url,
-        data={
-            "email": "secondary@example.com",
-            "name": "Target",
-            "is_active": "on",
-            "date_joined_0": "2026-01-01",
-            "date_joined_1": "00:00:00",
-            "initial-date_joined_0": "2026-01-01",
-            "initial-date_joined_1": "00:00:00",
-        },
-    )
-
-    assert response.status_code == HTTPStatus.FOUND
-    target.refresh_from_db()
-    assert target.email == "secondary@example.com"
-    promoted = EmailAddress.objects.get(user=target, email="secondary@example.com")
-    assert promoted.primary is True
-    # An unverified secondary address stays unverified when promoted.
-    assert promoted.verified is False
-    assert not EmailAddress.objects.filter(
-        user=target, email="old-primary@example.com"
-    ).exists()
 
 
 @pytest.mark.django_db
@@ -643,51 +481,6 @@ def test_deactivate_action_skips_self_but_deactivates_the_others(
     user.refresh_from_db()
     assert admin_user.is_active is True
     assert user.is_active is False
-
-
-@pytest.mark.django_db
-def test_saving_last_login_with_another_field_still_invalidates(
-    user: User,
-    cache_writes: CacheWrites,
-) -> None:
-    before = build_key(USER_NAMESPACE, "probe")
-
-    with cache_writes():
-        user.last_login = timezone.now()
-        user.name = "Also changed"
-        user.save(update_fields=["last_login", "name"])
-
-    assert build_key(USER_NAMESPACE, "probe") != before
-
-
-@pytest.mark.django_db
-def test_uppercase_public_id_is_routed_as_json(user: User, user_client: Client) -> None:
-    # The lookup regex is case-insensitive, so DEBUG=True cannot serve
-    # Django's HTML 404 for a hex-case typo. The row is found (UUID).
-    upper = str(user.public_id).upper()
-    resolve(f"/api/v1/users/{upper}/")
-
-    response = user_client.get(f"/api/v1/users/{upper}/")
-    assert response.status_code == HTTPStatus.OK
-    assert response.headers["Content-Type"].startswith("application/json")
-    assert response.json()["id"] == str(user.public_id)
-
-
-@pytest.mark.django_db
-def test_format_suffix_routes_are_not_registered(
-    user: User, user_client: Client
-) -> None:
-    for path in (
-        "/api/v1/users.json/",
-        "/api/v1/users.json",
-        "/api/v1/users/me.json/",
-        f"/api/v1/users/{user.public_id}.json/",
-    ):
-        with pytest.raises(Resolver404):
-            resolve(path)
-        response = user_client.get(path)
-        assert response.status_code == HTTPStatus.NOT_FOUND
-        assert response.json()["code"] == "not_found"
 
 
 @pytest.mark.django_db
@@ -766,13 +559,13 @@ def test_patch_me_succeeds_during_a_valkey_outage(
     django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
     request: pytest.FixtureRequest,
 ) -> None:
-    user = _verified_user("patch-outage@example.com")
+    user = verified_user("patch-outage@example.com")
     client = Client()
     # force_login() saves a session: log in before the outage starts.
     client.force_login(user)
     request.getfixturevalue("valkey_outage")
     # on_commit hooks do not run inside the pytest-django transaction unless
-    # we execute them: T5's log assertion is otherwise red on correct code.
+    # they are executed, and the log assertion below needs them.
     with (
         caplog.at_level(logging.ERROR),
         django_capture_on_commit_callbacks(execute=True),
@@ -789,103 +582,6 @@ def test_patch_me_succeeds_during_a_valkey_outage(
         record.getMessage() + " " + (record.exc_text or "") for record in caplog.records
     )
     assert "on_commit" in joined or "_replace_version" in joined
-
-
-@pytest.mark.django_db
-def test_enqueue_on_commit_survives_a_closed_broker(
-    caplog: pytest.LogCaptureFixture,
-    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
-) -> None:
-
-    saved = {
-        "task_always_eager": celery_app.conf.task_always_eager,
-        "broker_url": celery_app.conf.broker_url,
-        "broker_transport_options": celery_app.conf.broker_transport_options,
-        "task_publish_retry": celery_app.conf.task_publish_retry,
-        "task_publish_retry_policy": celery_app.conf.task_publish_retry_policy,
-    }
-    try:
-        celery_app.conf.task_always_eager = False
-        celery_app.conf["broker_url"] = "redis://127.0.0.1:6390/7"
-        celery_app.conf.broker_transport_options = {
-            "socket_connect_timeout": 0.2,
-            "socket_timeout": 0.2,
-            "socket_keepalive": True,
-        }
-        # The production publish retry policy stays: it is what bounds a
-        # request when the broker is down (config/settings/base.py).
-        celery_app.connection_for_write().release()
-
-        started = time.monotonic()
-        with (
-            caplog.at_level(logging.ERROR),
-            django_capture_on_commit_callbacks(execute=True),
-        ):
-            # ping takes no arguments: Celery checks them before it contacts
-            # the broker. test_tasks.py checks that arguments never reach a log.
-            enqueue_on_commit(ping)
-        elapsed = time.monotonic() - started
-
-        errors = [
-            record for record in caplog.records if record.levelno == logging.ERROR
-        ]
-        assert [(record.name, record.getMessage()) for record in errors] == [
-            ("core.tasks", "could not enqueue task core.ping"),
-        ]
-        assert "private-value" not in caplog.text
-        assert elapsed < ENQUEUE_ANSWER_SECONDS
-    finally:
-        for name, value in saved.items():
-            setattr(celery_app.conf, name, value)
-        celery_app.connection_for_write().release()
-
-
-@pytest.mark.django_db
-def test_enqueue_on_commit_is_bounded_when_the_broker_hangs(
-    caplog: pytest.LogCaptureFixture,
-    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
-) -> None:
-
-    saved = {
-        "task_always_eager": celery_app.conf.task_always_eager,
-        "broker_url": celery_app.conf.broker_url,
-        "broker_transport_options": celery_app.conf.broker_transport_options,
-        "task_publish_retry": celery_app.conf.task_publish_retry,
-        "task_publish_retry_policy": celery_app.conf.task_publish_retry_policy,
-    }
-    try:
-        with hanging_tcp_server() as port:
-            celery_app.conf.task_always_eager = False
-            celery_app.conf["broker_url"] = f"redis://127.0.0.1:{port}/7"
-            celery_app.conf.broker_transport_options = {
-                "socket_connect_timeout": 0.2,
-                "socket_timeout": 0.2,
-                "socket_keepalive": True,
-            }
-            # The production publish retry policy stays: it is what bounds a
-            # request when the broker is down (config/settings/base.py).
-            started = time.monotonic()
-            with (
-                caplog.at_level(logging.ERROR),
-                django_capture_on_commit_callbacks(execute=True),
-            ):
-                # ping takes no arguments: Celery checks them before it
-                # contacts the broker.
-                enqueue_on_commit(ping)
-            elapsed = time.monotonic() - started
-
-        errors = [
-            record for record in caplog.records if record.levelno == logging.ERROR
-        ]
-        assert [(record.name, record.getMessage()) for record in errors] == [
-            ("core.tasks", "could not enqueue task core.ping"),
-        ]
-        assert "private-value" not in caplog.text
-        assert elapsed < 4 * 0.2 + 1.5
-    finally:
-        for name, value in saved.items():
-            setattr(celery_app.conf, name, value)
-        celery_app.connection_for_write().release()
 
 
 @pytest.mark.django_db
@@ -940,7 +636,7 @@ def test_users_me_returns_429_with_retry_after(
 @pytest.mark.django_db
 def test_headless_login_is_rate_limited(settings: Settings) -> None:
     settings.ACCOUNT_RATE_LIMITS = {"login_failed": "1/m/ip"}
-    user = _verified_user("rate-login@example.com")
+    user = verified_user("rate-login@example.com")
     client = Client()
     first = client.post(
         LOGIN_URL,
@@ -981,8 +677,8 @@ def test_headless_signup_is_rate_limited(settings: Settings) -> None:
 
 @pytest.mark.django_db
 def test_inactive_users_session_token_is_rejected() -> None:
-    user = _verified_user("leftover-token@example.com")
-    token = _session_token(user)
+    user = verified_user("leftover-token@example.com")
+    token = log_in(user)
     user.is_active = False
     user.save(update_fields=["is_active"])
 
@@ -993,39 +689,3 @@ def test_inactive_users_session_token_is_rejected() -> None:
         "code": "not_authenticated",
         "detail": "Unauthorized",
     }
-
-
-@pytest.mark.django_db
-def test_session_cookie_patch_without_csrf_is_json_403(user: User) -> None:
-    client = Client(enforce_csrf_checks=True)
-    client.force_login(user)
-    response = client.patch(
-        ME_URL, {"name": "No CSRF"}, content_type="application/json"
-    )
-
-    assert response.status_code == HTTPStatus.FORBIDDEN
-    assert response.headers["Content-Type"].startswith("application/json")
-    assert response.json()["code"] == "permission_denied"
-    assert "CSRF" in response.json()["detail"]
-    user.refresh_from_db()
-    assert user.name != "No CSRF"
-
-
-@pytest.mark.django_db
-def test_schema_and_docs_401_and_403_bodies(client: Any, user_client: Client) -> None:
-    schema_anon = client.get("/api/v1/schema/")
-    docs_anon = client.get("/api/v1/docs/")
-    schema_user = user_client.get("/api/v1/schema/")
-    docs_user = user_client.get("/api/v1/docs/")
-
-    # The schema and docs views answer the API's JSON errors, not Ninja's
-    # OpenAPI or HTML error pages.
-    for response, status, token in (
-        (schema_anon, HTTPStatus.UNAUTHORIZED, "not_authenticated"),
-        (docs_anon, HTTPStatus.UNAUTHORIZED, "not_authenticated"),
-        (schema_user, HTTPStatus.FORBIDDEN, "permission_denied"),
-        (docs_user, HTTPStatus.FORBIDDEN, "permission_denied"),
-    ):
-        assert response.status_code == status
-        assert response.headers["Content-Type"].startswith("application/json")
-        assert token in response.content.decode()

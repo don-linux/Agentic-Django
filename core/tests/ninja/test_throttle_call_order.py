@@ -1,4 +1,4 @@
-"""Pin the Ninja call order core.api.throttling relies on (decision NIN-3).
+"""Pin the Ninja call order core.api.throttling relies on (docs/typing.md).
 
 RefreshingRateMixin keeps each check's state on a per-thread copy and reads it
 back in wait(). That is only correct while Ninja calls a throttle's wait()

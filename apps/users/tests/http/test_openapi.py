@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from core.tests.session_tokens import session_token
+from core.tests.accounts import session_token
 
 if TYPE_CHECKING:
     from django.test import Client

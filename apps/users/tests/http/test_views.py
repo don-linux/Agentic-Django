@@ -46,7 +46,7 @@ class TestUsersAPI:
             "name": user.name,
         }
 
-    def test_browsers_get_json_not_the_browsable_api(self, user_client: Client) -> None:
+    def test_a_text_html_accept_is_a_json_406(self, user_client: Client) -> None:
         response = user_client.get("/api/v1/users/me/", HTTP_ACCEPT="text/html")
 
         assert response.status_code == HTTPStatus.NOT_ACCEPTABLE
@@ -307,14 +307,17 @@ class TestUsersAPI:
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("target", ["me", "detail"])
+@pytest.mark.parametrize("body", ["", "{}"])
 def test_an_empty_patch_body_changes_nothing(
-    user: User, user_client: Client, target: str
+    user: User, user_client: Client, target: str, body: str
 ) -> None:
-    # The PATCH body is optional in the contract (requestBody required: false).
+    # The PATCH body is optional in the contract (requestBody required: false),
+    # and so is each of its fields.
     path = "/api/v1/users/me/" if target == "me" else f"/api/v1/users/{user.public_id}/"
     before = user.name
-    response = user_client.patch(path, "", content_type="application/json")
+    response = user_client.patch(path, body, content_type="application/json")
     assert response.status_code == HTTPStatus.OK
+    assert response.json()["name"] == before
     user.refresh_from_db()
     assert user.name == before
 

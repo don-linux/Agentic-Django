@@ -15,7 +15,7 @@ from core.exceptions import ConflictError
 from core.tests.ninja.support import make_api
 
 
-def _client(raises, method="get"):
+def _client(raises):
     api = make_api(throttle=[], auth=None)
     router = Router()
 

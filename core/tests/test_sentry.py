@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 import pytest
 import sentry_sdk
 from sentry_sdk.integrations.celery import CeleryIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration
 from sentry_sdk.integrations.redis import RedisIntegration
 from sentry_sdk.scrubber import EventScrubber
 
@@ -110,9 +112,13 @@ def test_scrub_event_filters_sensitive_body_fields_recursively() -> None:
     assert data["steps"][0]["label"] == "verify"
 
 
-def test_scrub_event_drops_cookies_and_tolerates_events_without_request() -> None:
+def test_scrub_event_drops_cookies_and_tolerates_events_without_them() -> None:
     assert "cookies" not in scrub_event(_event(), {})["request"]
     assert scrub_event({"message": "boom"}, {}) == {"message": "boom"}
+    without_cookies = {"request": {"headers": {"Accept": "application/json"}}}
+    assert scrub_event(without_cookies, {}) == {
+        "request": {"headers": {"Accept": "application/json"}},
+    }
 
 
 def _task_event() -> dict[str, Any]:
@@ -309,11 +315,18 @@ def test_scrub_event_leaves_the_notes_and_package_list_of_sentry_alone() -> None
     assert event["modules"] == {"pytokens": "0.3.0", "django": "6.1.3"}
 
 
-def test_init_sentry_turns_pii_off_and_scrubs_hyphenated_headers(
+def test_init_sentry_passes_its_arguments_and_scrubs_every_event(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, Any] = {}
     monkeypatch.setattr(sentry_sdk, "init", lambda **kw: captured.update(kw))
+    logging_kwargs: dict[str, Any] = {}
+
+    def logging_integration(**kwargs: Any) -> LoggingIntegration:
+        logging_kwargs.update(kwargs)
+        return LoggingIntegration(**kwargs)
+
+    monkeypatch.setattr(sentry, "LoggingIntegration", logging_integration)
 
     sentry.init_sentry(
         dsn=FAKE_DSN,
@@ -322,8 +335,15 @@ def test_init_sentry_turns_pii_off_and_scrubs_hyphenated_headers(
         traces_sample_rate=0.0,
     )
 
+    assert captured["dsn"] == FAKE_DSN
+    assert captured["environment"] == "tests"
+    assert captured["release"] == "abc123"
+    assert captured["traces_sample_rate"] == 0.0
     assert captured["send_default_pii"] is False
     assert captured["before_send"] is scrub_event
+    assert captured["before_send_transaction"] is scrub_event
+    # Log records become breadcrumbs from INFO, and events from ERROR.
+    assert logging_kwargs == {"level": logging.INFO, "event_level": logging.ERROR}
     scrubber = captured["event_scrubber"]
     assert isinstance(scrubber, EventScrubber)
     event: Any = {"request": {"headers": {"X-Session-Token": "session-secret"}}}

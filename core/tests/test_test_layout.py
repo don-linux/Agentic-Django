@@ -250,7 +250,7 @@ def test_the_test_import_check_flags_every_way_of_importing_one(source: str) -> 
         "from apps.users.tests.factories import UserFactory\n",
         "from django.test import Client\n",
         "from conftest import ThrottleRates\n",
-        'ROOT_URLCONF = "core.tests.ninja.test_create_and_destroy"\n',
+        'ROOT_URLCONF = "core.tests.ninja.test_schema"\n',
     ],
 )
 def test_the_test_import_check_accepts_support_modules(source: str) -> None:

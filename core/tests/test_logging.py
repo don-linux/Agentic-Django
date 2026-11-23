@@ -68,8 +68,9 @@ def test_filter_adds_the_current_request_id() -> None:
 
 def test_filter_outside_a_request_uses_a_dash() -> None:
     record = _record()
-    RequestIdFilter().filter(record)
 
+    # A filter that returns False drops the record; this one only adds the id.
+    assert RequestIdFilter().filter(record) is True
     assert REQUEST_ID_FORMAT.format(record) == "-"
 
 
@@ -89,6 +90,25 @@ def test_json_formatter_includes_the_traceback() -> None:
     entry = json.loads(JsonFormatter().format(_record(with_exception=True)))
 
     assert "ValueError: boom" in entry["exc_info"]
+
+
+def test_json_formatter_includes_the_process_and_the_stack() -> None:
+    record = _record()
+    record.stack_info = "Stack (most recent call last):"
+
+    entry = json.loads(JsonFormatter().format(record))
+
+    assert entry["process"] == record.process
+    assert entry["stack_info"] == "Stack (most recent call last):"
+
+
+def test_json_formatter_writes_an_extra_json_cannot_hold_as_text() -> None:
+    record = _record()
+    record.public_id = uuid.UUID(int=0)
+
+    entry = json.loads(JsonFormatter().format(record))
+
+    assert entry["public_id"] == "00000000-0000-0000-0000-000000000000"
 
 
 def _gunicorn_conf() -> ModuleType:

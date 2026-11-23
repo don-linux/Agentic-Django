@@ -134,12 +134,16 @@ def test_the_arguments_celery_attaches_to_its_lines_never_reach_the_log() -> Non
     record = _record(
         "celery.app.trace",
         data={"id": "task-1", "name": "reports.generate", "kwargs": "{'code': 'X1'}"},
+        rows=3,
     )
 
     formatted = JsonFormatter().format(record)
+    line = json.loads(formatted)
 
-    assert "data" not in json.loads(formatted)
+    assert "data" not in line
     assert "X1" not in formatted
+    # Only `data` goes: the other extras of the line stay.
+    assert line["rows"] == 3  # noqa: PLR2004
 
 
 def test_other_loggers_keep_an_extra_named_data() -> None:

@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 from unittest import mock
 
 import pytest
-from allauth.account.models import EmailAddress
 from django.contrib.sessions.backends.cached_db import KEY_PREFIX as SESSION_PREFIX
 from django.contrib.sessions.backends.cached_db import SessionStore
 from django.contrib.sessions.models import Session
@@ -19,8 +18,7 @@ from redis.exceptions import ConnectionError as ValkeyConnectionError
 from apps.users.models import User
 from apps.users.services import user_deactivate
 from apps.users.services import user_reactivate
-from apps.users.tests.factories import UserFactory
-from core.tests.credentials import PASSWORD
+from core.tests.accounts import verified_user
 
 if TYPE_CHECKING:
     from pytest_django.fixtures import Settings
@@ -38,12 +36,6 @@ DEAD_VALKEY = {
 }
 
 
-def _verified_user(email: str) -> User:
-    user = UserFactory(email=email, password=PASSWORD)
-    EmailAddress.objects.create(user=user, email=email, primary=True, verified=True)
-    return user
-
-
 def _session_for(user: User) -> str:
     # What a login leaves behind: a session that names the user.
     store = SessionStore()
@@ -58,7 +50,7 @@ def _signed_in(key: str) -> bool:
 
 
 def test_deactivate_sets_the_flag_and_signs_the_user_out() -> None:
-    user = _verified_user("leaving@example.com")
+    user = verified_user("leaving@example.com")
     key = _session_for(user)
 
     user_deactivate(user=user)
@@ -69,8 +61,8 @@ def test_deactivate_sets_the_flag_and_signs_the_user_out() -> None:
 
 
 def test_deactivate_keeps_other_users_sessions() -> None:
-    leaving = _verified_user("leaving@example.com")
-    staying = _verified_user("staying@example.com")
+    leaving = verified_user("leaving@example.com")
+    staying = verified_user("staying@example.com")
     leaving_key = _session_for(leaving)
     staying_key = _session_for(staying)
 
@@ -87,7 +79,7 @@ def test_deactivate_deletes_the_cached_session_so_reactivation_cannot_revive_it(
     # database row would leave it alive, and reactivating the user would bring
     # every session that was meant to be revoked back to life.
     settings.SESSION_ENGINE = CACHED_DB
-    user = _verified_user("leaving@example.com")
+    user = verified_user("leaving@example.com")
     key = _session_for(user)
     assert cache.get(f"{SESSION_PREFIX}{key}") is not None
 
@@ -102,7 +94,7 @@ def test_deactivate_rolls_back_when_the_cached_session_cannot_be_deleted(
     settings: Settings,
 ) -> None:
     settings.SESSION_ENGINE = CACHED_DB
-    user = _verified_user("leaving@example.com")
+    user = verified_user("leaving@example.com")
     key = _session_for(user)
     settings.CACHES = DEAD_VALKEY
 
@@ -116,7 +108,7 @@ def test_deactivate_rolls_back_when_the_cached_session_cannot_be_deleted(
 
 
 def test_deactivate_rolls_back_when_full_clean_fails() -> None:
-    user = _verified_user("leaving@example.com")
+    user = verified_user("leaving@example.com")
     key = _session_for(user)
 
     with (

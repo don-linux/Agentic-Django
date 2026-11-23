@@ -29,7 +29,7 @@ from hypothesis import HealthCheck
 from hypothesis import settings as hypothesis_settings
 
 from apps.users.models import User
-from core.tests.session_tokens import session_token
+from core.tests.accounts import session_token
 
 if TYPE_CHECKING:
     from collections.abc import Callable

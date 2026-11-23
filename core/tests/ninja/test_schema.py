@@ -8,15 +8,12 @@ from http import HTTPStatus
 from pathlib import Path
 
 import pytest
-from allauth.account.models import EmailAddress
 from django.conf import settings
 from django.test import Client
 from django.urls import reverse
 
-from apps.users.tests.factories import UserFactory
-from core.tests.credentials import PASSWORD
+from core.tests.accounts import session_token
 
-LOGIN_URL = "/_allauth/app/v1/auth/login"
 NOT_AUTHENTICATED = {
     "code": "not_authenticated",
     "detail": "Unauthorized",
@@ -29,20 +26,6 @@ UNDECLARED_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 # Ninja's URL names for the schema and the docs (ninja/openapi/urls.py).
 SCHEMA = "api:openapi-json"
 DOCS = "api:openapi-view"
-
-
-def _token_for(*, is_staff: bool) -> str:
-    user = UserFactory(password=PASSWORD, is_staff=is_staff)
-    EmailAddress.objects.create(
-        user=user, email=user.email, primary=True, verified=True
-    )
-    response = Client().post(
-        LOGIN_URL,
-        {"email": user.email, "password": PASSWORD},
-        content_type="application/json",
-    )
-    assert response.status_code == HTTPStatus.OK, response.content
-    return response.json()["meta"]["session_token"]
 
 
 @pytest.mark.django_db
@@ -69,12 +52,12 @@ def test_the_route_is_staff_only_by_session(
 def test_the_route_is_staff_only_by_x_session_token(route: str) -> None:
     url = reverse(route)
 
-    staff = Client().get(url, headers={"X-Session-Token": _token_for(is_staff=True)})
+    staff_token = session_token("staff@example.com", is_staff=True)
+    staff = Client().get(url, headers={"X-Session-Token": staff_token})
     assert staff.status_code == HTTPStatus.OK
 
-    not_staff = Client().get(
-        url, headers={"X-Session-Token": _token_for(is_staff=False)}
-    )
+    member_token = session_token("member@example.com")
+    not_staff = Client().get(url, headers={"X-Session-Token": member_token})
     assert not_staff.status_code == HTTPStatus.FORBIDDEN
     assert not_staff.json() == PERMISSION_DENIED
 
@@ -137,8 +120,8 @@ NOT_ACCEPTABLE = {
 def test_the_schema_refuses_an_accept_it_cannot_produce(
     client: Client, user_client: Client, admin_client: Client, accept: str
 ) -> None:
-    # Ninja serves the schema as JSON only: YAML is not acceptable any more, and
-    # the 406 comes before the staff check, for everyone.
+    # Ninja serves the schema as JSON only, and the 406 comes before the staff
+    # check, for everyone.
     url = reverse(SCHEMA)
     for caller in (client, user_client, admin_client):
         response = caller.get(url, headers={"Accept": accept})

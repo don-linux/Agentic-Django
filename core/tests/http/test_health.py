@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from http import HTTPStatus
 from typing import TYPE_CHECKING
@@ -39,6 +40,7 @@ def test_health_ok(client: Client) -> None:
 
     assert response.status_code == HTTPStatus.OK
     assert response.content == b"ok\n"
+    assert response.headers["Content-Type"].startswith("text/plain")
     assert response.headers["Cache-Control"] == "no-store"
 
 
@@ -86,6 +88,7 @@ def test_health_rejects_post(client: Client) -> None:
 def test_health_database_unavailable(
     client: Client,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     def fail_cursor(*_args: object, **_kwargs: object) -> None:
         message = "could not connect to server at postgres_db"
@@ -93,17 +96,24 @@ def test_health_database_unavailable(
 
     monkeypatch.setattr("core.middleware.connection.cursor", fail_cursor)
 
-    response = client.get("/health/")
+    with caplog.at_level(logging.WARNING, logger="core.middleware"):
+        response = client.get("/health/")
 
     assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
     assert response.content == b"database unavailable\n"
     assert response.headers["Cache-Control"] == "no-store"
     assert b"postgres_db" not in response.content
+    # The reason goes to the log, with its traceback, not to the client.
+    [record] = [r for r in caplog.records if r.name == "core.middleware"]
+    assert record.getMessage() == "healthcheck database unavailable"
+    assert record.exc_info
+    assert record.exc_info[0] is OperationalError
 
 
 def test_health_cache_unavailable(
     client: Client,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     def fail_probe() -> None:
         message = "Error 111 connecting to valkey:6379. Connection refused."
@@ -111,12 +121,17 @@ def test_health_cache_unavailable(
 
     monkeypatch.setattr("core.middleware.probe", fail_probe)
 
-    response = client.get("/health/")
+    with caplog.at_level(logging.WARNING, logger="core.middleware"):
+        response = client.get("/health/")
 
     assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
     assert response.content == b"cache unavailable\n"
     assert response.headers["Cache-Control"] == "no-store"
     assert b"valkey" not in response.content
+    [record] = [r for r in caplog.records if r.name == "core.middleware"]
+    assert record.getMessage() == "healthcheck cache unavailable"
+    assert record.exc_info
+    assert record.exc_info[0] is ValkeyConnectionError
 
 
 def test_health_is_strict_while_the_cache_fails_open(
@@ -158,6 +173,7 @@ def test_liveness_does_not_touch_the_database(
 
     assert response.status_code == HTTPStatus.OK
     assert response.content == b"ok\n"
+    assert response.headers["Content-Type"].startswith("text/plain")
     assert response.headers["Cache-Control"] == "no-store"
 
 
@@ -165,6 +181,7 @@ def test_liveness_rejects_post(client: Client) -> None:
     response = client.post("/health/live/")
 
     assert response.status_code == HTTPStatus.METHOD_NOT_ALLOWED
+    assert response.headers["Allow"] == "GET"
     assert response.headers["Cache-Control"] == "no-store"
 
 

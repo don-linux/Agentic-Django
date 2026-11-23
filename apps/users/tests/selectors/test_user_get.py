@@ -9,6 +9,7 @@ import pytest
 from django.db import transaction
 
 from apps.users.models import User
+from apps.users.selectors import USER_CACHE_VERSION
 from apps.users.selectors import user_get
 from apps.users.selectors import user_list
 from apps.users.services import user_update
@@ -46,6 +47,40 @@ def test_user_get_is_served_from_the_cache_the_second_time(
         second = user_get(public_id=user.public_id)
 
     assert first == second == user
+
+
+def test_a_cached_user_is_never_returned_for_another_id(
+    cache_writes: CacheWrites,
+    django_assert_num_queries,
+) -> None:
+    first = UserFactory(name="Ada")
+    second = UserFactory(name="Grace")
+    with cache_writes():
+        user_get(public_id=first.public_id)
+
+    with django_assert_num_queries(1):
+        got = user_get(public_id=second.public_id)
+
+    assert got == second
+    assert got.name == "Grace"
+
+
+def test_a_new_cache_version_ignores_the_entries_of_the_old_one(
+    user: User,
+    cache_writes: CacheWrites,
+    django_assert_num_queries,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The version goes up when User's fields change: the instances pickled
+    # under the old one must not come back.
+    with cache_writes():
+        user_get(public_id=user.public_id)
+    monkeypatch.setattr(
+        "apps.users.selectors.USER_CACHE_VERSION", USER_CACHE_VERSION + 1
+    )
+
+    with django_assert_num_queries(1):
+        assert user_get(public_id=user.public_id) == user
 
 
 def test_user_get_returns_fresh_data_after_a_write_through_the_service(

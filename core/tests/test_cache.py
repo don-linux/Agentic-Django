@@ -5,15 +5,18 @@ import re
 from contextlib import suppress
 from typing import TYPE_CHECKING
 from typing import Any
+from unittest import mock
 
 import pytest
 from django.core.cache import caches
 from django.db import transaction
 
+from core.cache import _MAX_PARTS_LENGTH
 from core.cache import NAMESPACE_TTL
 from core.cache import build_key
 from core.cache import invalidate
 from core.cache import read_through
+from core.cache_backend import ValkeyCache
 
 if TYPE_CHECKING:
     from pytest_django.fixtures import DjangoCaptureOnCommitCallbacks
@@ -84,6 +87,16 @@ def test_many_parts_never_make_an_overlong_key() -> None:
     caches["default"].set(key, 1, ONE_MINUTE)
 
 
+def test_a_tail_of_exactly_the_maximum_length_is_kept_as_it_is() -> None:
+    # Each part is safe on its own (64 characters at most); only a longer
+    # joined tail is hashed.
+    parts = ("a" * 64, "b" * 64, "c" * (_MAX_PARTS_LENGTH - 130))
+    tail = ":".join(parts)
+    assert len(tail) == _MAX_PARTS_LENGTH
+
+    assert build_key(NAMESPACE, *parts).endswith(f":{tail}")
+
+
 @pytest.mark.parametrize("namespace", ["users", "Users.User", "users.user.x", "a b.c"])
 def test_a_namespace_is_app_dot_resource(namespace: str) -> None:
     with pytest.raises(ValueError, match=NAMESPACE_SHAPE):
@@ -98,6 +111,36 @@ def test_a_namespace_is_app_dot_resource(namespace: str) -> None:
 def test_a_cached_read_needs_a_positive_ttl(ttl: int) -> None:
     with pytest.raises(ValueError, match="positive ttl"):
         read_through(NAMESPACE, 1, ttl=ttl, loader=_Loader(1))
+
+
+def test_a_one_second_ttl_is_cached(
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    loader = _Loader("value")
+    with django_capture_on_commit_callbacks(execute=True):
+        read_through(NAMESPACE, 1, ttl=1, loader=loader)
+
+    assert read_through(NAMESPACE, 1, ttl=1, loader=loader) == "value"
+    assert loader.calls == 1
+
+
+def test_a_cached_read_is_stored_with_its_ttl(
+    monkeypatch: pytest.MonkeyPatch,
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    backend = caches["default"]
+    timeouts: list[float | None] = []
+    real_set = backend.set
+
+    def set_(key: str, value: object, timeout: float | None = None) -> None:
+        timeouts.append(timeout)
+        real_set(key, value, timeout)
+
+    monkeypatch.setattr(backend, "set", set_)
+    with django_capture_on_commit_callbacks(execute=True):
+        _read(_Loader("value"), 1)
+
+    assert timeouts == [ONE_MINUTE]
 
 
 def test_a_read_is_stored_only_after_the_commit() -> None:
@@ -171,6 +214,26 @@ def test_a_failing_cache_read_falls_back_to_the_loader(
     assert [record.getMessage() for record in caplog.records] == [
         f"cache read failed for {NAMESPACE}",
     ]
+    # The warning carries the traceback, not a bare True or False.
+    exc_info = caplog.records[0].exc_info
+    assert exc_info
+    assert exc_info[0] is RuntimeError
+
+
+def test_a_failing_store_after_the_commit_does_not_fail_the_request(
+    monkeypatch: pytest.MonkeyPatch,
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    def broken_set(*_args: object, **_kwargs: object) -> None:
+        message = "cannot pickle this value"
+        raise RuntimeError(message)
+
+    monkeypatch.setattr(caches["default"], "set", broken_set)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        value = _read(_Loader("from the database"), 1)
+
+    assert value == "from the database"
 
 
 def test_reads_still_answer_during_a_valkey_outage(settings: Settings) -> None:
@@ -244,6 +307,23 @@ def test_namespace_versions_expire_like_every_other_key(
     assert timeouts == [NAMESPACE_TTL, NAMESPACE_TTL]
 
 
+def test_invalidate_on_valkey_writes_a_new_version_that_expires(
+    monkeypatch: pytest.MonkeyPatch,
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    backend = mock.Mock(spec=ValkeyCache)
+    monkeypatch.setattr("core.cache._backend", lambda: backend)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        invalidate(NAMESPACE)
+        invalidate(NAMESPACE)
+
+    first, second = (call.args for call in backend.strict_set.call_args_list)
+    assert None not in (first[1], second[1])
+    assert first[1] != second[1]
+    assert first[2] == second[2] == NAMESPACE_TTL
+
+
 def test_a_lost_version_never_revives_old_entries(
     django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
 ) -> None:
@@ -256,6 +336,18 @@ def test_a_lost_version_never_revives_old_entries(
 
     assert _read(fresh, 1) == "fresh"
     assert fresh.calls == 1
+
+
+def test_a_version_lost_right_after_it_was_added_still_gives_a_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Evicted between add() and the read back: the key uses the version this
+    # call wrote.
+    backend = caches["default"]
+    monkeypatch.setattr(backend, "add", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(backend, "get", lambda _key, default=None: default)
+
+    assert re.fullmatch(r"tests\.thing:v\d+:1", build_key(NAMESPACE, 1))
 
 
 def test_invalidate_never_fails_open(

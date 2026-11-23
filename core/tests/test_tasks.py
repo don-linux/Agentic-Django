@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from contextlib import suppress
 from typing import TYPE_CHECKING
@@ -17,13 +18,22 @@ from core.middleware import request_id_var
 from core.tasks import enqueue_on_commit
 from core.tasks import ping
 from core.tests.production_settings import run_python
+from core.tests.sockets import hanging_tcp_server
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from collections.abc import Iterator
 
     from pytest_django.fixtures import DjangoCaptureOnCommitCallbacks
 
 pytestmark = pytest.mark.django_db
+
+# The real-broker tests: each publish attempt gives up after one socket
+# timeout, so a broker outage does not hold the request that enqueues.
+SOCKET_TIMEOUT = 0.2
+ENQUEUE_ANSWER_SECONDS = 2
+# A broker that accepts and never answers also costs a read timeout per attempt.
+HUNG_BROKER_ANSWER_SECONDS = 4 * SOCKET_TIMEOUT + 1.5
 
 _RECORDED: list[int] = []
 
@@ -191,3 +201,85 @@ def test_in_eager_mode_a_tasks_own_error_reaches_the_caller(
         django_capture_on_commit_callbacks(execute=True),
     ):
         enqueue_on_commit(_fail)
+
+
+@pytest.fixture
+def real_broker() -> Iterator[Callable[[str], None]]:
+    """Publish for real, to the broker URL the test gives; restore the app after."""
+    conf = celery_app.conf
+    saved = {
+        "task_always_eager": conf.task_always_eager,
+        "broker_url": conf.broker_url,
+        "broker_transport_options": conf.broker_transport_options,
+    }
+
+    def point_at(url: str) -> None:
+        conf.task_always_eager = False
+        conf["broker_url"] = url
+        conf.broker_transport_options = {
+            "socket_connect_timeout": SOCKET_TIMEOUT,
+            "socket_timeout": SOCKET_TIMEOUT,
+            "socket_keepalive": True,
+        }
+        # The production publish retry policy stays: it is what bounds the
+        # request (test_publishing_gives_up_after_two_quick_retries).
+
+    # Celery keeps its broker pools from the first publish: the test gets fresh
+    # ones for its broker, and the suite gets its own back afterwards.
+    with (
+        mock.patch.object(celery_app, "_pool", None),
+        mock.patch.object(celery_app.amqp, "_producer_pool", None),
+    ):
+        try:
+            yield point_at
+        finally:
+            for name, value in saved.items():
+                setattr(conf, name, value)
+
+
+def _enqueue_errors(
+    caplog: pytest.LogCaptureFixture,
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> tuple[list[tuple[str, str]], float]:
+    started = time.monotonic()
+    with (
+        caplog.at_level(logging.ERROR),
+        django_capture_on_commit_callbacks(execute=True),
+    ):
+        # ping takes no arguments: Celery checks them before it contacts the
+        # broker.
+        enqueue_on_commit(ping)
+    elapsed = time.monotonic() - started
+    errors = [
+        (record.name, record.getMessage())
+        for record in caplog.records
+        if record.levelno == logging.ERROR
+    ]
+    return errors, elapsed
+
+
+def test_enqueue_on_commit_survives_a_closed_broker(
+    real_broker: Callable[[str], None],
+    caplog: pytest.LogCaptureFixture,
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    real_broker("redis://127.0.0.1:6390/7")
+
+    errors, elapsed = _enqueue_errors(caplog, django_capture_on_commit_callbacks)
+
+    assert errors == [("core.tasks", "could not enqueue task core.ping")]
+    assert elapsed < ENQUEUE_ANSWER_SECONDS
+
+
+def test_enqueue_on_commit_is_bounded_when_the_broker_hangs(
+    real_broker: Callable[[str], None],
+    caplog: pytest.LogCaptureFixture,
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    with hanging_tcp_server() as port:
+        real_broker(f"redis://127.0.0.1:{port}/7")
+
+        errors, elapsed = _enqueue_errors(caplog, django_capture_on_commit_callbacks)
+
+    assert errors == [("core.tasks", "could not enqueue task core.ping")]
+    assert elapsed < HUNG_BROKER_ANSWER_SECONDS

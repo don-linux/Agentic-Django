@@ -51,6 +51,7 @@ def test_notexample_com_is_not_treated_as_a_placeholder() -> None:
         ({"mailers": _smtp(host="smtp.example.org")}, "DJANGO_MAILER_HOST"),
         ({"mailers": _smtp(host="smtp.example.net")}, "DJANGO_MAILER_HOST"),
         ({"mailers": _smtp(use_ssl=True)}, "DJANGO_MAILER_USE_TLS"),
+        ({"mailers": {}}, "MAILERS"),
         (
             {
                 "mailers": {

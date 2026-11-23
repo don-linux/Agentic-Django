@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from typing import Any
 
-from ninja import NinjaAPI
-from ninja import Router
 from ninja.testing import TestClient
 
 from core.api.api import ContractAPI
 from core.api.exceptions import register_exception_handlers
 from core.api.throttling import AnonThrottle
 from core.api.throttling import UserThrottle
+
+if TYPE_CHECKING:
+    from ninja import NinjaAPI
 
 
 def make_api(*, throttle=None, auth=None) -> NinjaAPI:
@@ -22,18 +24,6 @@ def make_api(*, throttle=None, auth=None) -> NinjaAPI:
         throttle=throttle or [AnonThrottle(), UserThrottle()],
     )
     register_exception_handlers(api)
-    return api
-
-
-def open_get_api(*, throttle=None) -> NinjaAPI:
-    api = make_api(throttle=throttle, auth=None)
-    router = Router()
-
-    @router.get("/throttled/", auth=None)
-    def ok(request):
-        return {"ok": True}
-
-    api.add_router("/", router)
     return api
 
 

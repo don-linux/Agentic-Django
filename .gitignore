@@ -43,9 +43,6 @@ ENV/
 
 .mypy_cache/
 
-# mutmut working copies
-/mutants/
-
 # lychee request cache (only written when --cache is passed)
 .lycheecache
 
