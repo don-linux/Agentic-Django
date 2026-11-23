@@ -15,8 +15,11 @@ from typing import TYPE_CHECKING
 from typing import Any
 from typing import override
 
+from django.http import HttpRequest
+
 from core.middleware import NO_REQUEST_ID
 from core.middleware import request_id_var
+from core.middleware import request_ids
 
 if TYPE_CHECKING:
     from contextvars import Token
@@ -62,7 +65,14 @@ class RequestIdFilter(logging.Filter):
 
     @override
     def filter(self, record: logging.LogRecord) -> bool:
-        record.request_id = request_id_var.get()
+        request_id = request_id_var.get()
+        if request_id == NO_REQUEST_ID:
+            # Django logs a 4xx or 5xx response after the middleware returned;
+            # the record carries the request (extra={"request": ...}).
+            request = getattr(record, "request", None)
+            if isinstance(request, HttpRequest):
+                request_id = request_ids.get(request, NO_REQUEST_ID)
+        record.request_id = request_id
         return True
 
 

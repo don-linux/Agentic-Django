@@ -357,7 +357,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",
     # Inside every header middleware (CSP, no-store, CORS, X-Frame-Options), so its
-    # 405/406/415 responses get the same headers as Ninja's.
+    # 405, 406 and OPTIONS responses get the same headers as Ninja's.
     "core.api.negotiation.ApiContractMiddleware",
     # Last: turns an admin lockout into a 429 response.
     "axes.middleware.AxesMiddleware",

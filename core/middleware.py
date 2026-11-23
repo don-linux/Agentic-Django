@@ -16,6 +16,7 @@ from contextvars import ContextVar
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 from typing import override
+from weakref import WeakKeyDictionary
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
@@ -54,6 +55,11 @@ NO_REQUEST_ID = "-"
 # core.logging.RequestIdFilter and core.tasks.enqueue_on_commit read it; other code
 # calls request_id_var.get() (docs/ARCHITECTURE.md#deployment).
 request_id_var: ContextVar[str] = ContextVar("request_id", default=NO_REQUEST_ID)
+# The id of each request still in flight. Django logs a 4xx or 5xx response
+# (django.request, django.security) after the middleware has returned and reset
+# request_id_var; those records carry the request, and the logging filter finds
+# its id here. Weak keys: the entry goes with the request.
+request_ids: WeakKeyDictionary[HttpRequest, str] = WeakKeyDictionary()
 
 
 class HealthCheckMiddleware:
@@ -132,6 +138,7 @@ class RequestIdMiddleware:
             incoming if _VALID_REQUEST_ID.fullmatch(incoming) else uuid.uuid4().hex
         )
         token = request_id_var.set(request_id)
+        request_ids[request] = request_id
         try:
             _tag_error_reports(request_id)
             response = self.get_response(request)
@@ -161,6 +168,9 @@ class ApiCommonMiddleware(CommonMiddleware):
         if request.path_info.startswith("/api/"):
             return False
         return super().should_redirect_with_slash(request)
+
+
+_BODY_HEADERS = frozenset({"content-type", "content-length"})
 
 
 class ApiDebugErrorMiddleware:
@@ -195,7 +205,15 @@ class ApiDebugErrorMiddleware:
         status = HTTPStatus(response.status_code)
         if response.get("Content-Type", "").startswith("application/json"):
             return response
-        return self._json_error(request, status)
+        replacement = self._json_error(request, status)
+        # The response being replaced went through the middleware inside this
+        # one (CORS, X-Frame-Options): keep the headers and cookies they set,
+        # but not those that describe the old body.
+        for header, value in response.items():
+            if header.lower() not in _BODY_HEADERS:
+                replacement[header] = value
+        replacement.cookies.update(response.cookies)
+        return replacement
 
     def _json_error(self, request: HttpRequest, status: HTTPStatus) -> HttpResponse:
         handler = import_string(self._HANDLERS[status])

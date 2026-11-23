@@ -4,17 +4,23 @@ import importlib.util
 import json
 import logging
 import sys
+import uuid
+from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING
+from typing import override
+
+import pytest
 
 from core.logging import JsonFormatter
 from core.logging import RequestIdFilter
+from core.middleware import NO_REQUEST_ID
 from core.middleware import request_id_var
 
 if TYPE_CHECKING:
     from types import ModuleType
 
-    import pytest
+    from django.test import Client
 
 GUNICORN_CONF = Path(__file__).resolve().parents[2] / "docker/prod/gunicorn.conf.py"
 
@@ -158,3 +164,33 @@ def test_gunicorn_conf_reads_the_environment(monkeypatch: pytest.MonkeyPatch) ->
         60,
         40,
     )
+
+
+class _Collect(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__()
+        self.records: list[logging.LogRecord] = []
+
+    @override
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
+@pytest.mark.django_db
+def test_a_response_django_logs_keeps_the_request_id(client: Client) -> None:
+    # Django logs a 4xx (django.request) after the middleware chain returned
+    # and RequestIdMiddleware reset request_id_var; the record carries the
+    # request, and the filter takes the id from it.
+    request_id = uuid.uuid4().hex
+    handler = _Collect()
+    logger = logging.getLogger("django.request")
+    logger.addHandler(handler)
+    try:
+        response = client.get("/api/v1/users/me/", headers={"X-Request-ID": request_id})
+    finally:
+        logger.removeHandler(handler)
+    assert response.status_code == HTTPStatus.UNAUTHORIZED
+    assert request_id_var.get() == NO_REQUEST_ID
+    (record,) = handler.records
+    assert RequestIdFilter().filter(record)
+    assert getattr(record, "request_id", None) == request_id
