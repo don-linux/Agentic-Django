@@ -104,28 +104,14 @@ def test_field_errors_are_keyed_by_field_whatever_the_parameter_name() -> None:
     assert _fields(_post("/named-body/", BAD)) == expected
 
 
-def test_a_body_field_named_page_is_a_400_not_an_invalid_page_404() -> None:
-    response = _post(
-        "/named-body/",
-        {
-            "title": "t",
-            "body": "b",
-            "path": "p",
-            "page": "x",
-            "address": {"city": "c"},
-            "tags": [],
-        },
-    )
-    assert _fields(response) == {"page": NOT_AN_INTEGER}
-
-
-@pytest.mark.parametrize("query", ["?page=x", "?page=1&page_size=x"])
-def test_an_invalid_page_or_page_size_query_parameter_is_the_invalid_page_404(
-    query: str,
+@pytest.mark.parametrize(
+    ("query", "field"), [("?page=x", "page"), ("?page=1&page_size=x", "page_size")]
+)
+def test_a_page_or_page_size_query_error_is_a_field_error_like_any_other(
+    query: str, field: str
 ) -> None:
     response = _client().get(f"/query-page/{query}")
-    assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"code": "not_found", "detail": "Not Found"}
+    assert _fields(response) == {field: NOT_AN_INTEGER}
 
 
 def test_another_invalid_query_parameter_is_a_400_field_error() -> None:

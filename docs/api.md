@@ -64,8 +64,8 @@ The API keeps `{"code", "detail"}` with `application/json`. `detail` already has
 
 ## Pagination
 
-- Default: `core.api.pagination.LimitPageNumberPagination`. `?page=` and `?page_size=` (20 by default, at most 100); the response is `count`, `next`, `previous`, `results`. Every page runs `COUNT(*)` plus `OFFSET`, which slows down with depth, so pages deeper than `DJANGO_API_MAX_PAGE_NUMBER` (1000) are a `404 not_found`, like any page past the end. Use it for admin-like lists where the total matters.
-- Opt-in: `@paginate(LimitCursorPagination)` from `core.api.pagination` ([Ninja: CursorPagination](https://django-ninja.dev/guide/pagination/#cursorpagination)) for large or append-heavy tables, feeds, and infinite scroll. Clients follow the `next`/`previous` links (`?cursor=`); there is no `count`, and every page costs the same at any depth. It orders by `-public_id`; a custom `ordering` must be unique and indexed. An invalid page number (`?page=abc`, `0`, or `-1`) on a page-number list is a `404` with detail `Invalid page.`, like a page past the end. An invalid cursor (`?cursor=not-a-cursor`) on a cursor-paginated endpoint is Ninja's `400` validation error; it is not mapped to `404`, and `/api/v1/users/` does not use cursor pagination.
+- Default: `core.api.pagination.LimitPageNumberPagination`. `?page=` and `?page_size=` (20 by default, at most 100); the response is `count`, `next`, `previous`, `results`. Both parameters are whole numbers of at least 1, validated as in Ninja's own `PageNumberPagination`: anything else (`?page=abc`, `?page=`, `?page=0`, `?page_size=-1`) is a `400 validation_error` with the parameter under `fields`, and a `page_size` above 100 is cut to 100. Every page runs `COUNT(*)` plus `OFFSET`, which slows down with depth, so pages deeper than `DJANGO_API_MAX_PAGE_NUMBER` (1000) are a `404 not_found`, like any page past the end. Use it for admin-like lists where the total matters.
+- Opt-in: `@paginate(LimitCursorPagination)` from `core.api.pagination` ([Ninja: CursorPagination](https://django-ninja.dev/guide/pagination/#cursorpagination)) for large or append-heavy tables, feeds, and infinite scroll. Clients follow the `next`/`previous` links (`?cursor=`); there is no `count`, and every page costs the same at any depth. It orders by `-public_id`; a custom `ordering` must be unique and indexed. An invalid cursor (`?cursor=not-a-cursor`) is Ninja's `400` validation error under `fields.cursor`, like a malformed page number on a page-number list; `/api/v1/users/` does not use cursor pagination.
 - Opt-in: `core.api.pagination.CachedCountPageNumberPagination` for page-number lists over a large table, where `COUNT(*)` is the expensive query of every page. It caches the total of each query in Valkey for 60 seconds, so `count` and the last page number may lag by up to a minute, or less when the service that writes the model calls `core.cache.invalidate()`. The key is the SQL of the queryset, so each user's or tenant's list has its own total. The rows of a page are never cached, and cursor pages have no count to cache.
 
 ## Idempotent retries
@@ -160,14 +160,15 @@ The schema documents error responses with the `ErrorSchema` and `ValidationError
 
 - `400` → a `oneOf` of `ValidationErrorSchema` (field errors, `fields` present) and `ErrorSchema` (malformed JSON, `parse_error`) for `POST`, `PUT`, and `PATCH`;
 - `401` and `403` → `ErrorSchema` on authenticated operations. `401` declares the `WWW-Authenticate` header;
-- `404` → `ErrorSchema` for operations with a path parameter, and for page-number list endpoints (an invalid or too-deep `?page=` is 404);
+- `404` → `ErrorSchema` for operations with a path parameter, and for page-number list endpoints (a page past the last one, or deeper than `DJANGO_API_MAX_PAGE_NUMBER`, is 404);
+- `400` → `ValidationErrorSchema` on page-number list endpoints too (a malformed `page` or `page_size`);
 - `406` → `ErrorSchema` when the operation only renders JSON;
 - `415` → `ErrorSchema` on write operations that only parse JSON;
 - `429` → `ErrorSchema` when throttles apply (the global ones count), with the `Retry-After` header.
 
 `405` is not listed on every operation: the allowed methods are the operation keys themselves, and a wrong method still returns `method_not_allowed` with `Allow`.
 
-Nothing adds them automatically: each operation spreads the error map that fits it into `response=` ([Ninja: multiple response schemas](https://django-ninja.dev/guide/responses/#multiple-response-schemas)) and passes the same map to `openapi_extra=response_docs(...)` ([Ninja: openapi_extra](https://django-ninja.dev/guide/operations/#openapi_extra)), which adds the descriptions and the headers. The maps live in `core/api/responses.py`: `READ_ERRORS` (401, 403, 406, 429), `LOOKUP_ERRORS` and `LIST_ERRORS` (plus 404), and `WRITE_ERRORS` (plus 400 and 415); combine them, for example `response={200: ThingOut, **LOOKUP_ERRORS, **WRITE_ERRORS}`. `core/tests/ninja/test_openapi_responses.py` fails when an operation leaves out the common ones. Request and response bodies are separate components: `UserUpdateIn` carries only writable fields, while `UserOut` also has the read-only `id` and `url`. The Swagger UI at `/api/v1/docs/` is staff-only and is not itself an entry in the committed contract.
+Nothing adds them automatically: each operation spreads the error map that fits it into `response=` ([Ninja: multiple response schemas](https://django-ninja.dev/guide/responses/#multiple-response-schemas)) and passes the same map to `openapi_extra=response_docs(...)` ([Ninja: openapi_extra](https://django-ninja.dev/guide/operations/#openapi_extra)), which adds the descriptions and the headers. The maps live in `core/api/responses.py`: `READ_ERRORS` (401, 403, 406, 429), `LOOKUP_ERRORS` (plus 404), `LIST_ERRORS` (plus 404 and 400), and `WRITE_ERRORS` (plus 400 and 415); combine them, for example `response={200: ThingOut, **LOOKUP_ERRORS, **WRITE_ERRORS}`. `core/tests/ninja/test_openapi_responses.py` fails when an operation leaves out the common ones. Request and response bodies are separate components: `UserUpdateIn` carries only writable fields, while `UserOut` also has the read-only `id` and `url`. The Swagger UI at `/api/v1/docs/` is staff-only and is not itself an entry in the committed contract.
 
 Every operation sets `operation_id` explicitly, `<app>_<resource>_<action>` (for example `users_me_retrieve` under the `users` tag), so a renamed function never changes the contract ([Ninja: operation_id](https://django-ninja.dev/guide/operations/#operation_id)). When `/api/v2/` opens, serve one schema per version instead of one schema with both.
 
@@ -214,11 +215,10 @@ It runs in `scripts/check.sh test` and in the `test` job, in about ten seconds.
 
 A failure prints the request as a `curl` command. Fix the server or the schema, whichever is wrong, and regenerate `docs/openapi.json` after a schema change ([Breaking changes](#breaking-changes)).
 
-The API accepts three kinds of input that its schema calls invalid, on purpose, as DRF did. The test drops exactly those failures (`filter_failure`):
+The API accepts two kinds of input that its schema calls invalid, on purpose, as DRF did. The test drops exactly those failures (`filter_failure`):
 
 | Input | What the API does | Test that pins it |
 | --- | --- | --- |
-| A `page_size` that is not an integer | Uses the default page size | `core/tests/ninja/test_parity_pins.py` |
 | A number for `name` in a user `PATCH` | Stores it as text | `core/tests/http/test_negative_paths.py` |
 | `id` or `url` in a user `PATCH`, as in a `GET` body sent back | Ignores them | `apps/users/tests/http/test_views.py` |
 

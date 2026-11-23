@@ -54,11 +54,10 @@ def test_page_size_is_capped_at_100() -> None:
 
 
 @override_settings(API_MAX_PAGE_NUMBER=2)
-@pytest.mark.parametrize("page", ["3", "last"])
-def test_pages_beyond_the_cap_are_404(page: str) -> None:
+def test_pages_beyond_the_cap_are_404() -> None:
     _create_users(5)
 
-    response = _list(ordered_api(), f"?page_size=1&page={page}")
+    response = _list(ordered_api(), "?page_size=1&page=3")
 
     assert response.status_code == HTTPStatus.NOT_FOUND
     assert response.json() == {"code": "not_found", "detail": "Not Found"}

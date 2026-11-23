@@ -14,27 +14,35 @@ from core.tests.ninja.pagination_views import ordered_api
 pytestmark = pytest.mark.django_db
 
 
-@pytest.mark.parametrize("page", ["abc", "1.5", "none"])
-def test_a_non_numeric_page_is_404_not_found(page: str) -> None:
+@pytest.mark.parametrize(
+    ("query", "field", "code"),
+    [
+        ("page=abc", "page", "int_parsing"),
+        ("page=1.5", "page", "int_parsing"),
+        ("page=", "page", "int_parsing"),
+        ("page=last", "page", "int_parsing"),
+        ("page=0", "page", "greater_than_equal"),
+        ("page=-1", "page", "greater_than_equal"),
+        ("page_size=abc", "page_size", "int_parsing"),
+        ("page_size=0", "page_size", "greater_than_equal"),
+    ],
+)
+def test_a_malformed_page_or_page_size_is_a_400_field_error(
+    query: str, field: str, code: str
+) -> None:
     _create_users(1)
-    response = _list(ordered_api(), f"?page={page}")
-    assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"code": "not_found", "detail": "Not Found"}
-
-
-@pytest.mark.parametrize("page", ["0", "-1"])
-def test_zero_or_negative_pages_are_404_without_hitting_valueerror(page: str) -> None:
-    _create_users(1)
-    response = _list(ordered_api(), f"?page={page}")
-    assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"code": "not_found", "detail": "Not Found"}
+    response = _list(ordered_api(), f"?{query}")
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    body = response.json()
+    assert body["code"] == "validation_error"
+    assert [item["code"] for item in body["fields"][field]] == [code]
 
 
 def test_an_invalid_cursor_is_400_on_the_cursor_field() -> None:
     _create_users(1)
     response = _list(cursor_api(), "?cursor=not-a-cursor")
-    # A cursor is a query field: a bad one is a 400 validation error, unlike
-    # an out-of-range page number, which stays 404.
+    # A cursor is a query field: a bad one is a 400 validation error, like a
+    # malformed page number.
     assert response.status_code == HTTPStatus.BAD_REQUEST
     assert response.json()["code"] == "validation_error"
     assert response.json()["fields"] == {

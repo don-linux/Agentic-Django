@@ -1,9 +1,9 @@
 """docs/openapi.json declares every status the runtime answers (docs/api.md).
 
-The DRF contract listed 401/403/406/429 on every operation, 400/415 on
-writes, 404 on lookups and paginated lists, and the WWW-Authenticate and
-Retry-After headers. oasdiff does not flag a removed error response, so this
-test is the only guard.
+Every operation lists 401/403/406/429, writes add 400/415, lookups add 404,
+paginated lists add 404 and 400, and the WWW-Authenticate and Retry-After
+headers are documented. oasdiff does not flag a removed error response, so
+this test is the only guard.
 """
 
 from __future__ import annotations
@@ -39,6 +39,9 @@ def test_every_operation_declares_the_shared_error_responses() -> None:
             expected |= WRITE
         if "{" in path or op["operationId"].endswith("_list"):
             expected.add("404")
+        if op["operationId"].endswith("_list"):
+            # A malformed page or page_size (docs/api.md#pagination).
+            expected.add("400")
         assert expected <= codes, (path, method, sorted(expected - codes))
 
 
@@ -57,7 +60,7 @@ def test_read_only_and_non_nullable_fields_match_the_runtime() -> None:
     user = schemas["UserOut"]["properties"]
     assert user["id"]["readOnly"] is True
     assert user["url"]["readOnly"] is True
-    # null is a 400 "null" at runtime, so the request schema must not offer it.
+    # null is a 400 string_type at runtime, so the request schema must not offer it.
     assert schemas["UserUpdateIn"]["properties"]["name"] == {
         "maxLength": 255,
         "title": "Name",
@@ -74,6 +77,8 @@ def test_statuses_seen_at_runtime_are_declared(user: User) -> None:
     probes = [
         ("GET", "/api/v1/users/", {}, None),
         ("GET", "/api/v1/users/?page=99", {}, None),
+        ("GET", "/api/v1/users/?page=abc", {}, None),
+        ("GET", "/api/v1/users/?page_size=0", {}, None),
         ("GET", "/api/v1/users/me/", {"HTTP_ACCEPT": "text/html"}, None),
         ("PATCH", "/api/v1/users/me/", {}, "name=x"),
         ("PATCH", "/api/v1/users/me/", {}, '{"name": null}'),

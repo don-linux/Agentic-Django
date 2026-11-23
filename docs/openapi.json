@@ -17,6 +17,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "minimum": 1,
                   "type": "integer"
                 },
                 {
@@ -35,6 +36,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "minimum": 1,
                   "type": "integer"
                 },
                 {
@@ -116,11 +118,21 @@
             }
           },
           "404": {
-            "description": "Not found, not visible, or an invalid page number.",
+            "description": "Not found, not visible, or a page past the last one.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorSchema"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (`fields` present), or a request body that cannot be parsed (no `fields`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorSchema"
                 }
               }
             }
@@ -296,7 +308,7 @@
             }
           },
           "400": {
-            "description": "Validation error (`fields` present) or parse error (no `fields`).",
+            "description": "Validation error (`fields` present), or a request body that cannot be parsed (no `fields`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -435,7 +447,7 @@
             }
           },
           "404": {
-            "description": "Not found, not visible, or an invalid page number.",
+            "description": "Not found, not visible, or a page past the last one.",
             "content": {
               "application/json": {
                 "schema": {
@@ -540,7 +552,7 @@
             }
           },
           "404": {
-            "description": "Not found, not visible, or an invalid page number.",
+            "description": "Not found, not visible, or a page past the last one.",
             "content": {
               "application/json": {
                 "schema": {
@@ -550,7 +562,7 @@
             }
           },
           "400": {
-            "description": "Validation error (`fields` present) or parse error (no `fields`).",
+            "description": "Validation error (`fields` present), or a request body that cannot be parsed (no `fields`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -613,6 +625,7 @@
           "page": {
             "anyOf": [
               {
+                "minimum": 1,
                 "type": "integer"
               },
               {
@@ -625,6 +638,7 @@
           "page_size": {
             "anyOf": [
               {
+                "minimum": 1,
                 "type": "integer"
               },
               {

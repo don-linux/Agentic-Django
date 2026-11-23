@@ -183,27 +183,6 @@ def test_a_fractional_wait_is_rounded_up(wait: float, seconds: str) -> None:
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("raw", ["abc", "0", "-1"])
-def test_a_bad_page_size_falls_back_to_the_default(raw: str) -> None:
-    users = 3
-    _create_users(users)
-    response = _list(ordered_api(), f"?page_size={raw}")
-    assert response.status_code == HTTPStatus.OK
-    assert len(response.json()["results"]) == users
-
-
-@pytest.mark.django_db
-def test_an_empty_page_parameter_is_the_first_page() -> None:
-    # DRF 3.18.3 PageNumberPagination: `query_params.get(page_query_param) or 1`.
-    _create_users(2)
-    empty = _list(ordered_api(), "?page=&page_size=1").json()
-    first = _list(ordered_api(), "?page=1&page_size=1").json()
-    assert empty["results"] == first["results"]
-    assert empty["previous"] is None
-    assert empty["next"] is not None
-
-
-@pytest.mark.django_db
 def test_the_previous_link_to_the_first_page_has_no_page_parameter() -> None:
     # DRF 3.18.3 PageNumberPagination.get_previous_link: remove_query_param for
     # page 1, replace_query_param otherwise. ninja.testing's request URL has no

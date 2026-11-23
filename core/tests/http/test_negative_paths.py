@@ -203,14 +203,41 @@ def test_seed_dev_rolls_back_users_when_an_app_hook_fails(
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("page", ["abc", "0", "-1"])
-def test_users_list_rejects_an_invalid_page(
-    user: User, user_client: Client, page: str
+@pytest.mark.parametrize(
+    ("query", "field", "code"),
+    [
+        ("page=abc", "page", "int_parsing"),
+        ("page=", "page", "int_parsing"),
+        ("page=last", "page", "int_parsing"),
+        ("page=0", "page", "greater_than_equal"),
+        ("page=-1", "page", "greater_than_equal"),
+        ("page_size=abc", "page_size", "int_parsing"),
+        ("page_size=0", "page_size", "greater_than_equal"),
+        ("page_size=-1", "page_size", "greater_than_equal"),
+    ],
+)
+def test_users_list_rejects_a_malformed_page_or_page_size(
+    user: User, user_client: Client, query: str, field: str, code: str
 ) -> None:
-    response = user_client.get(f"/api/v1/users/?page={page}")
+    response = user_client.get(f"/api/v1/users/?{query}")
 
-    assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"code": "not_found", "detail": "Not Found"}
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    body = response.json()
+    assert body["code"] == "validation_error"
+    assert [item["code"] for item in body["fields"][field]] == [code]
+
+
+@pytest.mark.django_db
+def test_users_list_cuts_a_page_size_above_100_and_404s_past_the_last_page(
+    user: User, user_client: Client
+) -> None:
+    listed = user_client.get("/api/v1/users/?page_size=101")
+    past_the_end = user_client.get("/api/v1/users/?page=2")
+
+    assert listed.status_code == HTTPStatus.OK
+    assert listed.json()["count"] == 1
+    assert past_the_end.status_code == HTTPStatus.NOT_FOUND
+    assert past_the_end.json() == {"code": "not_found", "detail": "Not Found"}
 
 
 @pytest.mark.django_db

@@ -30,8 +30,9 @@ READ_ERRORS: dict[int, Any] = {
     429: ErrorSchema,
 }
 LOOKUP_ERRORS: dict[int, Any] = {**READ_ERRORS, 404: ErrorSchema}
-# A page past the end, or an invalid page number, is a 404 (docs/api.md).
-LIST_ERRORS: dict[int, Any] = LOOKUP_ERRORS
+# A malformed page or page_size is a 400 with fields; a page past the last one
+# is a 404 (docs/api.md#pagination).
+LIST_ERRORS: dict[int, Any] = {**LOOKUP_ERRORS, 400: ValidationErrorSchema}
 
 
 def _one_of(schema: dict[str, Any]) -> None:
@@ -53,7 +54,8 @@ WRITE_ERRORS: dict[int, Any] = {
 RESPONSE_DOCS: dict[str, dict[str, Any]] = {
     "400": {
         "description": (
-            "Validation error (`fields` present) or parse error (no `fields`)."
+            "Validation error (`fields` present), or a request body that cannot "
+            "be parsed (no `fields`)."
         )
     },
     "401": {
@@ -71,7 +73,7 @@ RESPONSE_DOCS: dict[str, dict[str, Any]] = {
             "Hidden objects are 404, not 403."
         )
     },
-    "404": {"description": "Not found, not visible, or an invalid page number."},
+    "404": {"description": "Not found, not visible, or a page past the last one."},
     "406": {"description": "The Accept header cannot be satisfied."},
     "415": {"description": "The request Content-Type is not accepted."},
     "429": {

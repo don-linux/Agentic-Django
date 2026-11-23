@@ -17,7 +17,6 @@ curl command that reproduces it. See docs/api.md#contract-conformance and ADR 00
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
 import pytest
@@ -43,19 +42,6 @@ CALLER = "conformance@example.com"
 EXAMPLES_PER_OPERATION = 50
 # negative_data_rejection: the API accepted a request the schema calls invalid.
 ACCEPTED_INVALID_INPUT = "ST201"
-INTEGER = re.compile(r"[+-]?\d+")
-
-
-def _bad_page_size(case: Case) -> bool:
-    # A page_size that is not an integer falls back to the default page size, as
-    # in DRF (core/tests/ninja/test_parity_pins.py,
-    # test_a_bad_page_size_falls_back_to_the_default).
-    page_size = (case.query or {}).get("page_size")
-    if case.operation.label != "GET /api/v1/users/" or page_size is None:
-        return False
-    if isinstance(page_size, int) and not isinstance(page_size, bool):
-        return False
-    return not (isinstance(page_size, str) and INTEGER.fullmatch(page_size))
 
 
 def _lenient_user_update(case: Case) -> bool:
@@ -78,7 +64,7 @@ def filter_failure(
     """Keep every failure except the invalid input the API accepts on purpose."""
     if failure.code != ACCEPTED_INVALID_INPUT:
         return True
-    return not (_bad_page_size(case) or _lenient_user_update(case))
+    return not _lenient_user_update(case)
 
 
 @pytest.fixture

@@ -3,9 +3,11 @@ List pagination on Ninja's PageNumberPagination, with the
 count/next/previous/results envelope.
 
 Native Ninja 1.8.0 returns {items, count}, defaults to 100 per page, and does
-not 404 past the last page. This class keeps count/next/previous/results,
-page_size 20 (max 100), 404 past the last page or DJANGO_API_MAX_PAGE_NUMBER,
-so tests/http/ stay unchanged. See docs/api.md#pagination.
+not 404 past the last page. This class keeps the published envelope
+count/next/previous/results with absolute links, page_size 20 (max 100), and
+a 404 past the last page or DJANGO_API_MAX_PAGE_NUMBER. page and page_size are
+validated like Ninja's own Input: a value that is not a whole number of at
+least 1 is a 400. See docs/api.md#pagination.
 
 Sources: django-ninja 1.8.0 ninja/pagination.py (PageNumberPagination.Output,
 items_attribute, paginate_queryset) and Context7 /websites/django-ninja_dev
@@ -32,9 +34,6 @@ from ninja import Field
 from ninja import Schema
 from ninja.pagination import CursorPagination as NinjaCursorPagination
 from ninja.pagination import PageNumberPagination
-from pydantic import ValidationError as PydanticValidationError
-from pydantic import ValidatorFunctionWrapHandler
-from pydantic import field_validator
 
 from core.cache import read_through
 
@@ -49,37 +48,22 @@ class PageNumberOut(Schema):
 
 
 class PageNumberIn(Schema):
-    # Documented as integer (the previous contract). Invalid values such as
-    # "abc", 0 or -1 become 404: the ValidationError handler
-    # maps query page/page_size failures, and paginate_queryset rejects
-    # out-of-range numbers (tests/http/).
+    # ge=1 as in Ninja's PageNumberPagination.Input: "abc", 0 or -1 is a 400
+    # validation_error under fields.page or fields.page_size. Both stay
+    # nullable: removing null from a published query parameter is an oasdiff
+    # ERR (request-parameter-became-not-nullable).
     page: int | None = Field(
-        default=None, description="A page number within the paginated result set."
+        default=None,
+        ge=1,
+        description="A page number within the paginated result set.",
     )
     page_size: int | None = Field(
-        default=None, description="Number of results to return per page."
+        default=None, ge=1, description="Number of results to return per page."
     )
-
-    @field_validator("page", "page_size", mode="wrap")
-    @classmethod
-    def _lenient(cls, value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
-        # paginate_queryset reads the raw query string with DRF's rules.
-        try:
-            return handler(value)
-        except PydanticValidationError:
-            return None
-
-
-def _positive_int(raw: str, cutoff: int) -> int:
-    """DRF's _positive_int(strict=True): int(), > 0, capped at cutoff."""
-    value = int(raw)
-    if value <= 0:
-        raise ValueError(raw)
-    return min(value, cutoff)
 
 
 def _set_query_param(url: str, key: str, value: str | None) -> str:
-    """DRF's replace_query_param / remove_query_param (sorted keys, lists kept)."""
+    """Set or remove one query parameter of url; keys sorted, repeated ones kept."""
     scheme, netloc, path, query, fragment = urlsplit(url)
     params = parse_qs(query, keep_blank_values=True)
     if value is None:
@@ -145,25 +129,15 @@ class LimitPageNumberPagination(PageNumberPagination):
         if not isinstance(pagination, PageNumberIn):
             msg = f"expected PageNumberIn, got {type(pagination).__name__}"
             raise TypeError(msg)
-        # DRF PageNumberPagination: a bad page_size falls back to the default;
-        # an empty page is 1; "last" is the last page; anything else is 404.
-        page_size = self.page_size
-        if "page_size" in request.GET:
-            try:
-                page_size = _positive_int(request.GET["page_size"], self.max_page_size)
-            except ValueError:
-                page_size = self.page_size
-        raw_page = request.GET.get("page") or "1"
-
+        # A page_size above max_page_size is cut to it, as Ninja's
+        # PageNumberPagination._get_page_size does.
+        page_size = min(pagination.page_size or self.page_size, self.max_page_size)
+        page = pagination.page or 1
         count = self.count_items(queryset)
         total_pages = max(1, ceil(count / page_size))
-        if raw_page == "last":
-            raw_page = str(total_pages)
-        try:
-            page = int(raw_page)
-        except ValueError:
-            raise Http404 from None
-        if page > self.max_page_number or page < 1 or page > total_pages:
+        # Past the last page, or deeper than DJANGO_API_MAX_PAGE_NUMBER: every
+        # page runs COUNT(*) and OFFSET (docs/api.md#pagination).
+        if page > total_pages or page > self.max_page_number:
             raise Http404
 
         offset = (page - 1) * page_size
@@ -175,7 +149,7 @@ class LimitPageNumberPagination(PageNumberPagination):
         previous_url = None
         if page > 1:
             previous = page - 1
-            # The link to the first page has no page parameter, as DRF's.
+            # The link to the first page has no page parameter.
             previous_url = _set_query_param(
                 url, "page", None if previous == 1 else str(previous)
             )

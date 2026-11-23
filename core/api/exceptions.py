@@ -176,11 +176,6 @@ class _ErrorHandlers:
     def on_ninja_validation(
         self, request: HttpRequest, exc: NinjaValidationError
     ) -> HttpResponse:
-        for err in exc.errors:
-            loc = [str(part) for part in err.get("loc", ())]
-            # Only the page/page_size query parameters; a body field may be "page".
-            if loc[:1] == ["query"] and ("page" in loc or "page_size" in loc):
-                return self.on_404(request, Http404())
         return self._json(
             request,
             validation_error_body(_ninja_validation_fields(exc.errors)),

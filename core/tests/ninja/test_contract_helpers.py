@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from http import HTTPStatus
 
 import pytest
@@ -17,7 +16,6 @@ from ninja.testing import TestClient
 from apps.users.models import User
 from core.api.exceptions import _ninja_validation_fields
 from core.api.pagination import LimitPageNumberPagination
-from core.api.pagination import _positive_int
 from core.api.pagination import _set_query_param
 from core.api.parsers import JSONParser
 from core.api.throttling import ScopedThrottle
@@ -28,17 +26,6 @@ from core.tests.ninja.support import make_api
 REF_VALIDATION = "#/components/schemas/ValidationErrorSchema"
 REF_ERROR = "#/components/schemas/ErrorSchema"
 REF_UPDATE = "#/components/schemas/UserUpdateIn"
-
-
-def test_positive_int_is_drf_strict_and_capped() -> None:
-    cutoff = 100
-    for raw in ("0", "-1"):
-        with pytest.raises(ValueError, match=f"^{re.escape(raw)}$"):
-            _positive_int(raw, cutoff=cutoff)
-    for raw in ("abc", "1.0", ""):
-        with pytest.raises(ValueError, match=r"^invalid literal for int\(\)"):
-            _positive_int(raw, cutoff=cutoff)
-    assert _positive_int("500", cutoff=cutoff) == cutoff
 
 
 def test_set_query_param_sorts_keeps_lists_and_removes() -> None:
