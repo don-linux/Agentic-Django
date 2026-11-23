@@ -8,23 +8,16 @@ these requests go through WSGIHandler, as on a real server.
 
 from __future__ import annotations
 
-import json
-import sys
-from io import BytesIO
+from http import HTTPStatus
 from typing import TYPE_CHECKING
 
 import pytest
 from django.conf import settings
-from django.core.handlers.wsgi import WSGIHandler
 from django.test import override_settings
-from django.urls import get_script_prefix
-from django.urls import set_script_prefix
+
+from core.tests.wsgi import wsgi_request
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-    from collections.abc import Iterator
-    from types import TracebackType
-
     from django.test import Client
 
     from apps.users.models import User
@@ -34,51 +27,19 @@ if TYPE_CHECKING:
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-@pytest.fixture(autouse=True)
-def _restore_script_prefix() -> Iterator[None]:
-    # WSGIHandler leaves the prefix in a thread local: give the next test its own.
-    prefix = get_script_prefix()
-    yield
-    set_script_prefix(prefix)
-
-
 def _me_url(user_client: Client, script_name: str) -> str:
     session = user_client.cookies[settings.SESSION_COOKIE_NAME].value
-    environ = {
-        "REQUEST_METHOD": "GET",
-        "SCRIPT_NAME": script_name,
-        "PATH_INFO": "/api/v1/users/me/",
-        "QUERY_STRING": "",
-        "SERVER_NAME": "testserver",
-        "SERVER_PORT": "80",
-        "SERVER_PROTOCOL": "HTTP/1.1",
-        "HTTP_HOST": "testserver",
-        "HTTP_ACCEPT": "application/json",
-        "HTTP_COOKIE": f"{settings.SESSION_COOKIE_NAME}={session}",
-        "wsgi.input": BytesIO(),
-        "wsgi.errors": sys.stderr,
-        "wsgi.url_scheme": "http",
-        "wsgi.version": (1, 0),
-        "wsgi.multithread": False,
-        "wsgi.multiprocess": False,
-        "wsgi.run_once": False,
-    }
-    statuses: list[str] = []
-
-    def start_response(
-        status: str,
-        headers: list[tuple[str, str]],
-        exc_info: tuple[type[BaseException], BaseException, TracebackType]
-        | tuple[None, None, None]
-        | None = None,
-        /,
-    ) -> Callable[[bytes], object]:
-        statuses.append(status)
-        return lambda _data: None
-
-    body = b"".join(WSGIHandler()(environ, start_response))
-    assert statuses == ["200 OK"]
-    return str(json.loads(body)["url"])
+    response = wsgi_request(
+        "GET",
+        "/api/v1/users/me/",
+        script_name=script_name,
+        headers={
+            "Accept": "application/json",
+            "Cookie": f"{settings.SESSION_COOKIE_NAME}={session}",
+        },
+    )
+    assert response.status == HTTPStatus.OK
+    return str(response.json()["url"])
 
 
 @pytest.mark.parametrize("script_name", ["/app", "/nested/app"])

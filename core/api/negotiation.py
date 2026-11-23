@@ -21,6 +21,7 @@ from django.http import HttpResponse
 from django.http import HttpResponseNotAllowed
 from django.http import JsonResponse
 from django.urls import Resolver404
+from django.urls import get_script_prefix
 from django.urls import resolve
 
 from core.api.api import api
@@ -66,8 +67,16 @@ def _allow_header(methods: Iterable[str]) -> str:
 
 @functools.cache
 def _operations_by_route() -> dict[str, dict[str, Any]]:
-    """OpenAPI path ("/api/v1/users/{id}/") -> {method: operation}."""
-    paths = api.get_openapi_schema().get("paths", {})
+    """OpenAPI path ("/api/v1/users/{id}/") -> {method: operation}.
+
+    Built once per process, on the first request. Under a script prefix
+    (SCRIPT_NAME, or FORCE_SCRIPT_NAME behind a proxy) WSGIHandler sets it for
+    that request, and Ninja's paths start with it, since they come from
+    reverse(). The keys are routes as URL resolution sees them, without the
+    prefix, so the prefix is taken off the API root first.
+    """
+    root = api.get_root_path({}).removeprefix(get_script_prefix().rstrip("/"))
+    paths = api.get_openapi_schema(path_prefix=root).get("paths", {})
     return {
         path: {m.upper(): op for m, op in item.items() if m.upper() in _METHOD_ORDER}
         for path, item in paths.items()

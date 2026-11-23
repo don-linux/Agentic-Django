@@ -243,10 +243,11 @@ def test_a_weight_above_0_is_still_acceptable(
 
 
 @pytest.mark.django_db
-def test_the_contract_holds_under_a_script_prefix(client: Client) -> None:
+def test_the_route_is_request_path_info_not_request_path(client: Client) -> None:
     # Served under a prefix (SCRIPT_NAME, or FORCE_SCRIPT_NAME behind a proxy),
     # request.path starts with it; the route is request.path_info, which URL
-    # resolution uses too.
+    # resolution uses too. The test Client sets no script prefix; the prefix a
+    # server sets is test_script_prefix_negotiation.py.
     refused = client.get(
         "/api/v1/users/me/", headers={"Accept": "text/html"}, SCRIPT_NAME="/app"
     )
