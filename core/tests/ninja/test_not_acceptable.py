@@ -1,7 +1,8 @@
 """406 only answers a route that exists, after the 405 and OPTIONS.
 
-Each route renders one media type (JSON, or HTML for the docs page), and the
-Accept header is read whole by RFC 9110's rules (ADR 0020). A path that matches
+Each operation produces the media types its 2xx responses declare (JSON, or
+HTML for the docs page), and the Accept header is read whole by RFC 9110's
+rules (ADR 0020). A path that matches
 no route is Django's 404 whatever the Accept says.
 """
 

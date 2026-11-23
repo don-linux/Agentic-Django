@@ -44,7 +44,19 @@ class Invoice(BaseModel):
 @router.get(
     "/{public_id:id}/download/",
     response={200: None, **LOOKUP_ERRORS},
-    openapi_extra=response_docs(LOOKUP_ERRORS),
+    openapi_extra={
+        "responses": {
+            **response_docs(LOOKUP_ERRORS)["responses"],
+            # The file's media type: the contract, and what Accept negotiates.
+            200: {
+                "content": {
+                    "application/pdf": {
+                        "schema": {"type": "string", "format": "binary"}
+                    }
+                }
+            },
+        }
+    },
     operation_id="invoices_download",
 )
 def invoices_download(
@@ -67,6 +79,7 @@ Django writes uploaded files with mode `0o644` and directories with `0o755` (`FI
 
 - The API accepts `application/json` bodies only (`core.api.parsers.JSONParser`), so an upload is a dedicated operation that takes `file: File[UploadedFile]` (both from `ninja`; Django's own `UploadedFile` class fails schema generation) and `Form[...]` fields instead of a JSON body ([Ninja: file uploads](https://django-ninja.dev/guide/files/)). Every operation with a JSON body answers a multipart body with 415 `unsupported_media_type`.
 - Pass the upload operation `response=` and `openapi_extra=response_docs(...)` like any other; an operation that returns an `HttpResponse` (a download) keeps it as is ([Ninja: returning an HttpResponse](https://django-ninja.dev/guide/responses/#returning-a-django-httpresponse)).
+- A download declares the file's media type on its 200, through `openapi_extra` as above (Ninja merges it into the generated response). `ApiContractMiddleware` negotiates `Accept` against it, so `Accept: application/pdf` gets the file and `Accept: application/json` a 406. A download that declares no type is not negotiated.
 - The output schema returns the file's absolute URL, built from the request when the view has one.
 
 ## Images

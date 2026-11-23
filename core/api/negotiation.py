@@ -38,22 +38,22 @@ JSON = "application/json"
 # (answered here). The methods come from the
 # project API's OpenAPI document, so a new router needs no entry here.
 _METHOD_ORDER = ("GET", "POST", "PUT", "PATCH", "DELETE")
-# The URL names of Ninja's schema and docs views (ninja/openapi/urls.py).
-_DOCS_ROUTES = {"openapi-json", "openapi-view"}
+# Ninja's schema and docs views (ninja/openapi/urls.py), by URL name: they are
+# not in the OpenAPI document, so their one operation is spelled out here.
+_DOCS_ROUTES: dict[str, dict[str, Any]] = {
+    "openapi-json": {"GET": {"responses": {"200": {"content": {JSON: {}}}}}},
+    "openapi-view": {"GET": {"responses": {"200": {"content": {"text/html": {}}}}}},
+}
 # What Ninja's router answers a method a path lacks (ninja/operation.py,
 # PathView._not_allowed). See ADR 0017.
 METHOD_NOT_ALLOWED_DETAIL = "Method not allowed"
 _ROUTE_PARAM = re.compile(r"<(?:[^>:]+:)?([^>]+)>")
 
 
-def _api_path(request: HttpRequest) -> str | None:
+def _is_api_path(request: HttpRequest) -> bool:
     # path_info, as URL resolution: under a script prefix (SCRIPT_NAME, or
     # FORCE_SCRIPT_NAME behind a proxy) request.path starts with the prefix.
-    path = request.path_info
-    prefix = "/api/v1/"
-    if not path.startswith(prefix):
-        return None
-    return path[len(prefix) :]
+    return request.path_info.startswith("/api/v1/")
 
 
 def _allow_header(methods: Iterable[str]) -> str:
@@ -94,7 +94,7 @@ def _route_operations(request: HttpRequest) -> dict[str, Any] | None:
     except Resolver404:
         return None
     if match.url_name in _DOCS_ROUTES:
-        return {"GET": {}}
+        return _DOCS_ROUTES[match.url_name]
     route = "/" + _ROUTE_PARAM.sub(r"{\1}", match.route)
     return _operations_by_route().get(route)
 
@@ -183,29 +183,43 @@ def _is_acceptable(
     )
 
 
-def _produces(subpath: str) -> str:
-    """The one media type a route renders: the docs page is HTML, the rest JSON."""
-    return "text/html" if subpath == "docs/" else JSON
+def _produces(operations: dict[str, Any], method: str) -> list[str]:
+    """The media types an operation answers with on success.
+
+    They are the content of its 2xx responses in the OpenAPI document: JSON for
+    every operation the template ships, HTML for the docs page. HEAD is the GET
+    operation.
+    """
+    operation = operations.get("GET" if method == "HEAD" else method, {})
+    return [
+        media_type.split(";", 1)[0].strip()
+        for status, response in operation.get("responses", {}).items()
+        if str(status).startswith("2")
+        for media_type in response.get("content", {})
+    ]
 
 
-def _acceptable(request: HttpRequest, subpath: str) -> bool:
-    """Whether the request's Accept takes what the route renders. No Accept is
-    */*; a present but empty one offers nothing."""
+def _acceptable(request: HttpRequest, produces: list[str]) -> bool:
+    """Whether the request's Accept takes one of the media types produced.
+
+    No Accept is */*; a present but empty one offers nothing. An operation that
+    declares no content on success (a 204, or a download whose media type the
+    schema leaves out) has nothing to negotiate.
+    """
+    if not produces:
+        return True
     accept = request.headers.get("Accept")
     ranges = _media_ranges("*/*" if accept is None else accept)
-    return _is_acceptable(_produces(subpath), ranges)
+    return any(_is_acceptable(media_type, ranges) for media_type in produces)
 
 
 _COMPACT: dict[str, Any] = {"separators": (",", ":"), "ensure_ascii": False}
 
 
-def _error(code: str, detail: str, status: int, **headers: str) -> JsonResponse:
-    response = JsonResponse(
+def _error(code: str, detail: str, status: int) -> JsonResponse:
+    return JsonResponse(
         error_body(code, detail), status=status, json_dumps_params=_COMPACT
     )
-    for key, value in headers.items():
-        response[key] = value
-    return response
 
 
 def _not_acceptable() -> JsonResponse:
@@ -217,19 +231,20 @@ def _not_acceptable() -> JsonResponse:
 
 
 class ApiContractMiddleware:
-    """406 / 415 / 405 {code, detail} on /api/v1/ before and after Ninja."""
+    """The 405, OPTIONS, 406 and HEAD of every route under /api/v1/, before Ninja.
+
+    415 is not here: core.api.parsers decides it when Ninja reads the body.
+    """
 
     def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
         self.get_response = get_response
 
     def __call__(self, request: HttpRequest) -> HttpResponse:
-        subpath = _api_path(request)
-        if subpath is None:
+        if not _is_api_path(request):
             return self.get_response(request)
 
         operations = _route_operations(request)
-        allow = _allow_header(operations) if operations is not None else None
-        early = self._before(request, subpath, allow)
+        early = self._before(request, operations)
         # 415 is decided by core.api.parsers, when Ninja reads the body.
         # Every API route is in the schema (test_method_negotiation pins it), so
         # a method the route lacks never reaches Ninja: _before answered 405.
@@ -238,24 +253,25 @@ class ApiContractMiddleware:
         return early if early is not None else self._dispatch(request)
 
     def _before(
-        self, request: HttpRequest, subpath: str, allow: str | None
+        self, request: HttpRequest, operations: dict[str, Any] | None
     ) -> HttpResponse | None:
         """405, OPTIONS and 406 answered before the operation runs.
 
         In the order Django and Ninja dispatch: a path that matches no route is
         Django's 404 whatever the Accept, then a method the route lacks is 405,
         and OPTIONS answers without negotiating, as it has no body. Only then
-        is an Accept the route cannot produce a 406, before the staff and
+        is an Accept the operation cannot produce a 406, before the staff and
         authentication checks, even when anonymous.
         """
         method = request.method or "GET"
-        if allow is None:
+        if operations is None:
             return None
+        allow = _allow_header(operations)
         if method not in {m.strip() for m in allow.split(",")}:
             return self._not_allowed(method, allow)
         if method == "OPTIONS":
             return self._options(allow)
-        if not _acceptable(request, subpath):
+        if not _acceptable(request, _produces(operations, method)):
             return _not_acceptable()
         return None
 
