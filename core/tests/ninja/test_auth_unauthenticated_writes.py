@@ -47,7 +47,7 @@ def _assert_401(response) -> None:
     assert response["WWW-Authenticate"] == "X-Session-Token"
     assert response.json() == {
         "code": "not_authenticated",
-        "detail": "Authentication credentials were not provided.",
+        "detail": "Unauthorized",
     }
 
 

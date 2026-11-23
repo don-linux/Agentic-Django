@@ -133,12 +133,10 @@ def _visible_user(request: HttpRequest, public_id: UUID) -> User:
         or current.pk is None
         or not isinstance(current, User)
     ):
-        msg = "Not found."
-        raise Http404(msg)
+        raise Http404
     user = user_list(user=current).filter(public_id=public_id).first()
     if user is None:
-        msg = "Not found."
-        raise Http404(msg)
+        raise Http404
     _VISIBLE_USERS[request] = user
     return user
 
@@ -147,8 +145,7 @@ def _current_user(request: HttpRequest) -> User:
     # API_AUTH only lets authenticated users through; narrow AnonymousUser away.
     user = request.user
     if not isinstance(user, User):
-        msg = "Not found."
-        raise Http404(msg)
+        raise Http404
     return user
 
 

@@ -125,7 +125,7 @@ def test_an_invalid_page_or_page_size_query_parameter_is_the_invalid_page_404(
 ) -> None:
     response = _client().get(f"/query-page/{query}")
     assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"code": "not_found", "detail": "Invalid page."}
+    assert response.json() == {"code": "not_found", "detail": "Not Found"}
 
 
 def test_another_invalid_query_parameter_is_a_400_field_error() -> None:
@@ -170,13 +170,14 @@ def test_a_body_that_is_not_an_object_is_a_non_field_error() -> None:
 
 
 @pytest.mark.django_db
-def test_malformed_json_keeps_the_parser_detail(user_client: Client) -> None:
+def test_malformed_json_is_ninja_s_parse_error(user_client: Client) -> None:
     response = user_client.patch(
         "/api/v1/users/me/", data='{"name": ', content_type="application/json"
     )
     assert response.status_code == HTTPStatus.BAD_REQUEST
     assert response.json()["code"] == "parse_error"
-    assert response.json()["detail"].startswith("JSON parse error - ")
+    # ninja/params/models.py: any parser failure is "Cannot parse request body".
+    assert response.json()["detail"] == "Cannot parse request body"
 
 
 @pytest.mark.django_db

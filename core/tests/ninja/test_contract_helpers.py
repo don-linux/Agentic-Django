@@ -106,7 +106,7 @@ def test_http_error_codes_for_media_auth_and_generic() -> None:
         return TestClient(api)
 
     cases = [
-        (HTTPStatus.BAD_REQUEST, "JSON parse error", "parse_error"),
+        (HTTPStatus.BAD_REQUEST, "Cannot parse request body", "parse_error"),
         (HTTPStatus.BAD_REQUEST, "nope", "error"),
         (HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "nope", "unsupported_media_type"),
         (HTTPStatus.NOT_ACCEPTABLE, "nope", "not_acceptable"),
@@ -131,7 +131,7 @@ def test_empty_queryset_past_first_page_is_404() -> None:
     api = cached_count_api(User.objects.none)
     response = _list(api, "?page=2")
     assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"code": "not_found", "detail": "Invalid page."}
+    assert response.json() == {"code": "not_found", "detail": "Not Found"}
     first = _list(api, "?page=1")
     assert first.status_code == HTTPStatus.OK
     assert first.json()["results"] == []

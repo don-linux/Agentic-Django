@@ -61,7 +61,7 @@ def test_pages_beyond_the_cap_are_404(page: str) -> None:
     response = _list(ordered_api(), f"?page_size=1&page={page}")
 
     assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"code": "not_found", "detail": "Invalid page."}
+    assert response.json() == {"code": "not_found", "detail": "Not Found"}
 
 
 @override_settings(API_MAX_PAGE_NUMBER=2)

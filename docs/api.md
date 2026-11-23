@@ -83,11 +83,11 @@ A mobile client retries a `POST` when the response is lost, so a create endpoint
 Every error response from an API view has this JSON body:
 
 ```json
-{"code": "not_found", "detail": "Not found."}
+{"code": "not_found", "detail": "Not Found"}
 ```
 
 - `code`: a stable `snake_case` identifier listed in [Error codes](#error-codes).
-- `detail`: an English message for humans. It can change between releases.
+- `detail`: an English message for humans. It can change between releases. It is the text of the code that raised the error: Pydantic for a field, Ninja's exception (or its default 404 and 405 texts), or the title of Django's default error page outside Ninja; the template writes its own only where none of them has one ([ADR 0017](decisions/0017-error-texts-come-from-the-code-that-raises-the-error.md)). A 404 never repeats the exception's message.
 - `extra` (optional): structured context for a domain error, for example `{"available": 2}`.
 
 Validation errors (`400`) add `fields`, with one list of `{code, detail}` items per field. Nested schemas keep their nesting, list items are keyed by index, and errors that belong to no single field go under `non_field_errors`:
@@ -110,13 +110,13 @@ An item from request validation carries Pydantic's error type as `code` and its 
 
 | Status | Example body | Notes |
 | --- | --- | --- |
-| 400 | `{"code": "parse_error", "detail": "JSON parse error - ..."}` | Malformed body; field errors use `validation_error` (above) |
-| 401 | `{"code": "not_authenticated", "detail": "Authentication credentials were not provided."}` | Sent with `WWW-Authenticate: X-Session-Token` |
-| 403 | `{"code": "permission_denied", "detail": "You do not have permission to perform this action."}` | Authenticated but not allowed |
-| 404 | `{"code": "not_found", "detail": "Not found."}` | Also for objects owned by someone else and for a page past the end |
-| 405 | `{"code": "method_not_allowed", "detail": "Method \"DELETE\" not allowed."}` | Sent with `Allow` |
+| 400 | `{"code": "parse_error", "detail": "Cannot parse request body"}` | Malformed body; field errors use `validation_error` (above) |
+| 401 | `{"code": "not_authenticated", "detail": "Unauthorized"}` | Sent with `WWW-Authenticate: X-Session-Token` |
+| 403 | `{"code": "permission_denied", "detail": "Forbidden"}` | Authenticated but not allowed; a CSRF failure says `CSRF check Failed` |
+| 404 | `{"code": "not_found", "detail": "Not Found"}` | Also for objects owned by someone else and for a page past the end |
+| 405 | `{"code": "method_not_allowed", "detail": "Method not allowed"}` | Sent with `Allow` |
 | 409 | `{"code": "protected", "detail": "This resource has dependent records and cannot be deleted."}` | Also domain conflicts raised with `ConflictError` |
-| 429 | `{"code": "throttled", "detail": "Request was throttled. Expected available in 7 seconds."}` | Sent with `Retry-After` |
+| 429 | `{"code": "throttled", "detail": "Too many requests."}` | Sent with `Retry-After`, the wait in whole seconds rounded up |
 
 ## Domain errors
 
@@ -140,7 +140,7 @@ Every new code is added to this table in the same PR. Codes are never renamed on
 | --- | --- | --- | --- |
 | `validation_error` | 400 | The body failed validation; see `fields` | Pydantic request schemas, Django `ValidationError` |
 | `unknown_field` | 400 | Field-level code inside the `fields` of a `validation_error`: the body has a key that is not a field of this endpoint | Pydantic request schemas with `extra="forbid"` |
-| `parse_error` | 400 | The body is not valid for its content type (for example malformed JSON, or JSON nested too deeply to decode) | `core.api.parsers.JSONParser` |
+| `parse_error` | 400 | The body is not valid for its content type (for example malformed JSON, or JSON nested too deeply to decode) | Ninja's request body parsing, through `core.api.parsers.JSONParser` |
 | `not_authenticated` | 401 | No valid credentials were sent (none, an unknown or expired token, or no session) | Ninja authentication (`core.api.auth`) |
 | `permission_denied` | 403 | Authenticated, but not allowed, or a cookie-authenticated write without a valid CSRF token | Ninja `AuthorizationError`, Django `PermissionDenied`, Ninja's CSRF check (also `handler403`) |
 | `not_found` | 404 | The resource does not exist or is not visible to the caller | `Http404`, `ObjectDoesNotExist`, pagination, unknown routes (`handler404`) |

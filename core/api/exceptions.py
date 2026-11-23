@@ -2,7 +2,8 @@
 Ninja exception handlers that delegate to core.errors (ADR 0006).
 
 Ninja defaults: 422 and {"detail"}. These handlers emit {code, detail}
-(plus fields/extra) with the existing status codes.
+(plus fields/extra) with the existing status codes. Each text comes from the
+code that raised the error: Pydantic, Ninja or Django (ADR 0017).
 Sources: Context7 /websites/django-ninja_dev "Override Default Validation
 Error Handler"; django-ninja 1.8.0 ninja/errors.py.
 """
@@ -30,7 +31,8 @@ from ninja.errors import HttpError
 from ninja.errors import Throttled
 from ninja.errors import ValidationError as NinjaValidationError
 
-from core.api.pagination import INVALID_PAGE
+from core.errors import FORBIDDEN_DETAIL
+from core.errors import NOT_FOUND_DETAIL
 from core.errors import application_error_body
 from core.errors import error_body
 from core.errors import protected_error_body
@@ -178,7 +180,7 @@ class _ErrorHandlers:
             loc = [str(part) for part in err.get("loc", ())]
             # Only the page/page_size query parameters; a body field may be "page".
             if loc[:1] == ["query"] and ("page" in loc or "page_size" in loc):
-                return self.on_404(request, Http404(INVALID_PAGE))
+                return self.on_404(request, Http404())
         return self._json(
             request,
             validation_error_body(_ninja_validation_fields(exc.errors)),
@@ -186,14 +188,10 @@ class _ErrorHandlers:
         )
 
     def on_404(self, request: HttpRequest, exc: Http404) -> HttpResponse:
-        detail = str(exc) or "Not found."
-        # Django wraps the message as "Http404('Invalid page.')" in some paths;
-        # prefer the explicit argument when present.
-        args = getattr(exc, "args", ())
-        if args and isinstance(args[0], str) and args[0]:
-            detail = args[0]
+        # Ninja's default 404 text. Like Ninja outside DEBUG, the handler never
+        # repeats the exception's message, which may name a model.
         return self._json(
-            request, error_body("not_found", detail), HTTPStatus.NOT_FOUND
+            request, error_body("not_found", NOT_FOUND_DETAIL), HTTPStatus.NOT_FOUND
         )
 
     def on_does_not_exist(
@@ -203,15 +201,11 @@ class _ErrorHandlers:
         return self.on_404(request, Http404())
 
     def on_auth(self, request: HttpRequest, exc: AuthenticationError) -> HttpResponse:
-        return self._not_authenticated(request)
+        return self._not_authenticated(request, str(exc))
 
-    def _not_authenticated(self, request: HttpRequest) -> HttpResponse:
+    def _not_authenticated(self, request: HttpRequest, detail: str) -> HttpResponse:
         response = self._json(
-            request,
-            error_body(
-                "not_authenticated", "Authentication credentials were not provided."
-            ),
-            HTTPStatus.UNAUTHORIZED,
+            request, error_body("not_authenticated", detail), HTTPStatus.UNAUTHORIZED
         )
         response["WWW-Authenticate"] = "X-Session-Token"
         return response
@@ -220,20 +214,15 @@ class _ErrorHandlers:
         self, request: HttpRequest, exc: AuthorizationError
     ) -> HttpResponse:
         return self._json(
-            request,
-            error_body(
-                "permission_denied",
-                "You do not have permission to perform this action.",
-            ),
-            HTTPStatus.FORBIDDEN,
+            request, error_body("permission_denied", str(exc)), HTTPStatus.FORBIDDEN
         )
 
     def on_django_permission_denied(
         self, request: HttpRequest, exc: PermissionDenied
     ) -> HttpResponse:
-        detail = str(exc.args[0]) if exc.args and exc.args[0] else None
-        if detail is None:
-            return self.on_forbidden(request, AuthorizationError())
+        # PermissionDenied("...") keeps its message; a bare one gets the title
+        # of Django's default 403 page.
+        detail = str(exc) or FORBIDDEN_DETAIL
         return self._json(
             request, error_body("permission_denied", detail), HTTPStatus.FORBIDDEN
         )
@@ -241,37 +230,28 @@ class _ErrorHandlers:
     def on_throttled(self, request: HttpRequest, exc: Throttled) -> HttpResponse:
         # When a throttle refuses the request, Operation._check_throttles calls
         # this handler and then sets Retry-After on its response (ninja/operation.py
-        # in 1.8.0). Set it here too, for a Throttled raised directly.
-        wait = getattr(exc, "wait", None)
-        # DRF's Throttled: whole seconds, rounded up, for the detail and the header.
-        seconds = None if wait is None else math.ceil(wait)
-        detail = "Request was throttled."
-        if seconds is not None:
-            unit = "second" if seconds == 1 else "seconds"
-            detail = f"{detail} Expected available in {seconds} {unit}."
+        # in 1.8.0). Set it here too, the same way, for a Throttled raised directly.
         response = self._json(
-            request, error_body("throttled", detail), HTTPStatus.TOO_MANY_REQUESTS
+            request, error_body("throttled", str(exc)), HTTPStatus.TOO_MANY_REQUESTS
         )
-        if seconds is not None:
-            # Same value Operation._check_throttles sets (ceil, RFC 9110).
-            response["Retry-After"] = str(seconds)
+        if exc.wait is not None:
+            # Whole seconds, rounded up: Retry-After is integer delta-seconds
+            # (RFC 9110), as Ninja's _check_throttles writes it.
+            response["Retry-After"] = str(math.ceil(exc.wait))
         return response
 
     def on_http_error(self, request: HttpRequest, exc: HttpError) -> HttpResponse:
-        message = str(exc)
-        status = exc.status_code
-        # BodyModel.get_request_data wraps any parser error as HttpError(400,
-        # "Cannot parse request body") from the original (ninja/params/models.py);
-        # keep core.api.parsers' "JSON parse error - ..." detail (docs/api.md).
+        # BodyModel.get_request_data turns any parser failure into HttpError(400,
+        # "Cannot parse request body") raised from it (ninja/params/models.py).
+        # The parser's own HttpError, the 415 of core.api.parsers, keeps its
+        # status and message.
         cause = exc.__cause__
-        if isinstance(cause, HttpError):
-            # The parser's own 400/415 (core.api.parsers), not Ninja's wrapper.
-            message = str(cause)
-            status = cause.status_code
-        if status == HTTPStatus.UNAUTHORIZED:
-            return self._not_authenticated(request)
-        code = _http_error_code(status, message)
-        return self._json(request, error_body(code, message), status)
+        error = cause if isinstance(cause, HttpError) else exc
+        message = str(error)
+        if error.status_code == HTTPStatus.UNAUTHORIZED:
+            return self._not_authenticated(request, message)
+        code = _http_error_code(error.status_code, message)
+        return self._json(request, error_body(code, message), error.status_code)
 
 
 def register_exception_handlers(api: NinjaAPI) -> None:

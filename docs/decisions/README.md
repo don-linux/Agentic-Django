@@ -20,6 +20,7 @@ Short records of why the template is the way it is, one decision per file (a lig
 | [0014](0014-user-extends-abstractbaseuser-and-permissionsmixin.md) | `User` extends `AbstractBaseUser` and `PermissionsMixin`, not `AbstractUser` | Accepted |
 | [0015](0015-typed-environment-with-pydantic-settings.md) | The environment is read through typed pydantic-settings classes | Accepted |
 | [0016](0016-api-checked-against-openapi-with-schemathesis.md) | The API is checked against its OpenAPI contract with schemathesis | Accepted |
+| [0017](0017-error-texts-come-from-the-code-that-raises-the-error.md) | Error texts come from the code that raises the error | Accepted |
 
 ## Writing one
 

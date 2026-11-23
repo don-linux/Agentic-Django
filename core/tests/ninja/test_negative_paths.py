@@ -19,7 +19,7 @@ def test_a_non_numeric_page_is_404_not_found(page: str) -> None:
     _create_users(1)
     response = _list(ordered_api(), f"?page={page}")
     assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"code": "not_found", "detail": "Invalid page."}
+    assert response.json() == {"code": "not_found", "detail": "Not Found"}
 
 
 @pytest.mark.parametrize("page", ["0", "-1"])
@@ -27,14 +27,14 @@ def test_zero_or_negative_pages_are_404_without_hitting_valueerror(page: str) ->
     _create_users(1)
     response = _list(ordered_api(), f"?page={page}")
     assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"code": "not_found", "detail": "Invalid page."}
+    assert response.json() == {"code": "not_found", "detail": "Not Found"}
 
 
 def test_an_invalid_cursor_is_400_on_the_cursor_field() -> None:
     _create_users(1)
     response = _list(cursor_api(), "?cursor=not-a-cursor")
     # A cursor is a query field: a bad one is a 400 validation error, unlike
-    # an out-of-range page number, which stays 404 "Invalid page.".
+    # an out-of-range page number, which stays 404.
     assert response.status_code == HTTPStatus.BAD_REQUEST
     assert response.json()["code"] == "validation_error"
     assert response.json()["fields"] == {

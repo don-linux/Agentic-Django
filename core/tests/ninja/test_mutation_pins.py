@@ -15,10 +15,11 @@ def test_json_error_handlers_lock_the_detail_text() -> None:
 
     @router.get("/missing/", auth=None)
     def missing(request):
-        msg = "Not found."
+        msg = "No User matches the given query."
         raise Http404(msg)
 
     api.add_router("/", router)
     response = TestClient(api).get("/missing/")
     assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json()["detail"] == "Not found."
+    # Ninja's default 404 text, never the exception's message (ADR 0017).
+    assert response.json()["detail"] == "Not Found"

@@ -50,7 +50,7 @@ def test_a_method_the_route_lacks_is_a_json_405_with_allow(user_client: Client) 
     assert response["Allow"] == "GET, PATCH, HEAD, OPTIONS"
     assert response.json() == {
         "code": "method_not_allowed",
-        "detail": 'Method "DELETE" not allowed.',
+        "detail": "Method not allowed",
     }
 
 
@@ -97,7 +97,7 @@ def test_a_path_that_is_not_a_route_gets_no_allow(
     # No route, no methods to list: Django's 404 whatever the Accept, no Allow.
     response = user_client.get("/api/v1/nothing/", headers={"Accept": accept})
     assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"code": "not_found", "detail": "Not found."}
+    assert response.json() == {"code": "not_found", "detail": "Not Found"}
     assert "Allow" not in response
 
 
@@ -171,7 +171,7 @@ def test_every_api_route_answers_its_own_json_405(user_client: Client, user) -> 
         assert response["Content-Type"] == "application/json", name
         assert response.json() == {
             "code": "method_not_allowed",
-            "detail": 'Method "TRACE" not allowed.',
+            "detail": "Method not allowed",
         }, name
         assert response["Allow"].endswith("OPTIONS"), name
 

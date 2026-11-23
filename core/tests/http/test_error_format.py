@@ -22,7 +22,7 @@ class TestErrorCodesThroughTheApi:
         assert response.headers["WWW-Authenticate"] == "X-Session-Token"
         assert response.json() == {
             "code": "not_authenticated",
-            "detail": "Authentication credentials were not provided.",
+            "detail": "Unauthorized",
         }
 
     def test_invalid_page_is_404_not_found(self, user_client: Client) -> None:
@@ -37,7 +37,7 @@ class TestErrorCodesThroughTheApi:
         assert response.status_code == HTTPStatus.METHOD_NOT_ALLOWED
         assert response.json() == {
             "code": "method_not_allowed",
-            "detail": 'Method "DELETE" not allowed.',
+            "detail": "Method not allowed",
         }
 
     def test_malformed_json_is_parse_error(

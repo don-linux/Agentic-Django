@@ -39,7 +39,6 @@ from pydantic import field_validator
 from core.cache import read_through
 
 COUNT_TTL = 60
-INVALID_PAGE = "Invalid page."
 
 
 class PageNumberOut(Schema):
@@ -51,7 +50,7 @@ class PageNumberOut(Schema):
 
 class PageNumberIn(Schema):
     # Documented as integer (the previous contract). Invalid values such as
-    # "abc", 0 or -1 become 404 "Invalid page.": the ValidationError handler
+    # "abc", 0 or -1 become 404: the ValidationError handler
     # maps query page/page_size failures, and paginate_queryset rejects
     # out-of-range numbers (tests/http/).
     page: int | None = Field(
@@ -163,9 +162,9 @@ class LimitPageNumberPagination(PageNumberPagination):
         try:
             page = int(raw_page)
         except ValueError:
-            raise Http404(INVALID_PAGE) from None
+            raise Http404 from None
         if page > self.max_page_number or page < 1 or page > total_pages:
-            raise Http404(INVALID_PAGE)
+            raise Http404
 
         offset = (page - 1) * page_size
         results = queryset[offset : offset + page_size]

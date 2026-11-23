@@ -146,7 +146,7 @@ def test_invalid_session_token_is_401_with_authenticate_header(
     assert response.headers["WWW-Authenticate"] == "X-Session-Token"
     assert response.json() == {
         "code": "not_authenticated",
-        "detail": "Authentication credentials were not provided.",
+        "detail": "Unauthorized",
     }
 
 
@@ -210,7 +210,7 @@ def test_users_list_rejects_an_invalid_page(
     response = user_client.get(f"/api/v1/users/?page={page}")
 
     assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"code": "not_found", "detail": "Invalid page."}
+    assert response.json() == {"code": "not_found", "detail": "Not Found"}
 
 
 @pytest.mark.django_db
@@ -660,7 +660,7 @@ def test_logout_during_a_valkey_outage_is_a_json_500_without_details() -> None:
     assert response.headers["Content-Type"] == "application/json"
     assert response.json() == {
         "code": "server_error",
-        "detail": "A server error occurred.",
+        "detail": "Server Error",
     }
     assert b"127.0.0.1" not in response.content
     assert b"Connection" not in response.content
@@ -864,7 +864,7 @@ def test_unhandled_database_error_on_the_users_list_is_a_json_500(
     assert response.headers["Content-Type"] == "application/json"
     assert response.json() == {
         "code": "server_error",
-        "detail": "A server error occurred.",
+        "detail": "Server Error",
     }
     assert b"postgres_db" not in response.content
     assert b"duplicate key" not in response.content
@@ -941,7 +941,7 @@ def test_inactive_users_session_token_is_rejected() -> None:
     assert response.status_code == HTTPStatus.UNAUTHORIZED
     assert response.json() == {
         "code": "not_authenticated",
-        "detail": "Authentication credentials were not provided.",
+        "detail": "Unauthorized",
     }
 
 

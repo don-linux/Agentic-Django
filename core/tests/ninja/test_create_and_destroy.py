@@ -27,7 +27,7 @@ def test_users_detail_does_not_accept_delete(user, user_client: Client) -> None:
     assert response["Allow"] == "GET, PATCH, HEAD, OPTIONS"
     assert response.json() == {
         "code": "method_not_allowed",
-        "detail": 'Method "DELETE" not allowed.',
+        "detail": "Method not allowed",
     }
     assert user_client.get(f"/api/v1/users/{user.public_id}/").status_code == (
         HTTPStatus.OK

@@ -23,6 +23,8 @@ from django.http import JsonResponse
 from django.urls import Resolver404
 from django.urls import resolve
 from django.utils.html import escape
+from ninja.errors import AuthenticationError
+from ninja.errors import AuthorizationError
 
 from core.api.api import api
 from core.api.auth import API_AUTH
@@ -44,6 +46,9 @@ SCHEMA_MEDIA_TYPES = (SCHEMA_YAML, "application/yaml", SCHEMA_JSON, JSON)
 # project API's OpenAPI document, so a new router needs no entry here.
 _METHOD_ORDER = ("GET", "POST", "PUT", "PATCH", "DELETE")
 _DOCS_ROUTES = {"api-schema", "api-docs"}
+# What Ninja's router answers a method a path lacks (ninja/operation.py,
+# PathView._not_allowed). See ADR 0017.
+METHOD_NOT_ALLOWED_DETAIL = "Method not allowed"
 _ROUTE_PARAM = re.compile(r"<(?:[^>:]+:)?([^>]+)>")
 
 
@@ -265,9 +270,10 @@ def staff_docs_required(
         if user is None:
             user = x_session_token_auth(request)
         if user is None:
+            # The texts of Ninja's own AuthenticationError and AuthorizationError.
             response = _error(
                 "not_authenticated",
-                "Authentication credentials were not provided.",
+                AuthenticationError().message,
                 HTTPStatus.UNAUTHORIZED,
             )
             response["WWW-Authenticate"] = "X-Session-Token"
@@ -275,7 +281,7 @@ def staff_docs_required(
         if not getattr(user, "is_staff", False):
             return _error(
                 "permission_denied",
-                "You do not have permission to perform this action.",
+                AuthorizationError().message,
                 HTTPStatus.FORBIDDEN,
             )
         return view(request, *args, **kwargs)
@@ -390,7 +396,7 @@ class ApiContractMiddleware:
         if not any(auth(request) for auth in API_AUTH):
             return _error(
                 "not_authenticated",
-                "Authentication credentials were not provided.",
+                AuthenticationError().message,
                 HTTPStatus.UNAUTHORIZED,
                 **{"WWW-Authenticate": "X-Session-Token", "Allow": allow},
             )
@@ -407,7 +413,7 @@ class ApiContractMiddleware:
 
     def _not_allowed(self, method: str, allow: str) -> HttpResponse:
         body = json.dumps(
-            error_body("method_not_allowed", f'Method "{method}" not allowed.'),
+            error_body("method_not_allowed", METHOD_NOT_ALLOWED_DETAIL),
             separators=(",", ":"),
             ensure_ascii=False,
         )

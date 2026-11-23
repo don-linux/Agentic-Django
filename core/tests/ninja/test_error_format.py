@@ -100,7 +100,7 @@ def test_django_permission_denied_without_a_message_has_the_default_detail() -> 
     response = _client(raises).get("/err/")
     assert response.json() == {
         "code": "permission_denied",
-        "detail": "You do not have permission to perform this action.",
+        "detail": "Forbidden",
     }
 
 

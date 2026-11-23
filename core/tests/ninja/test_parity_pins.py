@@ -148,21 +148,19 @@ def _refused_after(seconds: float) -> TestClient:
 def test_does_not_exist_is_404_not_500() -> None:
     response = _raising_api().get("/missing/")
     assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"code": "not_found", "detail": "Not found."}
+    assert response.json() == {"code": "not_found", "detail": "Not Found"}
 
 
-def test_bare_permission_denied_uses_the_drf_detail() -> None:
+def test_a_bare_permission_denied_says_forbidden() -> None:
     response = _raising_api().get("/denied/")
     assert response.status_code == HTTPStatus.FORBIDDEN
-    assert response.json()["detail"] == (
-        "You do not have permission to perform this action."
-    )
+    assert response.json()["detail"] == "Forbidden"
 
 
 def test_throttled_without_wait_has_no_retry_after() -> None:
     response = _raising_api().get("/throttled/")
     assert response.status_code == HTTPStatus.TOO_MANY_REQUESTS
-    assert response.json() == {"code": "throttled", "detail": "Request was throttled."}
+    assert response.json() == {"code": "throttled", "detail": "Too many requests."}
     assert not response.has_header("Retry-After")
 
 
@@ -171,28 +169,17 @@ def test_a_raised_throttled_sets_retry_after_from_its_wait() -> None:
     response = _raising_api().get("/throttled-for-three/")
     assert response.status_code == HTTPStatus.TOO_MANY_REQUESTS
     assert response["Retry-After"] == "3"
-    assert response.json() == {
-        "code": "throttled",
-        "detail": "Request was throttled. Expected available in 3 seconds.",
-    }
+    assert response.json() == {"code": "throttled", "detail": "Too many requests."}
 
 
-@pytest.mark.parametrize(
-    ("wait", "seconds", "detail"),
-    [
-        (1.2, "2", "Request was throttled. Expected available in 2 seconds."),
-        (0.4, "1", "Request was throttled. Expected available in 1 second."),
-    ],
-    ids=["rounded-up-plural", "singular"],
-)
-def test_a_fractional_wait_is_rounded_up_like_drf(
-    wait: float, seconds: str, detail: str
-) -> None:
-    # DRF 3.18.3 Throttled: math.ceil(wait) and ngettext "second"/"seconds".
+@pytest.mark.parametrize(("wait", "seconds"), [(1.2, "2"), (0.4, "1")])
+def test_a_fractional_wait_is_rounded_up(wait: float, seconds: str) -> None:
+    # Retry-After is integer delta-seconds (RFC 9110): Ninja's _check_throttles
+    # rounds the wait up (ninja/operation.py), and the detail is Throttled's text.
     response = _refused_after(wait).get("/refused/")
     assert response.status_code == HTTPStatus.TOO_MANY_REQUESTS
     assert response["Retry-After"] == seconds
-    assert response.json() == {"code": "throttled", "detail": detail}
+    assert response.json() == {"code": "throttled", "detail": "Too many requests."}
 
 
 @pytest.mark.django_db

@@ -15,7 +15,7 @@ import pytest
 if TYPE_CHECKING:
     from django.test import Client
 
-NOT_FOUND = {"code": "not_found", "detail": "Not found."}
+NOT_FOUND = {"code": "not_found", "detail": "Not Found"}
 NOT_ACCEPTABLE = {
     "code": "not_acceptable",
     "detail": "Could not satisfy the request Accept header.",
@@ -305,7 +305,7 @@ def test_the_contract_holds_under_a_script_prefix(client: Client) -> None:
     assert not_allowed.status_code == HTTPStatus.METHOD_NOT_ALLOWED
     assert not_allowed.json() == {
         "code": "method_not_allowed",
-        "detail": 'Method "PUT" not allowed.',
+        "detail": "Method not allowed",
     }
     assert not_allowed["Allow"] == "GET, PATCH, HEAD, OPTIONS"
 

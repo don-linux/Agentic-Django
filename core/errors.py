@@ -25,6 +25,12 @@ VALIDATION_ERROR_CODE = "validation_error"
 VALIDATION_ERROR_DETAIL = "Invalid input."
 PROTECTED_CODE = "protected"
 PROTECTED_DETAIL = "This resource has dependent records and cannot be deleted."
+# The titles of Django's default error pages (django/views/defaults.py); Ninja's
+# default 404 handler also says "Not Found" (ninja/errors.py). See ADR 0017.
+BAD_REQUEST_DETAIL = "Bad Request"
+FORBIDDEN_DETAIL = "Forbidden"
+NOT_FOUND_DETAIL = "Not Found"
+SERVER_ERROR_DETAIL = "Server Error"
 
 
 class ErrorItem(TypedDict):
@@ -78,25 +84,17 @@ def _error(code: str, detail: str, status: HTTPStatus) -> JsonResponse:
 
 
 def bad_request(request: HttpRequest, exception: Exception) -> JsonResponse:
-    return _error("bad_request", "Bad request.", HTTPStatus.BAD_REQUEST)
+    return _error("bad_request", BAD_REQUEST_DETAIL, HTTPStatus.BAD_REQUEST)
 
 
 def permission_denied(request: HttpRequest, exception: Exception) -> JsonResponse:
-    return _error(
-        "permission_denied",
-        "You do not have permission to perform this action.",
-        HTTPStatus.FORBIDDEN,
-    )
+    return _error("permission_denied", FORBIDDEN_DETAIL, HTTPStatus.FORBIDDEN)
 
 
 def page_not_found(request: HttpRequest, exception: Exception) -> JsonResponse:
-    return _error("not_found", "Not found.", HTTPStatus.NOT_FOUND)
+    return _error("not_found", NOT_FOUND_DETAIL, HTTPStatus.NOT_FOUND)
 
 
 def server_error(request: HttpRequest) -> JsonResponse:
     # Never echo the exception: it can contain internal details.
-    return _error(
-        "server_error",
-        "A server error occurred.",
-        HTTPStatus.INTERNAL_SERVER_ERROR,
-    )
+    return _error("server_error", SERVER_ERROR_DETAIL, HTTPStatus.INTERNAL_SERVER_ERROR)

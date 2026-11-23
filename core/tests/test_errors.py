@@ -24,9 +24,9 @@ from core.exceptions import ConflictError
 
 
 def test_an_error_body_is_code_and_detail() -> None:
-    assert error_body("not_found", "Not found.") == {
+    assert error_body("not_found", "Not Found") == {
         "code": "not_found",
-        "detail": "Not found.",
+        "detail": "Not Found",
     }
 
 
@@ -69,4 +69,4 @@ def test_the_plain_django_handlers_answer_the_same_body() -> None:
 
     assert response.status_code == HTTPStatus.NOT_FOUND
     assert response["Content-Type"] == "application/json"
-    assert json.loads(response.content) == {"code": "not_found", "detail": "Not found."}
+    assert json.loads(response.content) == {"code": "not_found", "detail": "Not Found"}

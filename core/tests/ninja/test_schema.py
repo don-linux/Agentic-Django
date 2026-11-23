@@ -19,11 +19,11 @@ from core.tests.credentials import PASSWORD
 LOGIN_URL = "/_allauth/app/v1/auth/login"
 NOT_AUTHENTICATED = {
     "code": "not_authenticated",
-    "detail": "Authentication credentials were not provided.",
+    "detail": "Unauthorized",
 }
 PERMISSION_DENIED = {
     "code": "permission_denied",
-    "detail": "You do not have permission to perform this action.",
+    "detail": "Forbidden",
 }
 UNDECLARED_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 
@@ -97,7 +97,7 @@ def test_an_undeclared_method_is_405_before_authentication(
             assert response["Allow"] == "GET, HEAD, OPTIONS", (method, who)
             assert response.json() == {
                 "code": "method_not_allowed",
-                "detail": f'Method "{method}" not allowed.',
+                "detail": "Method not allowed",
             }, (method, who)
 
 
