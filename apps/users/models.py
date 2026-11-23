@@ -1,6 +1,5 @@
 import uuid
 from typing import TYPE_CHECKING
-from typing import Any
 from typing import ClassVar
 from typing import override
 
@@ -20,12 +19,14 @@ from .managers import USER_DELETE_BLOCKED
 from .managers import UserManager
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from datetime import date
     from datetime import datetime
 
     from allauth.account.models import EmailAddress
     from allauth.mfa.models import Authenticator
     from django.contrib.admin.models import LogEntry
+    from django.db.models.base import ModelBase
     from django.db.models.expressions import Combinable
     from django_stubs_ext.db.models.manager import RelatedManager
 
@@ -99,18 +100,32 @@ class User(AbstractBaseUser, PermissionsMixin):
         self.email = self.__class__.objects.normalize_email(self.email)
 
     @override
-    def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
+    def delete(
+        self, using: object = None, keep_parents: bool = False
+    ) -> tuple[int, dict[str, int]]:
         raise ProtectedError(USER_DELETE_BLOCKED, {self})
 
     @override
-    def save(self, *args: Any, **kwargs: Any) -> None:
+    def save(
+        self,
+        *,
+        force_insert: bool | tuple[ModelBase, ...] = False,
+        force_update: bool = False,
+        using: str | None = None,
+        update_fields: Iterable[str] | None = None,
+    ) -> None:
         # Every write path (admin, ORM, allauth) stores the key that the unique
         # constraint and the login lookup use.
         self.email = self.__class__.objects.normalize_email(self.email)
         if not self.email:
             msg = "The given email must be set"
             raise ValueError(msg)
-        super().save(*args, **kwargs)
+        super().save(
+            force_insert=force_insert,
+            force_update=force_update,
+            using=using,
+            update_fields=update_fields,
+        )
 
     def get_full_name(self) -> str:
         return self.name.strip()

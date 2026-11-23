@@ -13,6 +13,7 @@ import re
 import time
 from functools import partial
 from typing import TYPE_CHECKING
+from typing import cast
 
 from django.core.cache import DEFAULT_CACHE_ALIAS
 from django.core.cache import caches
@@ -92,7 +93,8 @@ def read_through[T](
         logger.warning("cache read failed for %s", namespace, exc_info=True)
         return loader()
     if cached is not _MISS:
-        return cached
+        # The cache holds what loader returned for this key: a T.
+        return cast("T", cached)
     value = loader()
 
     def store() -> None:

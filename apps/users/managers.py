@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import unicodedata
 from typing import TYPE_CHECKING
-from typing import Any
 from typing import override
 
 from django.contrib.auth.base_user import BaseUserManager
@@ -55,35 +54,35 @@ class UserManager(BaseUserManager["User"]):
         return unicodedata.normalize("NFKC", email).strip().lower()
 
     def create_user(
-        self, email: str, password: str | None = None, **extra_fields: Any
+        self, email: str, password: str | None = None, **extra_fields: object
     ) -> User:
         user = self._build_user(email, password, **_regular_flags(extra_fields))
         user.save(using=self._db)
         return user
 
     async def acreate_user(
-        self, email: str, password: str | None = None, **extra_fields: Any
+        self, email: str, password: str | None = None, **extra_fields: object
     ) -> User:
         user = self._build_user(email, password, **_regular_flags(extra_fields))
         await user.asave(using=self._db)
         return user
 
     def create_superuser(
-        self, email: str, password: str | None = None, **extra_fields: Any
+        self, email: str, password: str | None = None, **extra_fields: object
     ) -> User:
         user = self._build_user(email, password, **_superuser_flags(extra_fields))
         user.save(using=self._db)
         return user
 
     async def acreate_superuser(
-        self, email: str, password: str | None = None, **extra_fields: Any
+        self, email: str, password: str | None = None, **extra_fields: object
     ) -> User:
         user = self._build_user(email, password, **_superuser_flags(extra_fields))
         await user.asave(using=self._db)
         return user
 
     def _build_user(
-        self, email: str, password: str | None, **extra_fields: Any
+        self, email: str, password: str | None, **extra_fields: object
     ) -> User:
         """
         Return an unsaved user with a normalized email and a hashed password.
@@ -100,13 +99,13 @@ class UserManager(BaseUserManager["User"]):
         return user
 
 
-def _regular_flags(extra_fields: dict[str, Any]) -> dict[str, Any]:
+def _regular_flags(extra_fields: dict[str, object]) -> dict[str, object]:
     extra_fields.setdefault("is_staff", False)
     extra_fields.setdefault("is_superuser", False)
     return extra_fields
 
 
-def _superuser_flags(extra_fields: dict[str, Any]) -> dict[str, Any]:
+def _superuser_flags(extra_fields: dict[str, object]) -> dict[str, object]:
     extra_fields.setdefault("is_staff", True)
     extra_fields.setdefault("is_superuser", True)
     if extra_fields.get("is_staff") is not True:

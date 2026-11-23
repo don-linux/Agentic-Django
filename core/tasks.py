@@ -8,8 +8,7 @@ Services call `enqueue_on_commit(task, **kwargs)`, never `delay()`,
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
-from typing import Any
+from typing import Protocol
 
 from celery import shared_task
 from django.db import transaction
@@ -18,13 +17,20 @@ from kombu.utils.json import dumps
 from core.logging import REQUEST_ID_HEADER
 from core.middleware import request_id_var
 
-if TYPE_CHECKING:
-    from celery import Task
-
 logger = logging.getLogger(__name__)
 
 
-def enqueue_on_commit(task: Task[Any, Any], /, **kwargs: Any) -> None:
+class PublishableTask(Protocol):
+    """What enqueue_on_commit uses of a Celery task: any @shared_task matches."""
+
+    name: str
+
+    def apply_async(
+        self, *, kwargs: dict[str, object], headers: dict[str, str]
+    ) -> object: ...
+
+
+def enqueue_on_commit(task: PublishableTask, /, **kwargs: object) -> None:
     """
     Publish `task` with `kwargs` once the current transaction commits.
 

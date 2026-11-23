@@ -250,8 +250,13 @@ implicit_reexport = true
 module = [
   "apps.*.services",
   "apps.*.selectors",
+  "apps.*.models",
+  "apps.*.managers",
   "core.exceptions",
   "core.errors",
+  "core.models",
+  "core.cache",
+  "core.tasks",
 ]
 disallow_any_generics = true
 disallow_any_explicit = true
