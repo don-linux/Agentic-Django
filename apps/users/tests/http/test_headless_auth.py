@@ -18,6 +18,7 @@ from django.urls import reverse
 import config.urls
 from apps.users.models import User
 from apps.users.tests.factories import UserFactory
+from core.tests.credentials import PASSWORD
 
 pytestmark = pytest.mark.django_db
 
@@ -85,7 +86,7 @@ def test_html_login_and_signup_are_gone(client) -> None:
 def test_signup_returns_json_and_sends_code(client: Client) -> None:
     response = client.post(
         SIGNUP_URL,
-        {"email": "new-user@example.com", "password": "My_R@ndom-P@ssw0rd"},
+        {"email": "new-user@example.com", "password": PASSWORD},
         content_type="application/json",
     )
 
@@ -105,7 +106,7 @@ def test_signup_respects_closed_registration(settings, client: Client) -> None:
 
     response = client.post(
         SIGNUP_URL,
-        {"email": "closed@example.com", "password": "My_R@ndom-P@ssw0rd"},
+        {"email": "closed@example.com", "password": PASSWORD},
         content_type="application/json",
     )
 
@@ -114,7 +115,7 @@ def test_signup_respects_closed_registration(settings, client: Client) -> None:
 
 
 def test_unverified_login_is_not_authenticated(client: Client) -> None:
-    password = "My_R@ndom-P@ssw0rd"  # noqa: S105
+    password = PASSWORD
     user = UserFactory(email="pending@example.com", password=password)
     EmailAddress.objects.create(
         user=user,
@@ -138,7 +139,7 @@ def test_verify_code_grants_api_access() -> None:
     client = Client()
     signup = client.post(
         SIGNUP_URL,
-        {"email": "verified@example.com", "password": "My_R@ndom-P@ssw0rd"},
+        {"email": "verified@example.com", "password": PASSWORD},
         content_type="application/json",
     )
     token = signup.json()["meta"]["session_token"]
@@ -165,7 +166,7 @@ def test_pending_signup_token_does_not_authenticate_api_requests() -> None:
     client = Client()
     signup = client.post(
         SIGNUP_URL,
-        {"email": "unverified-token@example.com", "password": "My_R@ndom-P@ssw0rd"},
+        {"email": "unverified-token@example.com", "password": PASSWORD},
         content_type="application/json",
     )
     pending_token = signup.json()["meta"]["session_token"]
@@ -266,7 +267,7 @@ def test_password_reset_for_unknown_email_prevents_enumeration_and_sends_signup_
 
 
 def test_mixed_case_signup_and_login() -> None:
-    password = "My_R@ndom-P@ssw0rd"  # noqa: S105
+    password = PASSWORD
     client = Client()
     signup = client.post(
         SIGNUP_URL,
@@ -345,14 +346,14 @@ def test_admin_preflight_has_no_cors(client, settings) -> None:
 def test_login_and_session_identify_the_user_by_public_uuid(
     client: Client,
 ) -> None:
-    user = UserFactory(email="uuid@example.com", password="My_R@ndom-P@ssw0rd")  # noqa: S106
+    user = UserFactory(email="uuid@example.com", password=PASSWORD)
     EmailAddress.objects.create(
         user=user, email=user.email, primary=True, verified=True
     )
 
     login = client.post(
         LOGIN_URL,
-        {"email": user.email, "password": "My_R@ndom-P@ssw0rd"},
+        {"email": user.email, "password": PASSWORD},
         content_type="application/json",
     )
     session = client.get(

@@ -31,6 +31,7 @@ from config import celery_app
 from config.settings.base import build_broker_url
 from core.cache import NAMESPACE_TTL
 from core.cache_backend import ValkeyCache
+from core.tests.credentials import PASSWORD
 from core.tests.valkey_fixtures import CACHE_DB
 from core.tests.valkey_fixtures import HOW_TO_START
 from core.tests.valkey_fixtures import _run_keys
@@ -52,7 +53,6 @@ BROKER_DB = 14
 # A port of the same host where nothing listens.
 CLOSED_PORT = 1
 PROBE_TIMEOUT_SECONDS = 3
-PASSWORD = "Correct-H0rse-Battery"  # noqa: S105
 LOGIN_URL = "/_allauth/app/v1/auth/login"
 ME_URL = "/api/v1/users/me/"
 ONE_MINUTE = 60

@@ -21,7 +21,7 @@ repos:
         args: [--fix=lf]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.5
+    rev: v0.17.6
     hooks:
       # The hooks already pass --force-exclude, so pyproject.toml excludes
       # (migrations, .agents) apply to the files pre-commit names. --no-cache: a
@@ -39,7 +39,7 @@ repos:
         args: [--target-version, "6.1"]
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.13.1
+    rev: 0.13.9
     hooks:
       # Check only: run `uv lock` yourself when pyproject.toml changes.
       - id: uv-lock
@@ -55,6 +55,6 @@ repos:
   # CI runs it through the existing pre-commit step; there is no second
   # markdownlint action, so the pin cannot drift.
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.24.1
+    rev: v0.24.2
     hooks:
       - id: markdownlint-cli2

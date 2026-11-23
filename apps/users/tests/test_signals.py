@@ -17,13 +17,13 @@ from apps.users.selectors import user_get
 from apps.users.tests.factories import UserFactory
 from core.cache import build_key
 from core.cache import invalidate
+from core.tests.credentials import PASSWORD
 
 if TYPE_CHECKING:
     from conftest import CacheWrites
 
 pytestmark = pytest.mark.django_db
 
-PASSWORD = "Correct-H0rse-Battery"  # noqa: S105
 LOGIN_URL = "/_allauth/app/v1/auth/login"
 
 

@@ -31,6 +31,7 @@ from core.api.exceptions import _ninja_validation_fields
 from core.api.negotiation import _parses
 from core.api.throttling import AnonThrottle
 from core.api.throttling import ScopedThrottle
+from core.tests.credentials import PASSWORD
 from core.tests.ninja.support import make_api
 
 if TYPE_CHECKING:
@@ -39,7 +40,6 @@ if TYPE_CHECKING:
 ME_URL = "/api/v1/users/me/"
 LIST_URL = "/api/v1/users/"
 DOCS_URL = "/api/v1/docs/"
-PASSWORD = "My_R@ndom-P@ssw0rd"  # noqa: S105
 LOGIN_URL = "/_allauth/app/v1/auth/login"
 
 

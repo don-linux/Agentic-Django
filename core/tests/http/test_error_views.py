@@ -130,7 +130,8 @@ def test_debug_html_errors_on_the_api_become_json(
 @pytest.mark.parametrize("debug", [False, True])
 def test_debug_middleware_leaves_json_and_non_debug_responses_alone(
     rf: RequestFactory,
-    debug: bool,  # noqa: FBT001
+    *,
+    debug: bool,
 ) -> None:
     body = "<html>prod</html>" if not debug else '{"code": "x"}'
     content_type = "text/html" if not debug else "application/json"

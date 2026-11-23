@@ -16,6 +16,7 @@ from redis.exceptions import ConnectionError as ValkeyConnectionError
 from apps.users.services import user_deactivate
 from apps.users.services import user_reactivate
 from apps.users.tests.factories import UserFactory
+from core.tests.credentials import PASSWORD
 
 if TYPE_CHECKING:
     from pytest_django.fixtures import Settings
@@ -24,7 +25,6 @@ if TYPE_CHECKING:
 
 pytestmark = pytest.mark.django_db
 
-PASSWORD = "Correct-H0rse-Battery"  # noqa: S105
 CACHED_DB = "django.contrib.sessions.backends.cached_db"
 # Valkey on a closed port: every call to it fails at once, as during an outage.
 DEAD_VALKEY = {

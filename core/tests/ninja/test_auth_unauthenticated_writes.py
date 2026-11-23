@@ -16,9 +16,9 @@ from allauth.account.models import EmailAddress
 from django.test import Client
 
 from apps.users.tests.factories import UserFactory
+from core.tests.credentials import PASSWORD
 
 ME_URL = "/api/v1/users/me/"
-PASSWORD = "My_R@ndom-P@ssw0rd"  # noqa: S105
 BAD_TOKEN = "bogus"  # noqa: S105
 LOGIN_URL = "/_allauth/app/v1/auth/login"
 SESSION_URL = "/_allauth/app/v1/auth/session"

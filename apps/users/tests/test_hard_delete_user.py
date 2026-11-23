@@ -17,10 +17,10 @@ from django.test import Client
 
 from apps.users.models import User
 from apps.users.tests.factories import UserFactory
+from core.tests.credentials import PASSWORD
 
 pytestmark = pytest.mark.django_db
 
-PASSWORD = "Correct-H0rse-Battery"  # noqa: S105
 EMAIL = "gone-for-good@example.com"
 
 
@@ -90,7 +90,7 @@ def test_noinput_without_a_matching_email_deletes_nothing(confirm: str) -> None:
 
 
 @pytest.mark.parametrize(("typed", "deleted"), [(EMAIL, True), ("no", False)])
-def test_interactive_confirmation(typed: str, deleted: bool) -> None:  # noqa: FBT001
+def test_interactive_confirmation(typed: str, *, deleted: bool) -> None:
     user = _user_with_history()
 
     with mock.patch("builtins.input", return_value=typed):

@@ -145,6 +145,8 @@ The shared fixtures live in the root `conftest.py`:
 - Uploads go to an in-memory storage, so tests never touch the disk.
 - `assert_constant_queries(call, grow)` runs `call()`, adds rows with `grow()`, runs `call()` again and fails when the query count changed: the N+1 guard for list endpoints.
 
+A test that signs up, logs in or sets a password uses `PASSWORD` from `core/tests/credentials.py`. It is defined once, so ruff's hardcoded-password checks (S105, S106) need no `noqa` anywhere else. A test that needs a second password, such as a wrong or a new one, defines it next to the test.
+
 ### Cache writes
 
 `core.cache` stores a read and invalidates a namespace only after the transaction commits, and a test never commits, so every read is a miss. Wrap each step in `with cache_writes():` to run those callbacks when the block ends:

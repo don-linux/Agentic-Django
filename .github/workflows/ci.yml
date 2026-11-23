@@ -113,8 +113,8 @@ jobs:
       # The oasdiff CLI pinned by version and checksum, like gitleaks.
       - name: Install oasdiff
         env:
-          OASDIFF_VERSION: "1.38.0"
-          OASDIFF_SHA256: "613037fd6a1d3362a1b742d6d86c338c0eb5ab3511f4942ce3948e78720ea2da"
+          OASDIFF_VERSION: "1.39.0"
+          OASDIFF_SHA256: "71a85930728f367a2086077b7ae1411319421549d18473a3e8258b6451520433"
         run: |
           set -euo pipefail
           curl -sSfL -o "$RUNNER_TEMP/oasdiff.tar.gz" \
@@ -141,7 +141,7 @@ jobs:
     services:
       postgres:
         # Keep in sync with docker/prod/compose.yaml. See docs/ci.md#image-pins.
-        image: postgres:18.6-alpine3.24@sha256:9ba53c7d41ea093baf5c1ba635ba5434c4f979880527d49bb7d9237d3193085b
+        image: postgres:18.7-alpine3.24@sha256:0115267ab5a509022df9319c77be365cef335adb71556c75f60f5360ee247e71
         env:
           POSTGRES_DB: ci
           POSTGRES_USER: ci
@@ -155,7 +155,7 @@ jobs:
           --health-retries 10
       valkey:
         # Keep in sync with docker/prod/compose.yaml. See docs/ci.md#image-pins.
-        image: valkey/valkey:9.1.3-alpine3.24@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b
+        image: valkey/valkey:9.1.4-alpine3.24@sha256:56729e68bdda139cbd3f6a2538683dc3523325fc5711ea1a379938f1b37893f0
         ports:
           - 6379:6379
         options: >-
@@ -185,7 +185,7 @@ jobs:
     services:
       postgres:
         # Keep in sync with docker/prod/compose.yaml. See docs/ci.md#image-pins.
-        image: postgres:18.6-alpine3.24@sha256:9ba53c7d41ea093baf5c1ba635ba5434c4f979880527d49bb7d9237d3193085b
+        image: postgres:18.7-alpine3.24@sha256:0115267ab5a509022df9319c77be365cef335adb71556c75f60f5360ee247e71
         env:
           POSTGRES_DB: ci
           POSTGRES_USER: ci
@@ -199,7 +199,7 @@ jobs:
           --health-retries 10
       valkey:
         # Keep in sync with docker/prod/compose.yaml. See docs/ci.md#image-pins.
-        image: valkey/valkey:9.1.3-alpine3.24@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b
+        image: valkey/valkey:9.1.4-alpine3.24@sha256:56729e68bdda139cbd3f6a2538683dc3523325fc5711ea1a379938f1b37893f0
         env:
           # A service cannot override its command; the image appends these flags.
           # The throwaway password is repeated in the two steps that start django.
@@ -418,7 +418,7 @@ jobs:
     services:
       postgres:
         # Keep in sync with docker/prod/compose.yaml. See docs/ci.md#image-pins.
-        image: postgres:18.6-alpine3.24@sha256:9ba53c7d41ea093baf5c1ba635ba5434c4f979880527d49bb7d9237d3193085b
+        image: postgres:18.7-alpine3.24@sha256:0115267ab5a509022df9319c77be365cef335adb71556c75f60f5360ee247e71
         env:
           POSTGRES_DB: ci
           POSTGRES_USER: ci
@@ -432,7 +432,7 @@ jobs:
           --health-retries 10
       valkey:
         # Keep in sync with docker/prod/compose.yaml. See docs/ci.md#image-pins.
-        image: valkey/valkey:9.1.3-alpine3.24@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b
+        image: valkey/valkey:9.1.4-alpine3.24@sha256:56729e68bdda139cbd3f6a2538683dc3523325fc5711ea1a379938f1b37893f0
         ports:
           - 6379:6379
         options: >-

@@ -11,10 +11,10 @@ from django.core import mail
 from django.test import Client
 
 from apps.users.tests.factories import UserFactory
+from core.tests.credentials import PASSWORD
 
 pytestmark = pytest.mark.django_db
 
-PASSWORD = "Correct-H0rse-Battery"  # noqa: S105
 LOGIN_URL = "/_allauth/app/v1/auth/login"
 REAUTH_URL = "/_allauth/app/v1/auth/reauthenticate"
 EMAIL_URL = "/_allauth/app/v1/account/email"

@@ -11,10 +11,10 @@ from django.test import Client
 
 from apps.users.adapters import AccountAdapter
 from apps.users.tests.factories import UserFactory
+from core.tests.credentials import PASSWORD
 
 pytestmark = pytest.mark.django_db
 
-PASSWORD = "Correct-H0rse-Battery"  # noqa: S105
 BASE = "/_allauth/app/v1"
 PHONE = "+525512345678"
 
@@ -61,7 +61,8 @@ def test_a_user_has_no_phone() -> None:
 @pytest.mark.parametrize("route", ["/auth/phone/verify", "/auth/phone/verify/resend"])
 def test_verification_without_a_pending_flow_is_409(
     route: str,
-    authenticated: bool,  # noqa: FBT001
+    *,
+    authenticated: bool,
 ) -> None:
     response = _call("post", route, _token() if authenticated else None)
 

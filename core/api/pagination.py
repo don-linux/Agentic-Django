@@ -96,8 +96,10 @@ class LimitPageNumberPagination(PageNumberPagination):
     items_attribute = "results"
 
     # Ninja declares Input/Output as nested classes and its own CursorPagination
-    # swaps them for unrelated schemas (django-ninja 1.8.0 ninja/pagination.py);
-    # an alias keeps the published component names. Both checkers flag the swap.
+    # swaps them for unrelated schemas (django-ninja 1.8.0 ninja/pagination.py).
+    # The alias keeps the component name Ninja publishes from Input, PageNumberIn;
+    # a nested `class Input(PageNumberIn)` would publish it as "Input" and pyright
+    # would still flag it. Both checkers flag the swap (docs/typing.md).
     Input = PageNumberIn  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
     Output = PageNumberOut  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
 
@@ -197,7 +199,7 @@ class CachedCountPaginatorCount:
         except EmptyResultSet:
             return 0
         return read_through(
-            queryset.model._meta.label_lower,  # noqa: SLF001
+            queryset.model._meta.label_lower,
             "count",
             sql,
             ttl=COUNT_TTL,

@@ -19,6 +19,7 @@ from django.test import override_settings
 from django.urls import get_resolver
 
 from apps.users.tests.factories import UserFactory
+from core.tests.credentials import PASSWORD
 from core.tests.routes import _routes
 
 if TYPE_CHECKING:
@@ -30,7 +31,6 @@ LOGIN_URL = "/_allauth/app/v1/auth/login"
 RESET_REQUEST_URL = "/_allauth/app/v1/auth/password/request"
 RESEND_URL = "/_allauth/app/v1/auth/email/verify/resend"
 SESSION_URL = "/_allauth/app/v1/auth/session"
-PASSWORD = "Correct-H0rse-Battery"  # noqa: S105
 
 
 def allauth_slashed_leaf_routes(routes: list[str]) -> list[str]:

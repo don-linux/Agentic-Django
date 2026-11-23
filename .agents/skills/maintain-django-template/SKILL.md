@@ -95,7 +95,7 @@ digest() {  # digest <registry: docker.io or ghcr.io> <repository> <tag>
     "https://$host/v2/$2/manifests/$3" | tr -d '\r' | awk 'tolower($1)=="docker-content-digest:"{print $2}'
 }
 digest docker.io library/python 3.14.10-slim    # e.g. the Python base image
-digest ghcr.io astral-sh/uv 0.13.1               # e.g. the uv image
+digest ghcr.io astral-sh/uv 0.13.9               # e.g. the uv image
 ```
 
 - `python`: Dependabot proposes patch releases only. A minor release is a Python upgrade (see "Python minor release" below).
@@ -200,7 +200,7 @@ Add the open Dependabot pull requests, and anything you could not check and why.
    - Every bump: remove each suppression in the "Permanent" tables one at a time and run `scripts/check.sh lint`. One that is no longer needed goes, with its row. Both checkers already fail on a stale suppression (mypy `warn_unused_ignores`, pyright `reportUnnecessaryTypeIgnoreComment`), so `lint` names the ones the upgrade made unnecessary.
    - django-ninja: re-read the Ninja deviations table against the release notes and the linked guide pages; the pin tests under `tests/ninja/` fail when a private behavior changed.
 
-   A schema diff after a django-ninja, pydantic or django-allauth bump is a change in the API: commit it with that upgrade and say so in the report. A django-ninja bump may need changes under `tests/ninja/` only; a failure under `tests/http/` is a change in the HTTP contract: report it and never edit the assertion to make it pass ([docs/development.md](../../../docs/development.md#test-layout)). After a Django or PostgreSQL bump, also run `scripts/check.sh reversible` against a throwaway database ([docs/ci.md](../../../docs/ci.md#reversible-migrations)).
+   A schema diff after a django-ninja, pydantic or django-allauth bump is a change in the API: commit it with that upgrade and say so in the report. A django-ninja bump may need changes under `tests/ninja/` only; a failure under `tests/http/` is a change in the HTTP contract: report it and never edit the assertion to make it pass ([docs/development.md](../../../docs/development.md#test-layout)). After a Django or PostgreSQL bump, also run `scripts/check.sh reversible` against a throwaway database ([docs/ci.md](../../../docs/ci.md#reversible-migrations)). After a Django bump, read the release's changes to `django/db/models/deletion.py`: `hard_delete_user` lists the cascade with the undocumented `Collector` ([docs/user-deletion/hard-delete.md](../../../docs/user-deletion/hard-delete.md)).
 7. A deprecation warning fails the suite (`filterwarnings = ["error"]`). Fix the call; add a narrow `ignore:` entry only for a third-party warning, with a link to the issue.
 8. Run the Bruno smoke ([docs/development.md](../../../docs/development.md#bruno)) after any bump of Django, django-ninja, django-allauth or the images.
 9. Push, open the pull request and wait for every CI job, `audit` included. Report per commit: component, from → to, what you read, and what changed besides the pin.
