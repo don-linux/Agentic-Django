@@ -812,11 +812,8 @@ def test_enqueue_on_commit_survives_a_closed_broker(
             "socket_timeout": 0.2,
             "socket_keepalive": True,
         }
-        celery_app.conf.task_publish_retry = False
-        celery_app.conf.task_publish_retry_policy = {
-            "max_retries": 0,
-            "interval_max": 0,
-        }
+        # The production publish retry policy stays: it is what bounds a
+        # request when the broker is down (config/settings/base.py).
         celery_app.connection_for_write().release()
 
         started = time.monotonic()
@@ -824,7 +821,9 @@ def test_enqueue_on_commit_survives_a_closed_broker(
             caplog.at_level(logging.ERROR),
             django_capture_on_commit_callbacks(execute=True),
         ):
-            enqueue_on_commit(ping, email_hint="private-value")
+            # ping takes no arguments: Celery checks them before it contacts
+            # the broker. test_tasks.py checks that arguments never reach a log.
+            enqueue_on_commit(ping)
         elapsed = time.monotonic() - started
 
         errors = [
@@ -863,17 +862,16 @@ def test_enqueue_on_commit_is_bounded_when_the_broker_hangs(
                 "socket_timeout": 0.2,
                 "socket_keepalive": True,
             }
-            celery_app.conf.task_publish_retry = False
-            celery_app.conf.task_publish_retry_policy = {
-                "max_retries": 0,
-                "interval_max": 0,
-            }
+            # The production publish retry policy stays: it is what bounds a
+            # request when the broker is down (config/settings/base.py).
             started = time.monotonic()
             with (
                 caplog.at_level(logging.ERROR),
                 django_capture_on_commit_callbacks(execute=True),
             ):
-                enqueue_on_commit(ping, email_hint="private-value")
+                # ping takes no arguments: Celery checks them before it
+                # contacts the broker.
+                enqueue_on_commit(ping)
             elapsed = time.monotonic() - started
 
         errors = [

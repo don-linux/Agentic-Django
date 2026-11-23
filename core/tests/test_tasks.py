@@ -133,7 +133,7 @@ def test_arguments_must_be_plain_json_values(
     # in tests tasks run inline and nothing would be serialized.
     with (
         django_capture_on_commit_callbacks(execute=True) as callbacks,
-        pytest.raises(TypeError, match="plain JSON values"),
+        pytest.raises(TypeError, match="JSON serializer"),
     ):
         enqueue_on_commit(ping, user=object())
 
@@ -173,3 +173,21 @@ def test_publishing_gives_up_after_two_quick_retries() -> None:
         "interval_step": 0.5,
         "interval_max": 1,
     }
+
+
+@shared_task(name="core.tests.fail", ignore_result=True)
+def _fail() -> None:
+    msg = "the task's own bug"
+    raise ValueError(msg)
+
+
+def test_in_eager_mode_a_tasks_own_error_reaches_the_caller(
+    django_capture_on_commit_callbacks: DjangoCaptureOnCommitCallbacks,
+) -> None:
+    # Only a broker outage is logged and swallowed. In tests the task runs
+    # inside apply_async, and a bug in it must fail the test (docs/settings.md).
+    with (
+        pytest.raises(ValueError, match="the task's own bug"),
+        django_capture_on_commit_callbacks(execute=True),
+    ):
+        enqueue_on_commit(_fail)
