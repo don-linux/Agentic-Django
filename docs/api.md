@@ -48,6 +48,8 @@ A request without valid credentials gets 401 with `WWW-Authenticate: X-Session-T
 - A request body key that is not a field of the endpoint is a 400 `validation_error` whose `fields` entry has the code `unknown_field`, not a silently ignored key. That includes the read-only `id` and `url` of a `GET` body sent back in a `PATCH`. A value of the wrong type is a 400 too (a number for a string field is `string_type`), and strings are stored as sent, without trimming, so `maxLength` counts every character the client sent.
 - Content negotiation uses the `Accept` header only ([RFC 9110, section 12.5.1](https://www.rfc-editor.org/rfc/rfc9110#section-12.5.1)). Each operation produces the media types its 2xx responses declare in the schema: JSON for every operation the template ships, HTML for `/api/v1/docs/`, and a file's type for a download that declares one ([files.md](files.md#endpoint)). `ApiContractMiddleware` answers an `Accept` that takes none of them with 406 `not_acceptable`; an operation that declares no content on success, such as a 204, is not negotiated. The order is the one Django and Ninja dispatch in: a path that is not a route is 404 whatever the `Accept`, a method the route lacks is 405, `OPTIONS` answers without negotiating (it has no body), and only then comes the 406, before authentication ([ADR 0020](decisions/0020-options-allow-and-406-follow-django-and-rfc-9110.md)). A media type is not acceptable when the most specific ranges that cover it (`type/subtype` with parameters, then `type/subtype`, `type/*` and `*/*`) all have `q=0`, "not acceptable" (section 12.4.2), so `*/*, application/json;q=0` is 406 on a JSON resource. A range with `q=0` and parameters other than `q` refuses only the variant with those parameters (section 12.5.1, table 5, as Django's `MediaType.match`), so `application/json, application/json;indent=2;q=0` is JSON; above 0, a range covers a media type whatever its parameters. Of two ranges equally specific, one above 0 and one with `q=0`, the media type is acceptable: RFC 9110 does not define that case. `q="0"` and `q = 0` are `q=0` too; `q=00` is not a valid qvalue and, like other weights, is ignored. Every member of the header counts. The server bounds its size: gunicorn joins repeated header lines into one value, and allows at most `limit_request_fields` lines of `limit_request_field_size` bytes each (`docker/prod/gunicorn.conf.py`). A present but empty `Accept` is 406, and so is a range like `*/json`, which RFC 9110 does not allow. `?format=` is ignored like any other unknown query parameter: it never changes a response, and a pagination link keeps it, as it keeps every query parameter. The schema at `/api/v1/schema/` is Ninja's own view and is JSON only (`application/json`); an `Accept` that excludes JSON is 406 ([ADR 0019](decisions/0019-the-schema-and-docs-are-ninja-s-own-views.md)). JSON responses are compact and ignore `; indent=N`, error bodies built outside Ninja included (`core.errors.json_error`); the schema is Ninja's own `JsonResponse`, with spaces. Generate the schema file with `python manage.py export_openapi_schema --settings config.settings.test --api config.api.api --indent 2 > docs/openapi.json`, the command `scripts/check.sh` compares byte for byte.
 
+`apps.users.adapters.HeadlessAdapter` overrides `get_user_dataclass` and `user_as_dataclass` (not `serialize_user`), so allauth's user payload carries the public UUID as `"id"` and its schema stays in sync. The schema at `/api/v1/schema/` and Swagger UI at `/api/v1/docs/` are Ninja's own views, staff-only through `NinjaAPI(docs_decorator=staff_docs_required)` (`core/api/auth.py`), and production fills the schema's `servers` from `ALLOWED_HOSTS`.
+
 #### Field types
 
 Ninja validates a request with Pydantic in lax mode (`model_validate` on the parsed JSON), which converts between JSON types: `"1"` or `true` for an integer, `0` for a boolean, a Unix time for a datetime. The schema forbids those values and the conformance test sends them, so request fields use these types ([ADR 0022](decisions/0022-request-fields-validate-strictly.md)):
@@ -67,7 +69,18 @@ Ninja validates a request with Pydantic in lax mode (`model_validate` on the par
 
 An input schema states every rule the model's `full_clean()` checks and a schema can express: `max_length` as `maxLength`, `blank=False` as `minLength` 1. Otherwise `full_clean()` answers 400 to a request the schema allows, which the conformance test reports as a schema-valid request rejected (ST202). Every `InputSchema` also refuses, at any depth, the text PostgreSQL cannot store: a NUL (`null_characters_not_allowed`, Django's code and message) and a lone surrogate, which a JSON escape can carry (Pydantic's `string_unicode`). Either one would be a 500 when the row is saved (`core.api.schemas.storable_text`).
 
-`apps.users.adapters.HeadlessAdapter` overrides `get_user_dataclass` and `user_as_dataclass` (not `serialize_user`), so allauth's user payload carries the public UUID as `"id"` and its schema stays in sync. The schema at `/api/v1/schema/` and Swagger UI at `/api/v1/docs/` are Ninja's own views, staff-only through `NinjaAPI(docs_decorator=staff_docs_required)` (`core/api/auth.py`), and production fills the schema's `servers` from `ALLOWED_HOSTS`.
+#### Related objects, enums and other types
+
+- **A related object** appears as its `public_id`, a string: `project_id: UUID` with a `resolve_project_id(obj)` that returns `obj.project.public_id`, the relation loaded by the selector's `select_related`. Or it appears as a nested output schema when the client needs its fields. A request sends it as `project_id: PublicId`. The service looks it up in the caller's scoped queryset, so an unknown or invisible id is `ObjectDoesNotExist`, a 404 `not_found` like a detail path: the response does not tell whether the object exists, and schemathesis accepts a 404 for a random id. Such an operation declares 404.
+- **A choice** is a Django `TextChoices` or `IntegerChoices` on the model, used as the field type in both schemas, or a `StrEnum` or a `Literal`. The schema publishes the values as an `enum`. A plain `enum.Enum` is not an option: Ninja's encoder writes a member as `str(member)`, `"Color.RED"`, not its value.
+- **Not offered yet**, each for a reason; add a type to `core/api/schemas.py`, with tests and a conformance run, before the first field needs it:
+  - `time`: Django's JSON encoder cuts it to milliseconds and fails with a 500 on a time with a zone, which Pydantic accepts (`"12:00:00Z"`).
+  - `timedelta`: Pydantic also takes a number of seconds for it, which the schema does not declare.
+  - Email: Pydantic's `EmailStr` needs `email-validator`, which is not installed. A plain `str` checked by the model's `EmailValidator` answers 400 to strings the schema allows.
+  - URL: Pydantic's `HttpUrl` normalizes the value (a trailing `/`), so it is not stored as sent.
+- **`ModelSchema`** is not used: the contract would follow the model, so a model change would change required fields and types without a schema diff in the review, and it cannot use the types above without overriding each field. Write a `Schema` with explicit fields.
+- **Bulk and nested writes** are not offered: one request writes one resource, and a nested object in a request body is a related id. A list body would need an error location per item and a rule for partial failure.
+- **Examples** go on the field, `Field(examples=["ACME-1"])`, and Ninja publishes them. schemathesis sends them, so an example must be valid.
 
 ### Caching
 
@@ -86,6 +99,56 @@ The API keeps `{"code", "detail"}` with `application/json`. `detail` already has
 - Default: `core.api.pagination.LimitPageNumberPagination`. `?page=` and `?page_size=` (20 by default, at most 100); the response is `count`, `next`, `previous`, `results`. Both parameters are whole numbers of at least 1, validated as in Ninja's own `PageNumberPagination`: anything else (`?page=abc`, `?page=`, `?page=0`, `?page_size=-1`) is a `400 validation_error` with the parameter under `fields`, and a `page_size` above 100 is cut to 100. Every page runs `COUNT(*)` plus `OFFSET`, which slows down with depth, so pages deeper than `DJANGO_API_MAX_PAGE_NUMBER` (1000) are a `404 not_found`, like any page past the end. Use it for admin-like lists where the total matters.
 - Opt-in: `@paginate(LimitCursorPagination)` from `core.api.pagination` ([Ninja: CursorPagination](https://django-ninja.dev/guide/pagination/#cursorpagination)) for large or append-heavy tables, feeds, and infinite scroll. Clients follow the `next`/`previous` links (`?cursor=`); there is no `count`, and every page costs the same at any depth. It orders by `-public_id`; a custom `ordering` must be unique and indexed. An invalid cursor (`?cursor=not-a-cursor`) is Ninja's `400` validation error under `fields.cursor`, like a malformed page number on a page-number list; `/api/v1/users/` does not use cursor pagination.
 - Opt-in: `core.api.pagination.CachedCountPageNumberPagination` for page-number lists over a large table, where `COUNT(*)` is the expensive query of every page. It caches the total of each query in Valkey for 60 seconds, so `count` and the last page number may lag by up to a minute, or less when the service that writes the model calls `core.cache.invalidate()`. The key is the SQL of the queryset, so each user's or tenant's list has its own total. The rows of a page are never cached, and cursor pages have no count to cache.
+- Not offered: limit-offset. Ninja's `LimitOffsetPagination` publishes `{items, count}`, a second list envelope, and page numbers and cursors cover the same lists.
+
+## Filtering, search and ordering
+
+A list takes its filters as a Ninja `FilterSchema` read from the query string, and its sort order as one parameter limited to a `Literal` ([Ninja: filtering](https://django-ninja.dev/guide/filtering/)):
+
+```python
+from typing import Annotated, Literal
+
+from ninja import FilterLookup, FilterSchema, Query
+from pydantic import field_validator
+
+from core.api.schemas import UTCDateTime, storable_text
+
+
+class ThingFilter(FilterSchema):
+    # A list of lookups is combined with OR: one search box over two columns.
+    search: Annotated[str | None, FilterLookup(["name__icontains", "code__iexact"])] = None
+    status: Annotated[ThingStatus | None, FilterLookup("status")] = None
+    created_after: Annotated[UTCDateTime | None, FilterLookup("created_at__gte")] = None
+
+    @field_validator("*")
+    @classmethod
+    def reject_unstorable_text(cls, value: object) -> object:
+        # Query text reaches PostgreSQL too, which cannot take a NUL.
+        return storable_text(value)
+
+
+ThingOrdering = Literal["created_at", "-created_at", "name", "-name"]
+
+
+@router.get("/", response={200: list[ThingOut], **LIST_ERRORS}, ...)
+@paginate(LimitPageNumberPagination)
+def things_list(
+    request: HttpRequest,
+    filters: Query[ThingFilter],
+    ordering: ThingOrdering = "-created_at",
+) -> QuerySet[Thing]:
+    return thing_list(
+        user=_caller(request),
+        where=filters.get_filter_expression(),
+        ordering=ordering,
+    )
+```
+
+- The view passes the selector a Django `Q` from `get_filter_expression()`, never the `FilterSchema`: only `api/` imports Ninja (the `api-framework-in-api-layer` import contract). The selector scopes the queryset to the caller first, so a filter can only narrow it, then applies `where` and `order_by(ordering, "-id")`. The primary key breaks ties, so pages stay stable.
+- Never pass a client's string to `order_by()`. The `Literal` lets through only the listed fields, and anything else is a 400 `literal_error` under `fields.ordering`.
+- The field types are those of a query parameter ([Field types](#field-types)), and the `storable_text` validator keeps a NUL out of the SQL, as `InputSchema` does for a body.
+- Every filter and every ordering a client may choose needs an index ([ARCHITECTURE.md#indexes](ARCHITECTURE.md#indexes)). Add the selector to `core/tests/ninja/test_list_indexes.py` once per ordering; that test checks the ordering, and the review checks the filters.
+- An unknown query parameter is still ignored ([ADR 0021](decisions/0021-what-stays-after-drf-parity-and-why.md)): a misspelled filter filters nothing.
 
 ## Idempotent retries
 
@@ -209,6 +272,27 @@ Nothing adds them automatically: each operation spreads the error map that fits 
 Every operation sets `operation_id` explicitly, `<app>_<resource>_<action>` (for example `users_me_retrieve` under the `users` tag), so a renamed function never changes the contract ([Ninja: operation_id](https://django-ninja.dev/guide/operations/#operation_id)). When `/api/v2/` opens, serve one schema per version instead of one schema with both.
 
 The schema is Ninja 1.8.0's own output; nothing rewrites it afterwards. Contract details come from documented options: `response=` maps (`core.api.responses`), `openapi_extra` for descriptions and headers, Pydantic `WithJsonSchema` for the path `id` pattern and `json_schema_extra` for `readOnly` and the 400 `oneOf`. An optional body (`BodyEx[T, P(default_factory=T)]`, the type-checker spelling of `Body(default_factory=...)`, [Ninja: request body](https://django-ninja.dev/guide/body/)) is a one-item `allOf` around its `$ref`, so the `api-contract` job runs oasdiff with `--flatten-allof` ([Breaking changes](#breaking-changes)).
+
+## Permissions and public endpoints
+
+Scoping comes first: a selector returns only what the caller may see, so another user's object is a 404 and its existence never leaks. A permission check is the second layer, for an object the caller can see but may not change. For example, a member of a project who is not its owner may read it but not delete it. The service raises it with the registered code and its own text ([ADR 0017](decisions/0017-error-texts-come-from-the-code-that-raises-the-error.md)):
+
+```python
+from http import HTTPStatus
+
+from core.exceptions import ApplicationError
+
+if project.owner_id != user.pk:
+    raise ApplicationError(
+        "Only the owner can delete this project.",
+        code="permission_denied",
+        status_code=HTTPStatus.FORBIDDEN,
+    )
+```
+
+Every operation already declares 403 (`READ_ERRORS`). Do not raise Django's `PermissionDenied` or Ninja's `AuthorizationError` for a domain rule; they stay for authentication and CSRF.
+
+A public operation sets `auth=None` and keeps the API's throttles, so `AnonThrottle` counts by client IP ([Ninja: authentication](https://django-ninja.dev/guide/authentication/)). It answers neither 401 nor 403, so it declares only what it can answer, for example `response={200: ThingOut, 406: ErrorSchema, 429: ErrorSchema}` with the same map in `response_docs(...)`. The published operation has no `security`, and `core/tests/ninja/test_openapi_responses.py` then does not ask it for 401 or 403. A public operation reads only public data, so its selector takes no user.
 
 ## Throttling
 

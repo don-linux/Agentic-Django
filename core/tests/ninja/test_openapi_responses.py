@@ -29,20 +29,36 @@ def _operations() -> dict[tuple[str, str], dict[str, Any]]:
     return {(p, m.upper()): op for p, item in paths.items() for m, op in item.items()}
 
 
+def _expected_codes(path: str, method: str, op: dict[str, Any]) -> set[str]:
+    expected = set(COMMON)
+    if not op.get("security"):
+        # A public operation (auth=None) answers no 401 and no 403
+        # (docs/api.md#permissions-and-public-endpoints).
+        expected -= {"401", "403"}
+    if method in {"POST", "PUT", "PATCH"}:
+        expected |= WRITE
+    if "{" in path or op["operationId"].endswith("_list"):
+        expected.add("404")
+    if op["operationId"].endswith("_list"):
+        # A malformed page or page_size (docs/api.md#pagination).
+        expected.add("400")
+    return expected
+
+
 def test_every_operation_declares_the_shared_error_responses() -> None:
     for (path, method), op in _operations().items():
         codes = {str(code) for code in op["responses"]}
         # The success status depends on the operation: 200, 201 (create), 202, 204.
         assert any(code.startswith("2") for code in codes), (path, method)
-        expected = set(COMMON)
-        if method in {"POST", "PUT", "PATCH"}:
-            expected |= WRITE
-        if "{" in path or op["operationId"].endswith("_list"):
-            expected.add("404")
-        if op["operationId"].endswith("_list"):
-            # A malformed page or page_size (docs/api.md#pagination).
-            expected.add("400")
+        expected = _expected_codes(path, method, op)
         assert expected <= codes, (path, method, sorted(expected - codes))
+
+
+def test_only_a_public_operation_may_leave_out_401_and_403() -> None:
+    public: dict[str, Any] = {"operationId": "things_retrieve", "responses": {}}
+    private = {**public, "security": [{"XSessionTokenAuth": []}]}
+    assert _expected_codes("/api/v1/things/", "GET", public) == {"406", "429"}
+    assert {"401", "403"} <= _expected_codes("/api/v1/things/", "GET", private)
 
 
 def test_error_responses_document_their_headers() -> None:
