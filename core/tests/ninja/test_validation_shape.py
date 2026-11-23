@@ -20,7 +20,9 @@ from core.api.exceptions import _ninja_validation_fields
 from core.api.exceptions import register_exception_handlers
 from core.api.parsers import JSONParser
 from core.api.schemas import InputSchema
+from core.api.schemas import PublicId
 from core.tests.ninja.pagination_views import cursor_api
+from core.tests.ninja.support import make_api
 
 if TYPE_CHECKING:
     from django.test import Client
@@ -177,3 +179,50 @@ def test_an_invalid_cursor_is_a_cursor_field_error() -> None:
 def test_null_for_a_non_nullable_field_is_pydantic_s_string_type() -> None:
     fields = _fields(_post("/named-body/", {**BAD, "title": None}))
     assert fields["title"] == NOT_A_STRING
+
+
+@pytest.mark.parametrize("key_first", [True, False])
+def test_an_error_on_a_key_and_one_under_it_both_survive(*, key_first: bool) -> None:
+    # Pydantic reports a dict key it rejects at (field, key, "[key]") and the
+    # value at (field, key), in either order: neither error may be lost, and
+    # neither may turn the 400 into a 500.
+    under = {
+        "loc": ("body", "body", "quantities", "x", "[key]"),
+        "type": "uuid_parsing",
+        "msg": "bad key",
+    }
+    on = {
+        "loc": ("body", "body", "quantities", "x"),
+        "type": "int_parsing",
+        "msg": "bad value",
+    }
+    errors = [under, on] if key_first else [on, under]
+    assert _ninja_validation_fields(errors) == {
+        "quantities": {
+            "x": {
+                "[key]": [{"code": "uuid_parsing", "detail": "bad key"}],
+                "non_field_errors": [{"code": "int_parsing", "detail": "bad value"}],
+            }
+        }
+    }
+
+
+class _Quantities(InputSchema):
+    quantities: dict[PublicId, int]
+
+
+def test_a_bad_dict_key_and_value_is_a_400_through_ninja() -> None:
+    api = make_api(throttle=[], auth=None)
+    router = Router()
+
+    @router.post("/q/", auth=None)
+    def quantities(request, body: _Quantities) -> dict[str, bool]:
+        return {"ok": True}
+
+    api.add_router("/", router)
+    response = TestClient(api).post(
+        "/q/", json={"quantities": {"not-a-uuid": "x"}}, content_type="application/json"
+    )
+    assert response.status_code == HTTPStatus.BAD_REQUEST, response.content
+    tree = response.json()["fields"]["quantities"]["not-a-uuid"]
+    assert set(tree) == {"[key]", "non_field_errors"}

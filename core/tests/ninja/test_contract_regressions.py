@@ -129,14 +129,20 @@ def test_a_field_error_keeps_pydantic_s_type_except_unknown_field(
     assert _code_and_detail(err) == expected
 
 
-def test_a_leaf_and_a_nested_error_on_the_same_key_keep_the_nested_one() -> None:
+def test_a_leaf_and_a_nested_error_on_the_same_key_keep_both() -> None:
+    # The key's own error goes under its non_field_errors; none is dropped.
     fields = _ninja_validation_fields(
         [
             {"loc": ("body", "body", "address"), "type": "missing", "msg": "m"},
             {"loc": ("body", "body", "address", "city"), "type": "missing", "msg": "m"},
         ]
     )
-    assert fields == {"address": {"city": [{"code": "missing", "detail": "m"}]}}
+    assert fields == {
+        "address": {
+            "non_field_errors": [{"code": "missing", "detail": "m"}],
+            "city": [{"code": "missing", "detail": "m"}],
+        }
+    }
 
 
 # --- the whole request is validated before the view looks anything up -------

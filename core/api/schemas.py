@@ -168,22 +168,24 @@ def storable_text[T](value: T) -> T:
     A NUL, or a lone surrogate (U+D800 to U+DFFF on its own), which a JSON
     escape can carry (RFC 8259, section 8.2): it is not Unicode text, and
     psycopg cannot encode it. Without this check either one is a 500 when the
-    row is saved.
+    row is saved. The walk keeps its own stack, so only the JSON decoder
+    limits how deep a value may be.
     """
-    if isinstance(value, str):
-        if "\x00" in value:
-            raise PydanticCustomError(NUL_CODE, NUL_DETAIL)
-        try:
-            value.encode()
-        except UnicodeEncodeError:
-            raise PydanticKnownError(_STRING_UNICODE) from None
-    elif _is_mapping(value):
-        for key, item in value.items():
-            storable_text(key)
-            storable_text(item)
-    elif _is_collection(value):
-        for item in value:
-            storable_text(item)
+    pending: list[object] = [value]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, str):
+            if "\x00" in item:
+                raise PydanticCustomError(NUL_CODE, NUL_DETAIL)
+            try:
+                item.encode()
+            except UnicodeEncodeError:
+                raise PydanticKnownError(_STRING_UNICODE) from None
+        elif _is_mapping(item):
+            pending.extend(item.keys())
+            pending.extend(item.values())
+        elif _is_collection(item):
+            pending.extend(item)
     return value
 
 

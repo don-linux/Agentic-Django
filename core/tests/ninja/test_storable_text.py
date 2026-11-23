@@ -15,9 +15,11 @@ import pytest
 from django.http import HttpRequest  # noqa: TC002  # runtime: Ninja signature
 from ninja import Router
 from ninja.testing import TestClient
+from pydantic_core import PydanticCustomError
 
 from core.api.schemas import BaseSchema
 from core.api.schemas import InputSchema
+from core.api.schemas import storable_text
 from core.tests.ninja.support import make_api
 
 NUL = {
@@ -102,3 +104,17 @@ def test_a_nul_is_400_wherever_it_is(body: dict[str, object], field: str) -> Non
 def test_a_lone_surrogate_is_400(body: dict[str, object], field: str) -> None:
     # json.dumps writes it as the escape \ud800, which JSON allows.
     assert _errors(_post(body), field)[0]["code"] == "string_unicode"
+
+
+def test_deep_nesting_is_walked_without_recursion() -> None:
+    # A JSON body nested thousands deep decodes fine; the check must not be
+    # the thing that fails with RecursionError (a 500).
+    deep: object = "ok"
+    for _ in range(10_000):
+        deep = [deep]
+    assert storable_text(deep) is deep
+    bad: object = "a\x00b"
+    for _ in range(10_000):
+        bad = {"k": bad}
+    with pytest.raises(PydanticCustomError):
+        storable_text(bad)

@@ -172,7 +172,7 @@ Every error response from an API view has this JSON body:
 - `detail`: an English message for humans. It can change between releases. It is the text of the code that raised the error: Pydantic for a field, Ninja's exception (or its default 404 and 405 texts), or the title of Django's default error page outside Ninja; the template writes its own only where none of them has one ([ADR 0017](decisions/0017-error-texts-come-from-the-code-that-raises-the-error.md)). A 404 never repeats the exception's message.
 - `extra` (optional): structured context for a domain error, for example `{"available": 2}`.
 
-Validation errors (`400`) add `fields`, with one list of `{code, detail}` items per field. Nested schemas keep their nesting, list items are keyed by index, and errors that belong to no single field go under `non_field_errors`:
+Validation errors (`400`) add `fields`, with one list of `{code, detail}` items per field. Nested schemas keep their nesting, list items are keyed by index, and errors that belong to no single field go under `non_field_errors`. That holds at any depth: when one location has errors of its own and errors under it, such as a dict key that is rejected along with its value, its own go under its `non_field_errors`:
 
 ```json
 {

@@ -67,6 +67,8 @@ _SOURCES = frozenset({"query", "path", "header", "cookie", "form", "file"})
 # A key that is not a field (extra="forbid") is the registered code unknown_field
 # (ADR 0006, docs/api.md#error-codes). Every other field error keeps Pydantic's
 # own type and message: https://docs.pydantic.dev/latest/errors/validation_errors/
+# Errors on an object itself, rather than on one of its fields (docs/api.md#error-body).
+NON_FIELD_KEY = "non_field_errors"
 _EXTRA_FORBIDDEN = "extra_forbidden"
 _UNKNOWN_FIELD = "unknown_field"
 
@@ -86,6 +88,27 @@ def _code_and_detail(err: Mapping[str, Any]) -> tuple[str, str]:
     return code, str(err["msg"])
 
 
+def _branch(tree: dict[str, Any], key: str) -> dict[str, Any]:
+    # The errors nested under key. Errors already on key itself (a dict key
+    # Pydantic rejected, then its value) move to that branch's non_field_errors.
+    current = tree.get(key)
+    if isinstance(current, dict):
+        return current
+    branch: dict[str, Any] = {}
+    if isinstance(current, list):
+        branch[NON_FIELD_KEY] = current
+    tree[key] = branch
+    return branch
+
+
+def _add(tree: dict[str, Any], key: str, item: dict[str, str]) -> None:
+    current = tree.get(key)
+    if isinstance(current, dict):
+        current.setdefault(NON_FIELD_KEY, []).append(item)
+    else:
+        tree.setdefault(key, []).append(item)
+
+
 def _ninja_validation_fields(errors: list[dict[str, Any]]) -> dict[str, Any]:
     """Turn Ninja/Pydantic error dicts into the nested {code, detail} tree."""
     fields: dict[str, Any] = {}
@@ -98,16 +121,12 @@ def _ninja_validation_fields(errors: list[dict[str, Any]]) -> dict[str, Any]:
                 _field_item(str(message), "invalid")
             )
             continue
-        loc = _error_path(err.get("loc", ())) or ["non_field_errors"]
+        loc = _error_path(err.get("loc", ())) or [NON_FIELD_KEY]
         code, msg = _code_and_detail(err)
-        cursor: dict[str, Any] = fields
+        tree: dict[str, Any] = fields
         for key in loc[:-1]:
-            nxt = cursor.setdefault(key, {})
-            if not isinstance(nxt, dict):
-                nxt = {}
-                cursor[key] = nxt
-            cursor = nxt
-        cursor.setdefault(loc[-1], []).append(_field_item(msg, code))
+            tree = _branch(tree, key)
+        _add(tree, loc[-1], _field_item(msg, code))
     return fields
 
 
@@ -115,7 +134,7 @@ def _django_validation_fields(exc: DjangoValidationError) -> dict[str, Any]:
     if hasattr(exc, "error_dict"):
         fields: dict[str, Any] = {}
         for field, errors in exc.error_dict.items():
-            key = "non_field_errors" if field == NON_FIELD_ERRORS else field
+            key = NON_FIELD_KEY if field == NON_FIELD_ERRORS else field
             items = []
             for err in errors:
                 message = err.messages[0] if err.messages else str(err)
@@ -124,7 +143,7 @@ def _django_validation_fields(exc: DjangoValidationError) -> dict[str, Any]:
         return fields
     # One item per error, each with its own code (invalid when Django gives none).
     return {
-        "non_field_errors": [
+        NON_FIELD_KEY: [
             _field_item(
                 err.messages[0] if err.messages else str(err), err.code or "invalid"
             )
