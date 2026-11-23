@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from apps.users.api.views import UserOut
 from apps.users.api.views import UserUpdateIn
 from apps.users.tests.factories import UserFactory
+from core.api.schemas import ErrorSchema
 from core.api.schemas import InputSchema
 
 
@@ -43,3 +44,13 @@ def test_user_out_requires_id_name_url() -> None:
     fields = UserOut.model_fields
     required = {name for name, field in fields.items() if field.is_required()}
     assert set(fields) == required == {"id", "name", "url"}
+
+
+def test_the_error_schema_is_closed_like_an_error_body() -> None:
+    # Pydantic's own extra="forbid": the published schema has
+    # additionalProperties: false, and a key an error body never has is refused.
+    with pytest.raises(ValidationError) as excinfo:
+        ErrorSchema.model_validate({"code": "x", "detail": "y", "fields": {}})
+    assert [error["type"] for error in excinfo.value.errors()] == ["extra_forbidden"]
+    assert ErrorSchema.model_validate({"code": "x", "detail": "y"}).extra == {}
+    assert ErrorSchema.model_json_schema()["additionalProperties"] is False

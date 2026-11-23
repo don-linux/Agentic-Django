@@ -42,7 +42,8 @@ class BaseSchema(Schema):
 
     Ninja 1.8.0 Schema._run_root_validator calls handler(values) on the raw
     ORM object when extra='forbid', which skips resolve_* and breaks response
-    serialization (ninja/schema.py). Keep forbid on input schemas only.
+    serialization (ninja/schema.py). Keep forbid on input schemas, and on a
+    schema Ninja never builds from a model instance, such as ErrorSchema.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -55,13 +56,13 @@ class InputSchema(Schema):
     model_config = ConfigDict(extra="forbid", from_attributes=True)
 
 
-class ErrorSchema(BaseSchema):
-    # An error body carries only these keys (core.errors.ErrorBody). Closing the
-    # published schema keeps the 400 oneOf unambiguous: a validation body has
-    # "fields", which this schema refuses. Set in the JSON schema alone: Ninja
-    # never validates an error body against it, and extra="forbid" stays on
-    # input schemas (BaseSchema).
-    model_config = ConfigDict(json_schema_extra={"additionalProperties": False})
+class ErrorSchema(Schema):
+    # An error body carries only these keys (core.errors.ErrorBody). A closed
+    # model publishes additionalProperties: false, which keeps the 400 oneOf
+    # unambiguous: a validation body has "fields", which this schema refuses.
+    # extra="forbid" is safe here, unlike on BaseSchema: Ninja never builds an
+    # error body from a model instance, so no resolve_* is skipped.
+    model_config = ConfigDict(extra="forbid")
 
     code: str
     detail: str
@@ -69,11 +70,6 @@ class ErrorSchema(BaseSchema):
         default_factory=dict,
         description="Structured context for some domain errors.",
     )
-
-
-class FieldErrorSchema(BaseSchema):
-    code: str
-    detail: str
 
 
 class ValidationErrorSchema(BaseSchema):
