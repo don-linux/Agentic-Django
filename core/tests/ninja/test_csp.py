@@ -21,7 +21,7 @@ def _directive(policy: str, name: str) -> str:
 
 
 def test_docs_page_sends_a_restrictive_csp(admin_client: Client) -> None:
-    response = admin_client.get(reverse("api-docs"))
+    response = admin_client.get(reverse("api:openapi-view"))
     assert response.status_code == HTTPStatus.OK
     csp = response.get("Content-Security-Policy", "")
     assert "frame-ancestors 'none'" in csp
@@ -29,7 +29,7 @@ def test_docs_page_sends_a_restrictive_csp(admin_client: Client) -> None:
 
 
 def test_swagger_ui_is_self_hosted_without_inline_script(admin_client: Client) -> None:
-    response = admin_client.get(reverse("api-docs"))
+    response = admin_client.get(reverse("api:openapi-view"))
     html = response.content.decode()
 
     assert response.status_code == HTTPStatus.OK

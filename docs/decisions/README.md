@@ -22,6 +22,7 @@ Short records of why the template is the way it is, one decision per file (a lig
 | [0016](0016-api-checked-against-openapi-with-schemathesis.md) | The API is checked against its OpenAPI contract with schemathesis | Superseded by 0018 |
 | [0017](0017-error-texts-come-from-the-code-that-raises-the-error.md) | Error texts come from the code that raises the error | Accepted |
 | [0018](0018-the-api-accepts-exactly-what-its-contract-declares.md) | The API accepts exactly what its contract declares | Accepted |
+| [0019](0019-the-schema-and-docs-are-ninja-s-own-views.md) | The schema and docs are Ninja's own views | Accepted |
 
 ## Writing one
 

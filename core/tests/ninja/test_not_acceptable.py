@@ -276,11 +276,7 @@ def test_a_range_with_q_0_is_not_acceptable(
         ("/api/v1/users/me/", "application/json;q=1", JSON),
         ("/api/v1/users/me/", "text/html;q=0, application/json", JSON),
         ("/api/v1/users/me/", "*/*;q=0, application/json", JSON),
-        (
-            "/api/v1/schema/",
-            "application/vnd.oai.openapi;q=0, application/yaml",
-            "application/yaml; charset=utf-8",
-        ),
+        ("/api/v1/schema/", "application/yaml;q=0, application/json", JSON),
     ],
 )
 def test_a_weight_above_0_is_still_acceptable(
@@ -372,21 +368,8 @@ def test_the_most_specific_range_gives_the_weight(
         ),
         ("/api/v1/users/me/", "application/json, application/json;q=0", JSON),
         ("/api/v1/docs/", "*/*;q=0, text/html", "text/html; charset=utf-8"),
-        (
-            "/api/v1/schema/",
-            "*/*, application/vnd.oai.openapi;q=0",
-            "application/yaml; charset=utf-8",
-        ),
-        (
-            "/api/v1/schema/",
-            "application/*, application/vnd.oai.openapi;q=0, application/yaml;q=0",
-            "application/vnd.oai.openapi+json",
-        ),
-        (
-            "/api/v1/schema/",
-            "*/*;q=0, application/yaml",
-            "application/yaml; charset=utf-8",
-        ),
+        ("/api/v1/schema/", "*/*, application/yaml;q=0", JSON),
+        ("/api/v1/schema/", "*/*;q=0, application/json", JSON),
     ],
 )
 def test_a_more_specific_range_above_0_still_accepts(
@@ -395,19 +378,6 @@ def test_a_more_specific_range_above_0_still_accepts(
     response = admin_client.get(path, headers={"Accept": accept})
     assert response.status_code == HTTPStatus.OK, (path, accept)
     assert response["Content-Type"] == content_type, (path, accept)
-
-
-@pytest.mark.django_db
-def test_a_range_with_q_0_does_not_choose_the_parameters(admin_client: Client) -> None:
-    # Both ranges are application/json with a parameter: one above 0 makes it
-    # acceptable, and only a range above 0 gives the parameters it renders with.
-    response = admin_client.get(
-        "/api/v1/schema/",
-        headers={"Accept": "application/json;indent=2;q=0, application/json;indent=6"},
-    )
-    assert response.status_code == HTTPStatus.OK
-    assert response["Content-Type"] == JSON
-    assert response.content.startswith(b"{\n" + b" " * 6 + b'"openapi"')
 
 
 @pytest.mark.django_db
@@ -429,8 +399,8 @@ def test_a_range_with_q_0_does_not_choose_the_parameters(admin_client: Client) -
         ),
         (
             "/api/v1/schema/",
-            "application/yaml;charset=utf-8;q=0, application/yaml",
-            "application/yaml; charset=utf-8",
+            "application/json;charset=utf-8;q=0, application/json",
+            JSON,
         ),
     ],
 )
@@ -440,19 +410,6 @@ def test_a_q_0_with_parameters_refuses_only_that_variant(
     response = admin_client.get(path, headers={"Accept": accept})
     assert response.status_code == HTTPStatus.OK, (path, accept)
     assert response["Content-Type"] == content_type, (path, accept)
-
-
-@pytest.mark.django_db
-def test_the_schema_without_the_refused_parameters_keeps_its_indent(
-    admin_client: Client,
-) -> None:
-    response = admin_client.get(
-        "/api/v1/schema/",
-        headers={"Accept": "application/json, application/json;indent=2;q=0"},
-    )
-    assert response.status_code == HTTPStatus.OK
-    assert response["Content-Type"] == JSON
-    assert response.content.startswith(b"{\n" + b" " * 4 + b'"openapi"')
 
 
 @pytest.mark.django_db
@@ -501,7 +458,7 @@ def test_a_q_0_without_parameters_still_refuses(
         # The negative case: above 0 a range with parameters still covers the
         # media type and gives its parameters, as in DRF.
         ("/api/v1/users/me/", "*/*;q=0, application/json;charset=utf-8", JSON, b"{"),
-        ("/api/v1/schema/", "*/*;q=0, application/json;indent=2", JSON, b'{\n  "'),
+        ("/api/v1/schema/", "*/*;q=0, application/json;indent=2", JSON, b'{"openapi"'),
     ],
 )
 def test_a_range_with_parameters_above_0_still_chooses(

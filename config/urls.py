@@ -8,9 +8,6 @@ from django.views.generic import RedirectView
 
 from apps.users.views import PhoneView
 from config.api import api
-from core.api.negotiation import docs_view
-from core.api.negotiation import schema_view
-from core.api.negotiation import staff_docs_required
 
 urlpatterns = [
     path(settings.ADMIN_URL, admin.site.urls),
@@ -28,9 +25,8 @@ urlpatterns = [
 ]
 
 urlpatterns += [
+    # Ninja serves the schema and the docs under it too (core/api/api.py).
     path("api/v1/", api.urls),
-    path("api/v1/schema/", staff_docs_required(schema_view), name="api-schema"),
-    path("api/v1/docs/", staff_docs_required(docs_view), name="api-docs"),
 ]
 
 # Same JSON body as the API. See docs/api.md#errors-outside-api-views.

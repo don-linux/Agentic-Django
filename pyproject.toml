@@ -32,7 +32,6 @@ dependencies = [
   # Loads the root .env for local settings (config/settings/_env_file.py); also a
   # dependency of pydantic-settings.
   "python-dotenv==1.2.4",
-  "pyyaml==6.0.4",
   "kombu==5.7.0",
   "psycopg[c]==3.3.9",
   "redis[hiredis]==8.1.0",
@@ -67,6 +66,9 @@ dev = [
   # core/tests/test_openapi_conformance.py: the API against docs/openapi.json.
   "schemathesis==4.34.0",
   "pyright[nodejs]==1.1.414",
+  # Read by the tests of the compose files and the agent skills only; the API
+  # serves the schema as JSON (ADR 0019).
+  "pyyaml==6.0.4",
 ]
 
 [tool.ruff]

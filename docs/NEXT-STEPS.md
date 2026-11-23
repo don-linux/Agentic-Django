@@ -113,7 +113,7 @@ server {
         proxy_connect_timeout 5s;
         proxy_read_timeout 35s;
         gzip on;
-        gzip_types application/json application/problem+json application/vnd.oai.openapi+json;
+        gzip_types application/json application/problem+json;
         gzip_min_length 1024;
         gzip_proxied any;
         gzip_comp_level 5;

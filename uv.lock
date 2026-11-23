@@ -1189,7 +1189,6 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
-    { name = "pyyaml" },
     { name = "redis", extra = ["hiredis"] },
     { name = "sentry-sdk", extra = ["django"] },
     { name = "whitenoise" },
@@ -1217,6 +1216,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-django" },
     { name = "pytest-sugar" },
+    { name = "pyyaml" },
     { name = "ruff" },
     { name = "schemathesis" },
 ]
@@ -1239,7 +1239,6 @@ requires-dist = [
     { name = "pydantic", specifier = "==2.14.4" },
     { name = "pydantic-settings", specifier = "==2.16.3" },
     { name = "python-dotenv", specifier = "==1.2.4" },
-    { name = "pyyaml", specifier = "==6.0.4" },
     { name = "redis", extras = ["hiredis"], specifier = "==8.1.0" },
     { name = "sentry-sdk", extras = ["django"], specifier = "==2.75.0" },
     { name = "whitenoise", specifier = "==6.12.0" },
@@ -1263,6 +1262,7 @@ dev = [
     { name = "pytest", specifier = "==9.2.0" },
     { name = "pytest-django", specifier = "==4.14.0" },
     { name = "pytest-sugar", specifier = "==1.1.1" },
+    { name = "pyyaml", specifier = "==6.0.4" },
     { name = "ruff", specifier = "==0.17.6" },
     { name = "schemathesis", specifier = "==4.34.0" },
 ]

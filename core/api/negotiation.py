@@ -1,9 +1,10 @@
 """
-HTTP contract pieces Ninja does not provide natively: 406, 415, 405 bodies,
-staff-only schema/docs, and YAML-by-default schema.
+HTTP pieces Ninja does not provide natively, for every route under /api/v1/:
+the 406 and 405 JSON bodies, HEAD and OPTIONS.
 
-The docs page stays HTML; Accept: application/json on /docs/ is 406 even
-for an anonymous client (tests/http/test_openapi.py).
+The schema and the docs are Ninja's own views (core/api/api.py). The docs page
+stays HTML; Accept: application/json on /docs/ is 406 even for an anonymous
+client (tests/http/test_openapi.py).
 """
 
 from __future__ import annotations
@@ -15,19 +16,14 @@ from http import HTTPStatus
 from typing import TYPE_CHECKING
 from typing import Any
 
-import yaml
 from django.http import HttpRequest
 from django.http import HttpResponse
 from django.http import HttpResponseNotAllowed
 from django.http import JsonResponse
 from django.urls import Resolver404
 from django.urls import resolve
-from django.utils.html import escape
-from ninja.errors import AuthenticationError
-from ninja.errors import AuthorizationError
 
 from core.api.api import api
-from core.api.auth import x_session_token_auth
 from core.errors import error_body
 
 if TYPE_CHECKING:
@@ -35,17 +31,14 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 JSON = "application/json"
-SCHEMA_YAML = "application/vnd.oai.openapi"
-SCHEMA_JSON = "application/vnd.oai.openapi+json"
-# The schema's media types: SpectacularAPIView's four renderers, in their order.
-SCHEMA_MEDIA_TYPES = (SCHEMA_YAML, "application/yaml", SCHEMA_JSON, JSON)
 
 # Allow lists the route's operations in the order of Django's
 # View.http_method_names, then HEAD (served by the GET operation) and OPTIONS
 # (answered here). The methods come from the
 # project API's OpenAPI document, so a new router needs no entry here.
 _METHOD_ORDER = ("GET", "POST", "PUT", "PATCH", "DELETE")
-_DOCS_ROUTES = {"api-schema", "api-docs"}
+# The URL names of Ninja's schema and docs views (ninja/openapi/urls.py).
+_DOCS_ROUTES = {"openapi-json", "openapi-view"}
 # What Ninja's router answers a method a path lacks (ninja/operation.py,
 # PathView._not_allowed). See ADR 0017.
 METHOD_NOT_ALLOWED_DETAIL = "Method not allowed"
@@ -230,10 +223,8 @@ def _negotiate(
 
 
 def _produces(subpath: str) -> tuple[str, ...]:
-    """What the route renders: the docs HTML, the schema's four types, else JSON."""
-    return {"docs/": ("text/html",), "schema/": SCHEMA_MEDIA_TYPES}.get(
-        subpath, (JSON,)
-    )
+    """What the route renders: the docs page is HTML, everything else JSON."""
+    return {"docs/": ("text/html",)}.get(subpath, (JSON,))
 
 
 _COMPACT: dict[str, Any] = {"separators": (",", ":"), "ensure_ascii": False}
@@ -246,47 +237,6 @@ def _error(code: str, detail: str, status: int, **headers: str) -> JsonResponse:
     for key, value in headers.items():
         response[key] = value
     return response
-
-
-def staff_docs_required(
-    view: Callable[..., HttpResponse],
-) -> Callable[..., HttpResponse]:
-    """
-    Staff-only docs/schema, with the same JSON 401/403 as the rest of the API.
-
-    staff_member_required would redirect to the admin login. Session or
-    X-Session-Token is accepted. The token goes through the API's public
-    allauth auth (allauth.headless.contrib.ninja.security.XSessionTokenAuth,
-    core/api/auth.py), which sets request.user, as on every other route.
-    """
-
-    def wrapped(request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
-        user = (
-            request.user
-            if getattr(request, "user", None) is not None
-            and request.user.is_authenticated
-            else None
-        )
-        if user is None:
-            user = x_session_token_auth(request)
-        if user is None:
-            # The texts of Ninja's own AuthenticationError and AuthorizationError.
-            response = _error(
-                "not_authenticated",
-                AuthenticationError().message,
-                HTTPStatus.UNAUTHORIZED,
-            )
-            response["WWW-Authenticate"] = "X-Session-Token"
-            return response
-        if not getattr(user, "is_staff", False):
-            return _error(
-                "permission_denied",
-                AuthorizationError().message,
-                HTTPStatus.FORBIDDEN,
-            )
-        return view(request, *args, **kwargs)
-
-    return wrapped
 
 
 def _not_acceptable() -> JsonResponse:
@@ -377,99 +327,3 @@ class ApiContractMiddleware:
             content=body.encode(),
             content_type="application/json",
         )
-
-
-class _SchemaYamlDumper(yaml.SafeDumper):
-    """OpenApiYamlRenderer's dumper: a multi-line string is a | block."""
-
-
-def _represent_str(dumper: yaml.SafeDumper, data: str) -> yaml.ScalarNode:
-    scalar = dumper.represent_str(data)
-    if "\n" in data:
-        scalar.style = "|"
-    return scalar
-
-
-_SchemaYamlDumper.add_representer(str, _represent_str)
-
-
-def _json_indent(params: dict[str, str]) -> int:
-    """OpenApiJsonRenderer.get_indent: the indent parameter clamped to 0-8; 0 or
-    none is 4."""
-    try:
-        indent = max(min(int(params["indent"]), 8), 0)
-    except KeyError, ValueError:
-        return 4
-    return indent or 4
-
-
-def render_schema(request: HttpRequest, data: dict[str, Any]) -> HttpResponse:
-    """`data` as SpectacularAPIView's four renderers wrote it, chosen by Accept.
-
-    application/vnd.oai.openapi and application/yaml are YAML with a UTF-8
-    charset; application/vnd.oai.openapi+json and application/json are DRF's
-    JSONRenderer (no charset, non-ASCII as is, U+2028/U+2029 escaped), indented
-    by the Accept's indent parameter or 4. ?format= is ignored
-    (URL_FORMAT_OVERRIDE is off in the previous contract).
-    """
-    chosen = _negotiate(request.headers.get("Accept"), SCHEMA_MEDIA_TYPES)
-    if chosen is None:
-        # ApiContractMiddleware answers this 406 first; the view keeps it alone.
-        return _not_acceptable()
-    media_type, params = chosen
-    # Ninja's schema may contain non-JSON types: str() them, as before.
-    if media_type in {SCHEMA_JSON, JSON}:
-        text = json.dumps(
-            data,
-            indent=_json_indent(params),
-            ensure_ascii=False,
-            allow_nan=False,
-            default=str,
-        )
-        text = text.replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
-        return HttpResponse(text.encode(), content_type=media_type)
-    dumped = yaml.dump(
-        json.loads(json.dumps(data, default=str)),
-        Dumper=_SchemaYamlDumper,
-        default_flow_style=False,
-        sort_keys=False,
-        allow_unicode=True,
-    )
-    return HttpResponse(dumped, content_type=f"{media_type}; charset=utf-8")
-
-
-def schema_view(request: HttpRequest) -> HttpResponse:
-    """OpenAPI document: YAML by default, JSON when Accept asks for it."""
-    return render_schema(request, api.get_openapi_schema())
-
-
-def docs_view(request: HttpRequest) -> HttpResponse:
-    """Staff Swagger UI without an inline script (CSP). ?script= returns the init JS."""
-    if "script" in request.GET:
-        js = (
-            "/* Swagger UI init (split, no inline script) */\n"
-            "window.ui = SwaggerUIBundle({\n"
-            "  url: '/api/v1/schema/',\n"
-            "  dom_id: '#swagger-ui',\n"
-            "  deepLinking: true,\n"
-            "  layout: 'BaseLayout'\n"
-            "});\n"
-        )
-        return HttpResponse(js, content_type="application/javascript")
-    html = """<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8"/>
-  <title>{title}</title>
-  <link rel="stylesheet" href="/static/ninja/swagger-ui.css"/>
-</head>
-<body>
-  <div id="swagger-ui"></div>
-  <script src="/static/ninja/swagger-ui-bundle.js"></script>
-  <script src="/api/v1/docs/?script="></script>
-</body>
-</html>
-"""
-    # The title follows NINJA_TITLE, so personalizing settings renames the page.
-    page = html.replace("{title}", escape(api.title))
-    return HttpResponse(page, content_type="text/html; charset=utf-8")

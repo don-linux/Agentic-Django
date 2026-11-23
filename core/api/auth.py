@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from http import HTTPStatus
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import override
@@ -9,10 +10,18 @@ from typing import override
 from allauth.headless.contrib.ninja.security import (
     XSessionTokenAuth as AllauthXSessionTokenAuth,
 )
+from django.http import JsonResponse
+from ninja.errors import AuthenticationError
+from ninja.errors import AuthorizationError
 from ninja.security import SessionAuth
 
+from core.errors import error_body
+
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from django.http import HttpRequest
+    from django.http import HttpResponse
 
 # Token first so a request that also carries a session cookie is not failed by
 # django_auth's CSRF check (vitalik/django-ninja#1464; PR #1852 is not in 1.8.0).
@@ -57,3 +66,53 @@ class cookieAuth(SessionAuth):  # noqa: N801
 x_session_token_auth = XSessionTokenAuth()
 django_auth = cookieAuth()
 API_AUTH: list[XSessionTokenAuth | cookieAuth] = [x_session_token_auth, django_auth]
+
+
+def _json_error(code: str, detail: str, status: int) -> JsonResponse:
+    # The API's compact JSON (core.api.api.CompactJSONRenderer).
+    return JsonResponse(
+        error_body(code, detail),
+        status=status,
+        json_dumps_params={"separators": (",", ":"), "ensure_ascii": False},
+    )
+
+
+def staff_docs_required(
+    view: Callable[..., HttpResponse],
+) -> Callable[..., HttpResponse]:
+    """
+    The NinjaAPI docs_decorator: staff-only schema and docs, with the API's JSON
+    401 and 403 (https://django-ninja.dev/guide/openapi/#protecting-the-docs).
+
+    staff_member_required would redirect to the admin login. Session or
+    X-Session-Token is accepted; the token goes through the API's own
+    x_session_token_auth, which sets request.user, as on every other route.
+    """
+
+    def wrapped(request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+        user = (
+            request.user
+            if getattr(request, "user", None) is not None
+            and request.user.is_authenticated
+            else None
+        )
+        if user is None:
+            user = x_session_token_auth(request)
+        if user is None:
+            # The texts of Ninja's own AuthenticationError and AuthorizationError.
+            response = _json_error(
+                "not_authenticated",
+                AuthenticationError().message,
+                HTTPStatus.UNAUTHORIZED,
+            )
+            response["WWW-Authenticate"] = "X-Session-Token"
+            return response
+        if not getattr(user, "is_staff", False):
+            return _json_error(
+                "permission_denied",
+                AuthorizationError().message,
+                HTTPStatus.FORBIDDEN,
+            )
+        return view(request, *args, **kwargs)
+
+    return wrapped

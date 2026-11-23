@@ -148,8 +148,8 @@ def test_every_api_route_answers_its_own_json_405(user_client: Client, user) -> 
         "user-list",
         "user-me",
         "user-detail",
-        "api-schema",
-        "api-docs",
+        "openapi-json",
+        "openapi-view",
     }
     for route, name in routes:
         path = "/" + route.replace("<public_id:id>", str(user.public_id))

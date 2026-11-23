@@ -1015,10 +1015,10 @@ def test_session_cookie_patch_without_csrf_is_json_403(user: User) -> None:
 
 @pytest.mark.django_db
 def test_schema_and_docs_401_and_403_bodies(client: Any, user_client: Client) -> None:
-    schema_anon = client.get(reverse("api-schema"))
-    docs_anon = client.get(reverse("api-docs"))
-    schema_user = user_client.get(reverse("api-schema"))
-    docs_user = user_client.get(reverse("api-docs"))
+    schema_anon = client.get("/api/v1/schema/")
+    docs_anon = client.get("/api/v1/docs/")
+    schema_user = user_client.get("/api/v1/schema/")
+    docs_user = user_client.get("/api/v1/docs/")
 
     # The schema and docs views answer the API's JSON errors, not Ninja's
     # OpenAPI or HTML error pages.

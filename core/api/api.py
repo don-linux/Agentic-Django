@@ -10,6 +10,7 @@ from ninja import NinjaAPI
 from ninja.renderers import JSONRenderer
 
 from core.api.auth import API_AUTH
+from core.api.auth import staff_docs_required
 from core.api.converters import PublicIdConverter
 from core.api.exceptions import register_exception_handlers
 from core.api.parsers import JSONParser
@@ -48,9 +49,11 @@ api = ContractAPI(
     ),
     version=getattr(settings, "NINJA_VERSION", "1.0.0"),
     urls_namespace="api",
-    # Custom schema/docs views keep the existing URL names and YAML default.
-    openapi_url=None,
-    docs_url=None,
+    # Ninja's own schema (JSON) and Swagger views, staff-only through the
+    # documented docs_decorator (ADR 0019).
+    openapi_url="/schema/",
+    docs_url="/docs/",
+    docs_decorator=staff_docs_required,
     auth=API_AUTH,
     throttle=[AnonThrottle(), UserThrottle()],
     parser=JSONParser(),
