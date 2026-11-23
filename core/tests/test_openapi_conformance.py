@@ -8,11 +8,13 @@ Each response must match the contract:
 
 - no server error;
 - a declared status code, content type, headers and body;
-- schema-violating input rejected;
+- schema-violating input rejected, and schema-valid input accepted;
 - authentication enforced.
 
-A new endpoint is covered as soon as it is in the schema. A failure prints the
-curl command that reproduces it. See docs/api.md#contract-conformance and ADR 0016.
+Every check runs and no failure is filtered out: the API accepts exactly what
+the schema declares. A new endpoint is covered as soon as it is in the schema.
+A failure prints the curl command that reproduces it. See
+docs/api.md#contract-conformance and ADR 0018.
 """
 
 from __future__ import annotations
@@ -31,40 +33,12 @@ from core.tests.session_tokens import session_token
 if TYPE_CHECKING:
     from pytest_django.fixtures import Settings
     from schemathesis import Case
-    from schemathesis import HookContext
-    from schemathesis import Response
-    from schemathesis.core.failures import Failure
     from schemathesis.schemas import BaseSchema
 
 CALLER = "conformance@example.com"
 # Generated requests per operation, on top of the edge cases schemathesis always
 # sends. They are the same on every run until Hypothesis or schemathesis changes.
 EXAMPLES_PER_OPERATION = 50
-# negative_data_rejection: the API accepted a request the schema calls invalid.
-ACCEPTED_INVALID_INPUT = "ST201"
-
-
-def _lenient_user_update(case: Case) -> bool:
-    # Two DRF-parity behaviors of a user PATCH body:
-    # - a number for name is stored as text (core/tests/http/test_negative_paths.py,
-    #   test_an_integer_name_is_coerced_to_a_string);
-    # - the read-only id and url of a GET body sent back are ignored
-    #   (apps/users/tests/http/test_views.py, test_patch_accepts_a_get_body_sent_back).
-    body = case.body
-    if case.method.upper() != "PATCH" or not isinstance(body, dict):
-        return False
-    name = body.get("name")
-    numeric_name = isinstance(name, int | float) and not isinstance(name, bool)
-    return numeric_name or not {"id", "url"}.isdisjoint(body)
-
-
-def filter_failure(
-    context: HookContext, failure: Failure, case: Case, response: Response
-) -> bool:
-    """Keep every failure except the invalid input the API accepts on purpose."""
-    if failure.code != ACCEPTED_INVALID_INPUT:
-        return True
-    return not _lenient_user_update(case)
 
 
 @pytest.fixture
@@ -87,6 +61,12 @@ def api_schema(caller_token: str, settings: Settings) -> BaseSchema:
                 # The test sends a real session token; generated credentials would
                 # only be noise. ignored_auth still probes without it.
                 "with-security-parameters": False,
+                # PostgreSQL text cannot store NUL, so the API refuses \x00 in a
+                # string (null_characters_not_allowed). schemathesis documents
+                # this switch for servers and drivers that reject NUL bytes; a
+                # pattern in the schema instead would be an oasdiff ERR
+                # (request-property-pattern-added). See ADR 0018.
+                "allow-x00": False,
             },
             # Half of the positive requests to a detail route use the caller's own
             # user; the rest are unknown ids, which must be 404.
@@ -94,14 +74,12 @@ def api_schema(caller_token: str, settings: Settings) -> BaseSchema:
             "parameters": {"path.id": {"dictionary": "caller", "probability": 0.5}},
         }
     )
-    schema = schemathesis.openapi.from_wsgi(
+    return schemathesis.openapi.from_wsgi(
         "/api/v1/schema/",
         get_wsgi_application(),
         config=config,
         headers={"X-Session-Token": staff_token, "Accept": "application/json"},
     )
-    schema.hook(filter_failure)
-    return schema
 
 
 schema = schemathesis.pytest.from_fixture("api_schema")

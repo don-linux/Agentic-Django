@@ -31,11 +31,12 @@ def test_an_output_schema_reads_a_model_that_has_more_attributes() -> None:
     }
 
 
-def test_user_update_in_ignores_read_only_id_and_url() -> None:
-    payload = UserUpdateIn.model_validate({"name": "Ada", "id": "x", "url": "/"})
-    assert payload.name == "Ada"
-    assert "id" not in payload.model_dump(exclude_unset=True)
-    assert "url" not in payload.model_dump(exclude_unset=True)
+def test_user_update_in_forbids_the_read_only_id_and_url() -> None:
+    with pytest.raises(ValidationError) as excinfo:
+        UserUpdateIn.model_validate({"name": "Ada", "id": "x", "url": "/"})
+    errors = excinfo.value.errors()
+    assert {error["loc"] for error in errors} == {("id",), ("url",)}
+    assert {error["type"] for error in errors} == {"extra_forbidden"}
 
 
 def test_user_out_requires_id_name_url() -> None:

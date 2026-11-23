@@ -382,15 +382,40 @@ def test_patch_me_rejects_a_non_object_body(
 
 
 @pytest.mark.django_db
-def test_an_integer_name_is_coerced_to_a_string(
+@pytest.mark.parametrize("number", [123, 1.5])
+def test_a_number_for_name_is_rejected(
+    user: User, user_client: Client, number: float
+) -> None:
+    original = user.name
+    response = user_client.patch(
+        ME_URL, {"name": number}, content_type="application/json"
+    )
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()["fields"]["name"][0]["code"] == "string_type"
+    user.refresh_from_db()
+    assert user.name == original
+
+
+@pytest.mark.django_db
+def test_name_is_stored_as_sent_and_its_length_counts_spaces(
     user: User, user_client: Client
 ) -> None:
-    response = user_client.patch(ME_URL, {"name": 123}, content_type="application/json")
+    padded = user_client.patch(
+        ME_URL, {"name": "x" * 255 + " " * 10}, content_type="application/json"
+    )
+    spaced = user_client.patch(
+        ME_URL, {"name": "  Ada  "}, content_type="application/json"
+    )
 
-    assert response.status_code == HTTPStatus.OK
-    assert response.json()["name"] == "123"
+    # maxLength is 255 in the contract: 265 characters are too many, even when
+    # the last ten are spaces. A name that fits is kept as sent, not trimmed.
+    assert padded.status_code == HTTPStatus.BAD_REQUEST
+    assert padded.json()["fields"]["name"][0]["code"] == "string_too_long"
+    assert spaced.status_code == HTTPStatus.OK
+    assert spaced.json()["name"] == "  Ada  "
     user.refresh_from_db()
-    assert user.name == "123"
+    assert user.name == "  Ada  "
 
 
 # DELETE on the detail path: test_error_format.test_unsupported_method_is_405.

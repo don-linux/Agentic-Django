@@ -394,4 +394,4 @@ When the project adopts it, add this rule to its AGENTS.md: "Every admin write a
 
 ## User name
 
-`User.name` is a free-text `CharField`: it accepts line breaks, HTML and values coerced from numbers. Nothing renders it as HTML (the API is JSON only and emails are plain text), but escape it wherever a project shows it in markup or puts it in a header.
+`User.name` is a free-text `CharField`: it accepts line breaks and HTML, stored as sent (the API neither trims nor converts it). Nothing renders it as HTML (the API is JSON only and emails are plain text), but escape it wherever a project shows it in markup or puts it in a header.

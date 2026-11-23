@@ -204,7 +204,9 @@ class TestUsersAPI:
         assert user.name != "Typo Fixer"
         assert user.is_staff is False
 
-    def test_patch_accepts_a_get_body_sent_back(self, user_client: Client) -> None:
+    def test_patch_rejects_the_read_only_fields_of_a_get_body_sent_back(
+        self, user: User, user_client: Client
+    ) -> None:
         body = user_client.get("/api/v1/users/me/").json()
 
         response = user_client.patch(
@@ -213,8 +215,15 @@ class TestUsersAPI:
             content_type="application/json",
         )
 
-        assert response.status_code == HTTPStatus.OK
-        assert response.json()["name"] == "Echoed Back"
+        # id and url are not fields of UserUpdateIn: unknown_field, like any key.
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        fields = response.json()["fields"]
+        assert set(fields) == {"id", "url"}
+        assert {item["code"] for key in fields for item in fields[key]} == {
+            "unknown_field"
+        }
+        user.refresh_from_db()
+        assert user.name != "Echoed Back"
 
     def test_an_invalid_body_for_another_user_is_400_before_the_lookup(
         self, user_client: Client

@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from typing import Annotated
 from typing import Any
-from typing import cast
 from uuid import UUID
 
 from django.http import Http404
@@ -19,7 +18,6 @@ from ninja.pagination import paginate
 from pydantic import Field
 from pydantic import WithJsonSchema
 from pydantic import field_validator
-from pydantic import model_validator
 from pydantic_core import PydanticCustomError
 
 from apps.users.models import User
@@ -47,8 +45,6 @@ STRING_TYPE_DETAIL = "Input should be a valid string"
 # PostgreSQL text cannot store NUL (\x00), and Pydantic has no check for it.
 NUL_CHAR_CODE = "null_characters_not_allowed"
 NUL_CHAR_DETAIL = "Null characters are not allowed."
-# Keys UserOut returns that a client may send back in a PATCH; they are ignored.
-READ_ONLY = frozenset({"id", "url"})
 
 
 class UserOut(BaseSchema):
@@ -73,7 +69,7 @@ class UserOut(BaseSchema):
 
 class UserUpdateIn(InputSchema):
     # Optional but not nullable: an omitted name stays unset, and null gets the
-    # string_type error Pydantic gives a str field (coerce_and_reject_null), so
+    # string_type error Pydantic gives a str field (reject_null), so
     # the published request schema must not offer it. WithJsonSchema only
     # changes the schema; SkipJsonSchema[None] would turn the Optional into a
     # union and nest its errors under name.str / name.none. Pydantic's MISSING
@@ -83,26 +79,11 @@ class UserUpdateIn(InputSchema):
         str | None, WithJsonSchema({"type": "string", "maxLength": 255})
     ] = Field(default=None, max_length=255)
 
-    @model_validator(mode="before")
-    @classmethod
-    def drop_read_only(cls, data: Any) -> Any:
-        # A GET body sent back includes id and url; those stay out of the write.
-        if isinstance(data, dict):
-            # A JSON object: its keys are strings.
-            sent = cast("dict[str, object]", data)
-            return {key: value for key, value in sent.items() if key not in READ_ONLY}
-        return data
-
     @field_validator("name", mode="before")
     @classmethod
-    def coerce_and_reject_null(cls, value: Any) -> Any:
-        # DRF CharField coerced numbers to strings; booleans stay invalid.
+    def reject_null(cls, value: object) -> object:
         if value is None:
             raise PydanticCustomError(STRING_TYPE_CODE, STRING_TYPE_DETAIL)
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, int | float):
-            return str(value)
         return value
 
     @field_validator("name", mode="after")
