@@ -12,7 +12,6 @@ from django.http import HttpRequest
 from django.urls import reverse
 from ninja import BodyEx
 from ninja import P
-from ninja import PathEx
 from ninja import Router
 from ninja.pagination import paginate
 from pydantic import Field
@@ -33,6 +32,7 @@ from core.api.responses import WRITE_ERRORS
 from core.api.responses import response_docs
 from core.api.schemas import BaseSchema
 from core.api.schemas import InputSchema
+from core.api.schemas import PublicIdPath
 
 if TYPE_CHECKING:
     from django.db.models import QuerySet
@@ -86,23 +86,6 @@ class UserUpdateIn(InputSchema):
             raise PydanticKnownError(_STRING_TYPE)
         return value
 
-
-PublicUserId = Annotated[
-    UUID,
-    WithJsonSchema(
-        {
-            "type": "string",
-            "pattern": (
-                r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
-                r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-            ),
-        }
-    ),
-]
-# The contract names the path parameter id (/api/v1/users/{id}/); the alias
-# keeps that name without an argument that shadows the builtin (guide/path-params/:
-# Path accepts alias). PathEx is the type-checker spelling of Path[T, P(...)].
-UserIdPath = PathEx[PublicUserId, P(alias="id")]
 
 # The body is optional, so an empty PATCH changes nothing, as an empty {} does
 # (ADR 0021: requiring it is an oasdiff ERR). BodyEx, exported in ninja.__all__,
@@ -164,7 +147,7 @@ def users_me_partial_update(request: HttpRequest, body: UserPatchBody) -> User:
     url_name="user-detail",
     summary="Retrieve a user",
 )
-def users_retrieve(request: HttpRequest, user_id: UserIdPath) -> User:
+def users_retrieve(request: HttpRequest, user_id: PublicIdPath) -> User:
     return user_visible(user=request_user(request, User), public_id=user_id)
 
 
@@ -178,7 +161,7 @@ def users_retrieve(request: HttpRequest, user_id: UserIdPath) -> User:
 )
 def users_partial_update(
     request: HttpRequest,
-    user_id: UserIdPath,
+    user_id: PublicIdPath,
     body: UserPatchBody,
 ) -> User:
     user = user_visible(user=request_user(request, User), public_id=user_id)

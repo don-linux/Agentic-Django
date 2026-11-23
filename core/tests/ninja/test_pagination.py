@@ -127,6 +127,17 @@ def test_cursor_pagination_orders_by_public_id_not_by_pk() -> None:
 def test_cursor_parameter_is_documented_in_the_schema() -> None:
     fields = set(LimitCursorPagination.Input.model_fields)
     assert {"cursor", "page_size"} <= fields
+    assert LimitCursorPagination.Input.__name__ == "CursorIn"
+
+
+@pytest.mark.parametrize("page_size", ["0", "-1", "abc"])
+def test_a_cursor_page_size_below_1_is_a_400(page_size: str) -> None:
+    # Ninja's own cursor input would clamp it to 1.
+    response = _list(cursor_api(), f"?page_size={page_size}")
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()["code"] == "validation_error"
+    assert list(response.json()["fields"]) == ["page_size"]
 
 
 def _counts(queries: list[dict[str, str]]) -> int:

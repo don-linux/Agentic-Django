@@ -32,6 +32,7 @@ A private file is downloaded through an operation that scopes the lookup to the 
 ```python
 from core.api.responses import LOOKUP_ERRORS
 from core.api.responses import download_docs
+from core.api.schemas import PublicIdPath
 from core.files import private_storage
 from core.files import protected_file_response
 
@@ -51,9 +52,7 @@ class Invoice(BaseModel):
     openapi_extra=download_docs("application/pdf", LOOKUP_ERRORS),
     operation_id="invoices_download",
 )
-def invoices_download(
-    request: HttpRequest, invoice_id: PathEx[UUID, P(alias="id")]
-) -> HttpResponse:
+def invoices_download(request: HttpRequest, invoice_id: PublicIdPath) -> HttpResponse:
     # Scoped to the owner, so another user's invoice is a 404.
     invoice = get_object_or_404(
         Invoice.objects.filter(owner=request_user(request, User)), public_id=invoice_id

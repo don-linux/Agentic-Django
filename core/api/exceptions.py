@@ -113,14 +113,6 @@ def _ninja_validation_fields(errors: list[dict[str, Any]]) -> dict[str, Any]:
     """Turn Ninja/Pydantic error dicts into the nested {code, detail} tree."""
     fields: dict[str, Any] = {}
     for err in errors:
-        if "loc" not in err and len(err) == 1:
-            # ninja.pagination: ValidationError([{"cursor": "Invalid Cursor"}]).
-            # Ninja gives a message and no type: the generic code is invalid.
-            ((name, message),) = err.items()
-            fields.setdefault(str(name), []).append(
-                _field_item(str(message), "invalid")
-            )
-            continue
         loc = _error_path(err.get("loc", ())) or [NON_FIELD_KEY]
         code, msg = _code_and_detail(err)
         tree: dict[str, Any] = fields

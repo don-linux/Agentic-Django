@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal
+from enum import IntEnum
 from http import HTTPStatus
 from typing import TYPE_CHECKING
+from typing import Annotated
+from typing import Literal
 
 import pytest
 from django.http import HttpRequest  # noqa: TC002  # runtime: Ninja signature
@@ -26,10 +29,14 @@ from pydantic import StrictFloat
 from pydantic import StrictInt
 
 from core.api.schemas import DATE_TIME_PATTERN
+from core.api.schemas import BaseFilterSchema
 from core.api.schemas import BaseSchema
+from core.api.schemas import DecimalString
 from core.api.schemas import InputSchema
 from core.api.schemas import ISODate
+from core.api.schemas import JsonInteger
 from core.api.schemas import PublicId
+from core.api.schemas import QueryText
 from core.api.schemas import UTCDateTime
 from core.tests.ninja.support import make_api
 
@@ -50,6 +57,14 @@ class _Out(BaseSchema):
     url: str
 
 
+class _Priority(IntEnum):
+    LOW = 1
+    HIGH = 2
+
+
+Amount = Annotated[Decimal, DecimalString(max_digits=6, decimal_places=2)]
+
+
 class _Typed(InputSchema):
     count: StrictInt
     ratio: StrictFloat
@@ -57,6 +72,17 @@ class _Typed(InputSchema):
     at: UTCDateTime
     day: ISODate
     ref: PublicId
+    amount: Amount
+    priority: Annotated[_Priority, JsonInteger]
+    level: Annotated[Literal[1, 2], JsonInteger]
+
+
+class _Money(BaseSchema):
+    amount: Amount
+
+
+class _Search(BaseFilterSchema):
+    name: str | None = None
 
 
 class _QueryIn(Schema):
@@ -78,6 +104,9 @@ VALID: dict[str, object] = {
     "at": "2026-11-13T18:00:00Z",
     "day": "2026-11-13",
     "ref": "0190F2A4-5B6C-7D8E-9F00-112233445566",
+    "amount": "1234.50",
+    "priority": 2,
+    "level": 1,
 }
 
 
@@ -114,6 +143,17 @@ def _client() -> TestClient:
 
     @router.get("/query/", auth=None, response=_Ok)
     def query(request: HttpRequest, params: Query[_QueryIn]) -> dict[str, bool]:
+        return {"ok": True}
+
+    @router.post("/money/", auth=None, response=_Money)
+    def money(request: HttpRequest, body: _Money) -> dict[str, Decimal]:
+        # A computed Decimal can carry an exponent; the response never does.
+        return {"amount": body.amount * Decimal("1E+3")}
+
+    @router.get("/search/", auth=None, response=_Ok)
+    def search(
+        request: HttpRequest, filters: Query[_Search], q: QueryText | None = None
+    ) -> dict[str, bool]:
         return {"ok": True}
 
     api.add_router("/", router)
@@ -166,6 +206,21 @@ def test_strict_types_accept_their_own_json_type() -> None:
         ("ref", "0190f2a45b6c7d8e9f00112233445566", "uuid_parsing"),
         ("ref", "{0190f2a4-5b6c-7d8e-9f00-112233445566}", "uuid_parsing"),
         ("ref", "urn:uuid:0190f2a4-5b6c-7d8e-9f00-112233445566", "uuid_parsing"),
+        ("amount", 12.5, "string_type"),
+        ("amount", "12345.00", "string_pattern_mismatch"),
+        ("amount", "1.234", "string_pattern_mismatch"),
+        ("amount", "1e2", "string_pattern_mismatch"),
+        ("amount", " 1.50", "string_pattern_mismatch"),
+        ("amount", "1_000", "string_pattern_mismatch"),
+        ("amount", "-1.00", "string_pattern_mismatch"),
+        ("amount", "NaN", "string_pattern_mismatch"),
+        ("priority", True, "int_type"),
+        ("priority", "2", "int_type"),
+        ("priority", 2.0, "int_type"),
+        ("priority", 3, "enum"),
+        ("level", True, "int_type"),
+        ("level", "1", "int_type"),
+        ("level", 3, "literal_error"),
     ],
 )
 def test_a_body_value_of_another_json_type_is_400(
@@ -273,3 +328,70 @@ def test_a_request_year_from_1000_to_9998_converts_to_utc(
 def test_a_request_year_outside_1000_to_9998_is_400(sent: str) -> None:
     response = _post(_client(), "/echo/", {"at": sent})
     assert _field_code(response, "at") == "datetime_parsing"
+
+
+def test_a_decimal_string_keeps_its_digits_and_returns_a_string() -> None:
+    # Through a float, 99999999999999999.99 would come back as 1E+17. str()
+    # would write the product below as 9.99999E+6.
+    response = _post(_client(), "/money/", {"amount": "9999.99"})
+
+    assert response.status_code == HTTPStatus.OK, response.content
+    assert response.json() == {"amount": "9999990"}
+
+
+@pytest.mark.parametrize(
+    ("spec", "valid", "invalid"),
+    [
+        (DecimalString(max_digits=4, decimal_places=2), "12.34", "123.4"),
+        (DecimalString(max_digits=2, decimal_places=2), "0.25", "1.25"),
+        (DecimalString(max_digits=3, decimal_places=0), "999", "1.5"),
+        (DecimalString(max_digits=3, decimal_places=1, negative=True), "-12.5", "+1"),
+    ],
+)
+def test_a_decimal_string_pattern_follows_the_model_field(
+    spec: DecimalString, valid: str, invalid: str
+) -> None:
+    class _One(InputSchema):
+        value: Annotated[Decimal, spec]
+
+    assert _One.model_validate({"value": valid}).value == Decimal(valid)
+    with pytest.raises(ValueError, match="string_pattern_mismatch"):
+        _One.model_validate({"value": invalid})
+
+
+def test_the_schema_publishes_a_decimal_as_a_string_with_its_pattern() -> None:
+    request = _Money.model_json_schema(mode="validation")["properties"]["amount"]
+    response = _Money.model_json_schema(mode="serialization")["properties"]["amount"]
+
+    assert (request["type"], request["pattern"]) == (
+        "string",
+        r"^[0-9]{1,4}(?:\.[0-9]{1,2})?$",
+    )
+    assert (response["type"], response["pattern"]) == (
+        "string",
+        r"^-?[0-9]+(?:\.[0-9]+)?$",
+    )
+
+
+def test_an_integer_choice_publishes_its_values() -> None:
+    properties = _Typed.model_json_schema()["properties"]
+
+    assert (properties["level"]["type"], properties["level"]["enum"]) == (
+        "integer",
+        [1, 2],
+    )
+    assert _Typed.model_json_schema()["$defs"]["_Priority"]["enum"] == [1, 2]
+
+
+@pytest.mark.parametrize("query", ["name=a%00b", "q=a%00b"])
+def test_query_text_refuses_a_nul(query: str) -> None:
+    response = _client().get(f"/search/?{query}")
+    field = query.split("=", 1)[0]
+
+    assert _field_code(response, field) == "null_characters_not_allowed"
+
+
+def test_query_text_and_filters_take_plain_text() -> None:
+    response = _client().get("/search/?name=Ada&q=Lovelace")
+
+    assert response.status_code == HTTPStatus.OK, response.content

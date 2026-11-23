@@ -32,6 +32,7 @@ from django.http import HttpRequest
 from django.utils.functional import cached_property
 from ninja import Field
 from ninja import Schema
+from ninja.errors import ValidationError
 from ninja.pagination import CursorPagination as NinjaCursorPagination
 from ninja.pagination import PageNumberPagination
 
@@ -56,6 +57,19 @@ class PageNumberIn(Schema):
         default=None,
         ge=1,
         description="A page number within the paginated result set.",
+    )
+    page_size: int | None = Field(
+        default=None, ge=1, description="Number of results to return per page."
+    )
+
+
+class CursorIn(Schema):
+    # Ninja's CursorPagination.Input publishes as "Input" and clamps a page_size
+    # below 1 to 1; ge=1 makes it a 400 under fields.page_size, as on a
+    # page-number list.
+    cursor: str | None = Field(
+        default=None,
+        description="The page to read, from a next or previous link.",
     )
     page_size: int | None = Field(
         default=None, ge=1, description="Number of results to return per page."
@@ -203,6 +217,8 @@ class LimitCursorPagination(NinjaCursorPagination):
     """
 
     items_attribute = "results"
+    # As LimitPageNumberPagination.Input: the alias publishes the name CursorIn.
+    Input = CursorIn  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
 
     def __init__(
         self,
@@ -218,3 +234,36 @@ class LimitCursorPagination(NinjaCursorPagination):
             ordering=ordering,
             **kwargs,
         )
+
+    # Ninja raises ValidationError([{"cursor": "Invalid Cursor"}]) for a cursor
+    # that does not decode, and for one whose position the ordering field cannot
+    # take (django-ninja 1.8.0 ninja/pagination.py). The schema accepts any
+    # string as a cursor, so that is a 404, as a page past the last one on a
+    # page-number list (docs/api.md#pagination).
+    @override
+    def paginate_queryset(
+        self,
+        queryset: QuerySet,
+        pagination: NinjaCursorPagination.Input,
+        request: HttpRequest,
+        **params: Any,
+    ) -> Any:
+        try:
+            return super().paginate_queryset(queryset, pagination, request, **params)
+        except ValidationError:
+            raise Http404 from None
+
+    @override
+    async def apaginate_queryset(
+        self,
+        queryset: QuerySet,
+        pagination: NinjaCursorPagination.Input,
+        request: HttpRequest,
+        **params: Any,
+    ) -> Any:
+        try:
+            return await super().apaginate_queryset(
+                queryset, pagination, request, **params
+            )
+        except ValidationError:
+            raise Http404 from None

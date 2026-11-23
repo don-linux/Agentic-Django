@@ -7,8 +7,9 @@
 
 Ninja validates a request with Pydantic's `model_validate` on the parsed JSON, which is Pydantic's lax Python mode. Lax mode converts between JSON types:
 
-- a string or a boolean for an integer;
+- a string, a boolean or a float with no fraction for an integer, an integer choice included;
 - a number for a boolean;
+- a JSON number for a decimal, read through a float, which rounds it;
 - a Unix time (a number or a numeric string) for a datetime;
 - a date alone, or a value without a time zone, for a datetime;
 - for a UUID, the form without hyphens, in braces, or as a URN.
@@ -23,13 +24,16 @@ The schema publishes `integer`, `boolean`, `date-time` (RFC 3339, which requires
 - **A query parameter keeps the lax type,** because its value is text: `int`, `bool`, and `FiniteFloat`, which refuses `nan` and `inf`.
 - **Datetimes are exact RFC 3339.** `core.api.schemas.UTCDateTime` takes the date, `T`, the time with seconds, and a time zone (`Z` or `±hh:mm`). Anything else is a 400 with Pydantic's error types (`datetime_type`, `datetime_parsing`): a number, a date alone, a space for `T`, or no time zone. The year is 1000 to 9998, which the request schema publishes as a `pattern`. Python's `datetime` ends at years 1 and 9999, so an offset would push `0001-01-01T00:00:00+00:01` past it in UTC, an `OverflowError`. Output is unchanged: UTC with `Z`, microseconds kept, and its schema has no `pattern`.
 - **Dates are exact too.** `core.api.schemas.ISODate` takes a full-date only.
-- **UUIDs a request sends** use `core.api.schemas.PublicId`: the hyphenated form, in either case, which the path converter already requires.
+- **UUIDs a request sends** use `core.api.schemas.PublicId`: the hyphenated form, in either case, which the path converter already requires. A detail path takes `PublicIdPath`, which publishes that converter's pattern.
+- **Integer choices** (`IntegerChoices`, `IntEnum`, an integer `Literal`) carry `core.api.schemas.JsonInteger` in a body: only a JSON integer reaches the enum.
+- **Decimals are strings.** `core.api.schemas.DecimalString` takes the model field's `max_digits` and `decimal_places` and publishes the exact `pattern`, so `full_clean()` never refuses a value the schema allows. A JSON number is a 400, and a response writes the decimal in positional notation.
+- **Free text in a query** goes through `storable_text`, as a body does: `QueryText` for a parameter, `BaseFilterSchema` for a list's filters.
 - `docs/api.md#field-types` lists the types for a body, a query parameter and a response.
 
 ## Consequences
 
 - A value without a time zone is a 400: the server never guesses a zone.
-- No endpoint the template ships has an integer, number, boolean, date, datetime or UUID in a request body, so the contract and `tests/http/` do not change.
+- No endpoint the template ships has an integer, number, boolean, decimal, choice, date, datetime or UUID in a request body, so the contract and `tests/http/` do not change. `core/tests/ninja/test_representation.py` sends each type the values lax mode would take.
 - A new field with a lax type fails the conformance test with ST201. The fix is the type in the table, never an exception in the test.
 
 ## Alternatives

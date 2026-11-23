@@ -5,12 +5,18 @@ from __future__ import annotations
 import datetime as dt
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass
+from decimal import Decimal
+from typing import TYPE_CHECKING
 from typing import Annotated
 from typing import Any
 from typing import Final
 from typing import TypeIs
 from uuid import UUID
 
+from ninja import FilterSchema
+from ninja import P
+from ninja import PathEx
 from ninja import Schema
 from pydantic import AfterValidator
 from pydantic import BeforeValidator
@@ -21,8 +27,14 @@ from pydantic import WithJsonSchema
 from pydantic import field_validator
 from pydantic_core import PydanticCustomError
 from pydantic_core import PydanticKnownError
+from pydantic_core import core_schema
 
 from core.api.converters import PublicIdConverter
+
+if TYPE_CHECKING:
+    from pydantic import GetCoreSchemaHandler
+    from pydantic import GetJsonSchemaHandler
+    from pydantic.json_schema import JsonSchemaValue
 
 # RFC 3339, section 5.6: full-date "T" full-time, where the time offset ("Z" or
 # +hh:mm) is required; "T" and "Z" may be lowercase. ASCII digits only. A
@@ -46,6 +58,9 @@ _DATE_TYPE: Final = "date_type"
 _DATE_PARSING: Final = "date_parsing"
 _UUID_TYPE: Final = "uuid_type"
 _UUID_PARSING: Final = "uuid_parsing"
+_INT_TYPE: Final = "int_type"
+_STRING_TYPE: Final = "string_type"
+_STRING_PATTERN_MISMATCH: Final = "string_pattern_mismatch"
 
 
 def _rfc3339_date_time(value: object) -> object:
@@ -131,6 +146,99 @@ ISODate = Annotated[dt.date, BeforeValidator(_rfc3339_date)]
 # (docs/api.md#representation). A path id already goes through the converter.
 PublicId = Annotated[UUID, BeforeValidator(_hyphenated_uuid)]
 
+# The id of a detail path, "/{public_id:id}/": the view takes it as
+# `<model>_id: PublicIdPath`. The alias keeps the contract's name, id, without
+# an argument that shadows the builtin (guide/path-params/), and the schema
+# publishes the pattern the converter matches. PathEx is the type-checker
+# spelling of Path[T, P(...)].
+PublicIdPath = PathEx[
+    Annotated[
+        UUID,
+        WithJsonSchema({"type": "string", "pattern": f"^{PublicIdConverter.regex}$"}),
+    ],
+    P(alias="id"),
+]
+
+
+def _json_integer(value: object) -> object:
+    # Pydantic would also take true (a bool is an int in Python), "1" and 1.0;
+    # the schema publishes an integer.
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise PydanticKnownError(_INT_TYPE)
+    return value
+
+
+# Annotated metadata for an IntegerChoices or an integer Literal in a request
+# body, `Annotated[Priority, JsonInteger]`: only a JSON integer passes
+# (docs/api.md#field-types). Text choices need nothing.
+JsonInteger = BeforeValidator(_json_integer)
+
+
+def _plain_decimal(value: Decimal) -> str:
+    # Positional notation: str() would write 1E+2 for a computed Decimal.
+    return format(value, "f")
+
+
+# Any decimal a response can carry: an optional sign, digits, and an optional
+# fraction, never an exponent.
+_ANY_DECIMAL = r"-?[0-9]+(?:\.[0-9]+)?"
+
+
+@dataclass(frozen=True)
+class DecimalString:
+    """A decimal that travels as a JSON string, at the model field's precision.
+
+    `Annotated[Decimal, DecimalString(max_digits=10, decimal_places=2)]`, with
+    the model's max_digits and decimal_places: a request sends "12.50", never a
+    JSON number, which the parser would read through a float and round. The
+    schema publishes the exact pattern, so full_clean() never refuses a value
+    the schema allows. `negative=True` lets a minus sign through.
+    """
+
+    max_digits: int
+    decimal_places: int
+    negative: bool = False
+
+    @property
+    def pattern(self) -> str:
+        whole_digits = self.max_digits - self.decimal_places
+        whole = f"[0-9]{{1,{whole_digits}}}" if whole_digits else "0"
+        places = self.decimal_places
+        fraction = f"(?:\\.[0-9]{{1,{places}}})?" if places else ""
+        sign = "-?" if self.negative else ""
+        return f"{sign}{whole}{fraction}"
+
+    def _validate(self, value: object) -> object:
+        # A Decimal comes from server code (a model, a response), never from JSON.
+        if isinstance(value, Decimal):
+            return value
+        if not isinstance(value, str):
+            raise PydanticKnownError(_STRING_TYPE)
+        if not re.fullmatch(self.pattern, value):
+            raise PydanticKnownError(
+                _STRING_PATTERN_MISMATCH, {"pattern": self.pattern}
+            )
+        return value
+
+    def __get_pydantic_core_schema__(
+        self, source: type[Any], handler: GetCoreSchemaHandler
+    ) -> core_schema.CoreSchema:
+        return core_schema.no_info_before_validator_function(
+            self._validate,
+            handler(source),
+            serialization=core_schema.plain_serializer_function_ser_schema(
+                _plain_decimal, return_schema=core_schema.str_schema()
+            ),
+        )
+
+    def __get_pydantic_json_schema__(
+        self, schema: core_schema.CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
+        # Ninja publishes a request in "validation" mode and a response in
+        # "serialization" mode, as for UTCDateTime.
+        pattern = self.pattern if handler.mode == "validation" else _ANY_DECIMAL
+        return {"type": "string", "pattern": f"^{pattern}$"}
+
 
 class BaseSchema(Schema):
     """Output/shared schema. Do not set extra='forbid' here.
@@ -187,6 +295,25 @@ def storable_text[T](value: T) -> T:
         elif _is_collection(item):
             pending.extend(item)
     return value
+
+
+# Use for a free-text query parameter, such as a search box: PostgreSQL
+# cannot take a NUL in the SQL either (docs/api.md#filtering-search-and-ordering).
+QueryText = Annotated[str, AfterValidator(storable_text)]
+
+
+class BaseFilterSchema(FilterSchema):
+    """A list's filters, read from the query string with Query[...].
+
+    Every field goes through storable_text, as in InputSchema. Unknown query
+    parameters stay ignored (ADR 0021). See
+    docs/api.md#filtering-search-and-ordering.
+    """
+
+    @field_validator("*")
+    @classmethod
+    def reject_unstorable_text(cls, value: object) -> object:
+        return storable_text(value)
 
 
 class InputSchema(Schema):

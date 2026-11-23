@@ -21,7 +21,6 @@ from core.api.exceptions import register_exception_handlers
 from core.api.parsers import JSONParser
 from core.api.schemas import InputSchema
 from core.api.schemas import PublicId
-from core.tests.ninja.pagination_views import cursor_api
 from core.tests.ninja.support import make_api
 
 if TYPE_CHECKING:
@@ -166,14 +165,6 @@ def test_malformed_json_is_ninja_s_parse_error(user_client: Client) -> None:
     assert response.json()["code"] == "parse_error"
     # ninja/params/models.py: any parser failure is "Cannot parse request body".
     assert response.json()["detail"] == "Cannot parse request body"
-
-
-@pytest.mark.django_db
-def test_an_invalid_cursor_is_a_cursor_field_error() -> None:
-    response = TestClient(cursor_api()).get("/?cursor=not-a-cursor")
-    assert _fields(response) == {
-        "cursor": [{"code": "invalid", "detail": "Invalid Cursor"}]
-    }
 
 
 def test_null_for_a_non_nullable_field_is_pydantic_s_string_type() -> None:

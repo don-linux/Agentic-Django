@@ -7,7 +7,7 @@ Rules every endpoint under `/api/v1/` follows. Clients branch on `code`, never o
 ### Paths
 
 - Plural nouns, lowercase, with kebab-case static segments: an extra action is a path segment such as `"/{public_id:id}/change-password/"`, never `change_password`. At most one level of nesting (`/projects/{id}/members/`), and `/users/me/` for the current user. Query parameters and JSON keys are `snake_case`. `core/tests/http/test_rest_conventions.py` fails on a route that breaks the naming.
-- A detail path is `"/{public_id:id}/"`. The view takes it as `<model>_id: PathEx[UUID, P(alias="id")]`: the alias keeps the contract's `id` without an argument that shadows the builtin `id` ([Ninja: path parameters](https://django-ninja.dev/guide/path-params/); `apps/users/api/views.py`).
+- A detail path is `"/{public_id:id}/"`. The view takes it as `<model>_id: PublicIdPath` (`core.api.schemas`): the alias inside it keeps the contract's `id` without an argument that shadows the builtin `id` ([Ninja: path parameters](https://django-ninja.dev/guide/path-params/)), and the schema publishes the pattern the `public_id` converter matches (`apps/users/api/views.py`).
 - Paths always end with `/`. A path without the trailing slash returns 404; it is never redirected. A 301 would make most HTTP clients repeat a `POST` as a `GET` and report success without creating anything (`core.middleware.ApiCommonMiddleware`). Other paths, such as the admin, keep Django's slash redirect.
 
 With `DEBUG=True`, Django raises `RuntimeError` (a 500) for a POST, PUT, PATCH or DELETE without the trailing slash instead of redirecting; `ApiCommonMiddleware` makes it a 404 everywhere. Each app exposes a Ninja `Router` mounted on the one `NinjaAPI` in `config/api.py`, which `config/urls.py` serves under `/api/v1/` ([Ninja: routers](https://django-ninja.dev/guide/routers/)); there is no API root view and no format suffix.
@@ -56,23 +56,24 @@ Ninja validates a request with Pydantic in lax mode (`model_validate` on the par
 
 | Value | In a request body | In a query parameter | In a response |
 | --- | --- | --- | --- |
-| Text | `str`, with the model's `max_length`, and `min_length=1` for `blank=False` | `str` | `str` |
+| Text | `str`, with the model's `max_length`, and `min_length=1` for `blank=False` | `QueryText` | `str` |
 | Integer | `StrictInt` | `int` | `int` |
+| Integer choice | `Annotated[Priority, JsonInteger]` | `Priority` | `Priority` |
 | Number | `StrictFloat` (takes an integer too) | `FiniteFloat` | `float` |
 | Boolean | `StrictBool` | `bool` | `bool` |
 | Datetime | `UTCDateTime` | `UTCDateTime` | `UTCDateTime` |
 | Date | `ISODate` | `ISODate` | `ISODate` |
 | UUID (a `public_id`) | `PublicId` | `PublicId` | `UUID` |
-| Decimal | `Decimal` | `Decimal` | `Decimal` (a string) |
+| Decimal | `Annotated[Decimal, DecimalString(...)]` | `Annotated[Decimal, DecimalString(...)]` | `Annotated[Decimal, DecimalString(...)]` (a string) |
 
-`StrictInt`, `StrictFloat`, `StrictBool` and `FiniteFloat` are Pydantic's; `UTCDateTime`, `ISODate` and `PublicId` are in `core.api.schemas`. A query parameter is text, so it keeps the types that parse text: `int` takes `"2"`, and `bool` takes `true`, `false` and Pydantic's other spellings (`1`, `yes`, `on`). `UTCDateTime` takes years 1000 to 9998 in a request, and the request schema publishes that as a `pattern`: Python's `datetime` ends at years 1 and 9999, and an offset would push `0001-01-01T00:00:00+00:01` past it in UTC, a 500. A response is any UTC date-time. `PublicId` takes the hyphenated form only, in either case; Pydantic's `UUID` also takes it without hyphens, in braces, or as a URN. `ConfigDict(strict=True)` is not an option: in Python mode it also refuses the strings a datetime, a date or a UUID arrives as.
+`StrictInt`, `StrictFloat`, `StrictBool` and `FiniteFloat` are Pydantic's; `UTCDateTime`, `ISODate`, `PublicId`, `JsonInteger`, `DecimalString` and `QueryText` are in `core.api.schemas`. `DecimalString(max_digits=10, decimal_places=2)` takes the model field's precision: a decimal travels as a string such as `"12.50"`, never as a JSON number, which the parser would read through a float and round, and the request schema publishes the exact `pattern`, so `full_clean()` never refuses a value the schema allows (`negative=True` lets a minus sign through). A response writes it in positional notation, never with an exponent. `JsonInteger` goes on an `IntegerChoices`, an `IntEnum` or an integer `Literal` in a request body, which would otherwise take `true`, `"2"` and `2.0`; text choices need nothing. `QueryText` keeps a NUL out of the SQL, as `InputSchema` does for a body. A query parameter is text, so it keeps the types that parse text: `int` takes `"2"`, and `bool` takes `true`, `false` and Pydantic's other spellings (`1`, `yes`, `on`). `UTCDateTime` takes years 1000 to 9998 in a request, and the request schema publishes that as a `pattern`: Python's `datetime` ends at years 1 and 9999, and an offset would push `0001-01-01T00:00:00+00:01` past it in UTC, a 500. A response is any UTC date-time. `PublicId` takes the hyphenated form only, in either case; Pydantic's `UUID` also takes it without hyphens, in braces, or as a URN. `ConfigDict(strict=True)` is not an option: in Python mode it also refuses the strings a datetime, a date or a UUID arrives as.
 
 An input schema states every rule the model's `full_clean()` checks and a schema can express: `max_length` as `maxLength`, `blank=False` as `minLength` 1. Otherwise `full_clean()` answers 400 to a request the schema allows, which the conformance test reports as a schema-valid request rejected (ST202). Every `InputSchema` also refuses, at any depth, the text PostgreSQL cannot store: a NUL (`null_characters_not_allowed`, Django's code and message) and a lone surrogate, which a JSON escape can carry (Pydantic's `string_unicode`). Either one would be a 500 when the row is saved (`core.api.schemas.storable_text`).
 
 #### Related objects, enums and other types
 
 - **A related object** appears as its `public_id`, a string: `project_id: UUID` with a `resolve_project_id(obj)` that returns `obj.project.public_id`, the relation loaded by the selector's `select_related`. Or it appears as a nested output schema when the client needs its fields. A request sends it as `project_id: PublicId`. The service looks it up in the caller's scoped queryset, so an unknown or invisible id is `ObjectDoesNotExist`, a 404 `not_found` like a detail path: the response does not tell whether the object exists, and schemathesis accepts a 404 for a random id. Such an operation declares 404.
-- **A choice** is a Django `TextChoices` or `IntegerChoices` on the model, used as the field type in both schemas, or a `StrEnum` or a `Literal`. The schema publishes the values as an `enum`. A plain `enum.Enum` is not an option: Ninja's encoder writes a member as `str(member)`, `"Color.RED"`, not its value.
+- **A choice** is a Django `TextChoices` or `IntegerChoices` on the model, used as the field type in both schemas, or a `StrEnum` or a `Literal`; an integer one takes `JsonInteger` in a request body ([Field types](#field-types)). The schema publishes the values as an `enum`. A plain `enum.Enum` is not an option: Ninja's encoder writes a member as `str(member)`, `"Color.RED"`, not its value.
 - **Not offered yet**, each for a reason; add a type to `core/api/schemas.py`, with tests and a conformance run, before the first field needs it:
   - `time`: Django's JSON encoder cuts it to milliseconds and fails with a 500 on a time with a zone, which Pydantic accepts (`"12:00:00Z"`).
   - `timedelta`: Pydantic also takes a number of seconds for it, which the schema does not declare.
@@ -97,34 +98,27 @@ The API keeps `{"code", "detail"}` with `application/json`. `detail` already has
 ## Pagination
 
 - Default: `core.api.pagination.LimitPageNumberPagination`. `?page=` and `?page_size=` (20 by default, at most 100); the response is `count`, `next`, `previous`, `results`. Both parameters are whole numbers of at least 1, validated as in Ninja's own `PageNumberPagination`: anything else (`?page=abc`, `?page=`, `?page=0`, `?page_size=-1`) is a `400 validation_error` with the parameter under `fields`, and a `page_size` above 100 is cut to 100. Every page runs `COUNT(*)` plus `OFFSET`, which slows down with depth, so pages deeper than `DJANGO_API_MAX_PAGE_NUMBER` (1000) are a `404 not_found`, like any page past the end. Use it for admin-like lists where the total matters.
-- Opt-in: `@paginate(LimitCursorPagination)` from `core.api.pagination` ([Ninja: CursorPagination](https://django-ninja.dev/guide/pagination/#cursorpagination)) for large or append-heavy tables, feeds, and infinite scroll. Clients follow the `next`/`previous` links (`?cursor=`); there is no `count`, and every page costs the same at any depth. It orders by `-public_id`; a custom `ordering` must be unique and indexed. An invalid cursor (`?cursor=not-a-cursor`) is Ninja's `400` validation error under `fields.cursor`, like a malformed page number on a page-number list; `/api/v1/users/` does not use cursor pagination.
+- Opt-in: `@paginate(LimitCursorPagination)` from `core.api.pagination` ([Ninja: CursorPagination](https://django-ninja.dev/guide/pagination/#cursorpagination)) for large or append-heavy tables, feeds, and infinite scroll. Clients follow the `next`/`previous` links (`?cursor=`); there is no `count`, and every page costs the same at any depth. It orders by `-public_id`; a custom `ordering` must be unique and indexed. `page_size` is a whole number of at least 1, as on a page-number list (`CursorIn`; Ninja's own input would turn `0` into `1`). The schema takes any string as a cursor, so a cursor the server did not issue, or one whose position the ordering cannot take, is a `404 not_found`, like a page past the last one; a client that follows the links never sends one. `/api/v1/users/` does not use cursor pagination.
 - Opt-in: `core.api.pagination.CachedCountPageNumberPagination` for page-number lists over a large table, where `COUNT(*)` is the expensive query of every page. It caches the total of each query in Valkey for 60 seconds, so `count` and the last page number may lag by up to a minute, or less when the service that writes the model calls `core.cache.invalidate()`. The key is the SQL of the queryset, so each user's or tenant's list has its own total. The rows of a page are never cached, and cursor pages have no count to cache.
 - Not offered: limit-offset. Ninja's `LimitOffsetPagination` publishes `{items, count}`, a second list envelope, and page numbers and cursors cover the same lists.
 
 ## Filtering, search and ordering
 
-A list takes its filters as a Ninja `FilterSchema` read from the query string, and its sort order as one parameter limited to a `Literal` ([Ninja: filtering](https://django-ninja.dev/guide/filtering/)):
+A list takes its filters as a `core.api.schemas.BaseFilterSchema`, Ninja's `FilterSchema` with every field through `storable_text`, read from the query string, and its sort order as one parameter limited to a `Literal` ([Ninja: filtering](https://django-ninja.dev/guide/filtering/)):
 
 ```python
 from typing import Annotated, Literal
 
-from ninja import FilterLookup, FilterSchema, Query
-from pydantic import field_validator
+from ninja import FilterLookup, Query
 
-from core.api.schemas import UTCDateTime, storable_text
+from core.api.schemas import BaseFilterSchema, UTCDateTime
 
 
-class ThingFilter(FilterSchema):
+class ThingFilter(BaseFilterSchema):
     # A list of lookups is combined with OR: one search box over two columns.
     search: Annotated[str | None, FilterLookup(["name__icontains", "code__iexact"])] = None
     status: Annotated[ThingStatus | None, FilterLookup("status")] = None
     created_after: Annotated[UTCDateTime | None, FilterLookup("created_at__gte")] = None
-
-    @field_validator("*")
-    @classmethod
-    def reject_unstorable_text(cls, value: object) -> object:
-        # Query text reaches PostgreSQL too, which cannot take a NUL.
-        return storable_text(value)
 
 
 ThingOrdering = Literal["created_at", "-created_at", "name", "-name"]
@@ -146,7 +140,7 @@ def things_list(
 
 - The view passes the selector a Django `Q` from `get_filter_expression()`, never the `FilterSchema`: only `api/` imports Ninja (the `api-framework-in-api-layer` import contract). The selector scopes the queryset to the caller first, so a filter can only narrow it, then applies `where` and `order_by(ordering, "-id")`. The primary key breaks ties, so pages stay stable.
 - Never pass a client's string to `order_by()`. The `Literal` lets through only the listed fields, and anything else is a 400 `literal_error` under `fields.ordering`.
-- The field types are those of a query parameter ([Field types](#field-types)), and the `storable_text` validator keeps a NUL out of the SQL, as `InputSchema` does for a body.
+- The field types are those of a query parameter ([Field types](#field-types)), and `BaseFilterSchema` keeps a NUL out of the SQL, as `InputSchema` does for a body. A free-text parameter outside a filter schema is `QueryText`.
 - Every filter and every ordering a client may choose needs an index ([ARCHITECTURE.md#indexes](ARCHITECTURE.md#indexes)). Add the list operation's selector to `LIST_SELECTORS` in `core/tests/ninja/test_list_indexes.py`, once per ordering: that test checks the ordering, and the review checks the filters.
 - An unknown query parameter is still ignored ([ADR 0021](decisions/0021-contract-details-the-template-keeps.md)): a misspelled filter filters nothing.
 
@@ -446,7 +440,6 @@ def item_update(*, item: Item, if_match: str | None, name: str) -> Item:
 
 ```python
 # apps/items/api/views.py
-ItemIdPath = PathEx[UUID, P(alias="id")]  # see Paths above
 
 
 @router.get(
@@ -456,7 +449,7 @@ ItemIdPath = PathEx[UUID, P(alias="id")]  # see Paths above
     operation_id="items_retrieve",
 )
 def items_retrieve(
-    request: HttpRequest, response: HttpResponse, item_id: ItemIdPath
+    request: HttpRequest, response: HttpResponse, item_id: PublicIdPath
 ) -> Item:
     item = get_object_or_404(
         item_list(user=request_user(request, User)), public_id=item_id
@@ -474,7 +467,7 @@ def items_retrieve(
 def items_partial_update(
     request: HttpRequest,
     response: HttpResponse,
-    item_id: ItemIdPath,
+    item_id: PublicIdPath,
     body: ItemUpdateIn,
 ) -> Item:
     item = get_object_or_404(
