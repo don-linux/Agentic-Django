@@ -397,7 +397,7 @@ def test_a_patch_without_if_match_gets_428(user_client: Client, item: Item) -> N
 
 ## Errors outside API views
 
-Requests that never reach an API view (unknown routes, a disallowed `Host`, unhandled exceptions) are answered by the JSON `handler400`, `handler403`, `handler404`, and `handler500` in `core/errors.py`, with the same body. On `/api/` and `/_allauth/`, `core.middleware.ApiDebugErrorMiddleware` keeps that JSON body even when `DEBUG=True`, where Django would otherwise serve an HTML technical page. CSRF failures on session-authenticated pages (admin, Swagger) use Django's `CSRF_FAILURE_VIEW`, which is HTML and out of scope. Unauthenticated or non-staff calls to `/api/v1/docs/` also use the JSON envelope.
+Requests that never reach an API view (unknown routes, a disallowed `Host`, unhandled exceptions) are answered by the JSON `handler400`, `handler403`, `handler404`, and `handler500` in `core/errors.py`, with the same body. On `/api/` and `/_allauth/`, `core.middleware.ApiDebugErrorMiddleware` keeps that JSON body even when `DEBUG=True`, where Django would otherwise serve an HTML technical page. An exception an API operation does not handle reaches Django whatever `DEBUG` is: `core.api.exceptions` re-raises it, as Ninja's default handler does only with `DEBUG=False`. So development answers the same status as production (400 for a `SuspiciousOperation` such as a body over `DATA_UPLOAD_MAX_MEMORY_SIZE`, 500 otherwise), and with `ATOMIC_REQUESTS` the request rolls back. CSRF failures on session-authenticated pages (admin, Swagger) use Django's `CSRF_FAILURE_VIEW`, which is HTML and out of scope. Unauthenticated or non-staff calls to `/api/v1/docs/` also use the JSON envelope.
 
 ## Out of scope: `/_allauth/`
 

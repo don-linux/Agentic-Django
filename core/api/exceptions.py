@@ -14,6 +14,7 @@ import math
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import NoReturn
 
 from django.core.exceptions import NON_FIELD_ERRORS
 from django.core.exceptions import ObjectDoesNotExist
@@ -249,6 +250,14 @@ class _ErrorHandlers:
         code = _http_error_code(error.status_code, message)
         return self._json(request, error_body(code, message), error.status_code)
 
+    def on_unhandled(self, request: HttpRequest, exc: Exception) -> NoReturn:
+        # Ninja's default handler answers a text/plain 500 with DEBUG on and
+        # re-raises with it off (ninja/errors.py, _default_exception). Re-raise
+        # always, so Django answers the same status either way (400 for a
+        # SuspiciousOperation such as RequestDataTooBig, 500 otherwise), and
+        # with ATOMIC_REQUESTS the request rolls back.
+        raise exc
+
 
 def register_exception_handlers(api: NinjaAPI) -> None:
     """
@@ -274,3 +283,4 @@ def register_exception_handlers(api: NinjaAPI) -> None:
     api.exception_handler(PermissionDenied)(handlers.on_django_permission_denied)
     api.exception_handler(Throttled)(handlers.on_throttled)
     api.exception_handler(HttpError)(handlers.on_http_error)
+    api.exception_handler(Exception)(handlers.on_unhandled)
