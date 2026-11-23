@@ -277,7 +277,7 @@ def exports_legacy_retrieve(request: HttpRequest, response: HttpResponse) -> Exp
     return export_latest()
 ```
 
-Browsers expose these headers to JavaScript only when they are listed in `CORS_EXPOSE_HEADERS` (django-cors-headers), so add `["Deprecation", "Sunset", "Link"]` there with the first deprecation.
+Browsers expose these headers to JavaScript only when they are listed in `CORS_EXPOSE_HEADERS` (django-cors-headers), so add `"Deprecation"`, `"Sunset"` and `"Link"` there, next to `Location` and `Retry-After`, with the first deprecation.
 
 After the sunset date the endpoint answers `410 Gone` with the code `gone` (register it in [Error codes](#error-codes) when it is first used), for example `raise ApplicationError("This endpoint was removed; use /api/v1/exports/.", code="gone", status_code=410)`. An incompatible replacement goes to `/api/v2/`, following the versioning rule in AGENTS.md.
 

@@ -581,6 +581,10 @@ CORS_ALLOW_HEADERS = (
     "x-email-verification-key",
     "x-password-reset-key",
 )
+# Response headers of the contract that a browser client must read: Location on
+# a 201 and Retry-After on a 429. Cross-origin, a browser shows JavaScript only
+# the CORS-safelisted response headers and the ones listed here (Fetch standard).
+CORS_EXPOSE_HEADERS = ("Location", "Retry-After")
 
 # For the admin and Swagger UI, which run with staff sessions; styles allow
 # 'unsafe-inline' for the admin's style attributes, scripts never do.
