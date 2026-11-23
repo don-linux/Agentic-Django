@@ -27,7 +27,6 @@ from ninja.errors import AuthenticationError
 from ninja.errors import AuthorizationError
 
 from core.api.api import api
-from core.api.auth import API_AUTH
 from core.api.auth import x_session_token_auth
 from core.errors import error_body
 
@@ -92,7 +91,7 @@ def _route_operations(request: HttpRequest) -> dict[str, Any] | None:
     except Resolver404:
         return None
     if match.url_name in _DOCS_ROUTES:
-        return {"GET": {"summary": match.url_name}}
+        return {"GET": {}}
     route = "/" + _ROUTE_PARAM.sub(r"{\1}", match.route)
     return _operations_by_route().get(route)
 
@@ -297,26 +296,6 @@ def _not_acceptable() -> JsonResponse:
     )
 
 
-def _options_name(operations: dict[str, Any]) -> str:
-    first: dict[str, Any] = next(iter(operations.values()), {})
-    operation: dict[str, Any] = operations.get("GET") or first
-    return str(operation.get("summary") or "")
-
-
-def _parses(operations: dict[str, Any]) -> list[str]:
-    """DRF's "parses": every request body media type the route's operations take.
-
-    Ninja declares them in the operation's requestBody (application/json for a
-    Body, multipart/form-data for File/Form). Without a body, JSON, as DRF's
-    default parser list.
-    """
-    found: list[str] = []
-    for operation in operations.values():
-        content = operation.get("requestBody", {}).get("content", {})
-        found += [media for media in content if media not in found]
-    return found or [JSON]
-
-
 class ApiContractMiddleware:
     """406 / 415 / 405 {code, detail} on /api/v1/ before and after Ninja."""
 
@@ -360,21 +339,8 @@ class ApiContractMiddleware:
             return _not_acceptable()
         if allow is not None and method not in {m.strip() for m in allow.split(",")}:
             return self._not_allowed(method, allow)
-        if method == "OPTIONS" and operations is not None:
-            if subpath in {"docs/", "schema/"}:
-                # These routes are staff-only even for metadata requests.
-                # The early OPTIONS response must not bypass their view guard.
-                # The schema answers as SpectacularAPIView did: its own metadata
-                # in the negotiated schema format.
-                protected = staff_docs_required(
-                    lambda req: (
-                        schema_options_view(req)
-                        if subpath == "schema/"
-                        else self._options(req, operations, allow or "")
-                    )
-                )
-                return protected(request)
-            return self._options(request, operations, allow or "")
+        if method == "OPTIONS" and allow is not None:
+            return self._options(allow)
         return None
 
     def _dispatch(self, request: HttpRequest) -> HttpResponse:
@@ -389,26 +355,16 @@ class ApiContractMiddleware:
         finally:
             request.method = "HEAD"
 
-    def _options(
-        self, request: HttpRequest, operations: dict[str, Any], allow: str
-    ) -> HttpResponse:
-        """OPTIONS as DRF answered it: 401 when anonymous, else 200 metadata."""
-        if not any(auth(request) for auth in API_AUTH):
-            return _error(
-                "not_authenticated",
-                AuthenticationError().message,
-                HTTPStatus.UNAUTHORIZED,
-                **{"WWW-Authenticate": "X-Session-Token", "Allow": allow},
-            )
-        body = {
-            # DRF SimpleMetadata shape; the name is the GET (or first) summary.
-            "name": _options_name(operations),
-            "description": "",
-            "renders": [JSON],
-            "parses": _parses(operations),
-        }
-        response = JsonResponse(body, json_dumps_params=_COMPACT)
+    def _options(self, allow: str) -> HttpResponse:
+        """OPTIONS as Django's View.options() answers it: 200, Allow, no body.
+
+        No authentication, as in Django: it only says which methods the route
+        has (RFC 9110, section 9.3.7). A CORS preflight never gets here:
+        django-cors-headers answers it first.
+        """
+        response = HttpResponse()
         response["Allow"] = allow
+        response["Content-Length"] = "0"
         return response
 
     def _not_allowed(self, method: str, allow: str) -> HttpResponse:
@@ -487,21 +443,6 @@ def render_schema(request: HttpRequest, data: dict[str, Any]) -> HttpResponse:
 def schema_view(request: HttpRequest) -> HttpResponse:
     """OpenAPI document: YAML by default, JSON when Accept asks for it."""
     return render_schema(request, api.get_openapi_schema())
-
-
-# SpectacularAPIView's OPTIONS (DRF SimpleMetadata) in the previous contract:
-# SchemaView's name and docstring, its four renderers and the JSON parser.
-SCHEMA_METADATA: dict[str, Any] = {
-    "name": "Schema",
-    "description": "Staff-only OpenAPI schema; errors stay application/json.",
-    "renders": list(SCHEMA_MEDIA_TYPES),
-    "parses": [JSON],
-}
-
-
-def schema_options_view(request: HttpRequest) -> HttpResponse:
-    """Staff OPTIONS on the schema: its metadata, in the negotiated schema format."""
-    return render_schema(request, SCHEMA_METADATA)
 
 
 def docs_view(request: HttpRequest) -> HttpResponse:

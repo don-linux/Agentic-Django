@@ -1,34 +1,27 @@
-"""Contract pins beyond test_parity_pins: OPTIONS metadata names, staff gate
-on OPTIONS, ScopedThrottle and explicit rates, error-code mapping, and Ninja
-validating the whole request before the view looks an object up.
+"""Contract pins beyond test_parity_pins: OPTIONS as Django answers it,
+ScopedThrottle and explicit rates, error-code mapping, and Ninja validating the
+whole request before the view looks an object up.
 """
 
 from __future__ import annotations
 
-import json
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 from typing import Any
 from uuid import UUID
 
 import pytest
-import yaml
-from allauth.account.models import EmailAddress
 from django.http import Http404
 from django.http import HttpRequest  # runtime: Ninja signature
 from django.http import HttpResponse  # runtime: response argument
-from django.test import Client
 from ninja import Router
 from ninja import Schema
 from ninja.testing import TestClient
 
-from apps.users.tests.factories import UserFactory
 from core.api.exceptions import _code_and_detail
 from core.api.exceptions import _ninja_validation_fields
-from core.api.negotiation import _parses
 from core.api.throttling import AnonThrottle
 from core.api.throttling import ScopedThrottle
-from core.tests.credentials import PASSWORD
 from core.tests.ninja.support import make_api
 
 if TYPE_CHECKING:
@@ -37,63 +30,31 @@ if TYPE_CHECKING:
 ME_URL = "/api/v1/users/me/"
 LIST_URL = "/api/v1/users/"
 DOCS_URL = "/api/v1/docs/"
-LOGIN_URL = "/_allauth/app/v1/auth/login"
 
-
-def _token_for(*, is_staff: bool) -> str:
-    user = UserFactory(password=PASSWORD, is_staff=is_staff)
-    EmailAddress.objects.create(
-        user=user, email=user.email, primary=True, verified=True
-    )
-    response = Client().post(
-        LOGIN_URL,
-        {"email": user.email, "password": PASSWORD},
-        content_type="application/json",
-    )
-    assert response.status_code == HTTPStatus.OK, response.content
-    return response.json()["meta"]["session_token"]
-
-
-# --- OPTIONS (DRF SimpleMetadata) ---------------------------------------------
+# --- OPTIONS (Django's View.options) -----------------------------------------
 
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    ("url", "name", "allow"),
+    ("url", "allow"),
     [
-        (ME_URL, "Retrieve the current user", "GET, PATCH, HEAD, OPTIONS"),
-        (LIST_URL, "List users", "GET, HEAD, OPTIONS"),
+        (ME_URL, "GET, PATCH, HEAD, OPTIONS"),
+        (LIST_URL, "GET, HEAD, OPTIONS"),
+        (DOCS_URL, "GET, HEAD, OPTIONS"),
+        ("/api/v1/schema/", "GET, HEAD, OPTIONS"),
     ],
 )
-def test_authenticated_options_is_drf_metadata(
-    user_client: Client, url: str, name: str, allow: str
+@pytest.mark.parametrize("who", ["client", "user_client", "admin_client"])
+def test_options_lists_the_methods_with_no_body_for_anyone(
+    request: pytest.FixtureRequest, url: str, allow: str, who: str
 ) -> None:
-    response = user_client.options(url)
+    # As Django's View.options(): 200, Allow, Content-Length 0, and no
+    # authentication, on the staff-only docs and schema too.
+    response = request.getfixturevalue(who).options(url)
     assert response.status_code == HTTPStatus.OK
     assert response["Allow"] == allow
-    assert response.json() == {
-        "name": name,
-        "description": "",
-        "renders": ["application/json"],
-        "parses": ["application/json"],
-    }
-
-
-@pytest.mark.django_db
-def test_options_accepts_the_session_token() -> None:
-    token = _token_for(is_staff=False)
-    response = Client().options(ME_URL, headers={"X-Session-Token": token})
-    assert response.status_code == HTTPStatus.OK
-    assert response["Allow"] == "GET, PATCH, HEAD, OPTIONS"
-    assert response.json() == {
-        "name": "Retrieve the current user",
-        "description": "",
-        "renders": ["application/json"],
-        "parses": ["application/json"],
-    }
-    bogus = Client().options(ME_URL, headers={"X-Session-Token": "bogus"})
-    assert bogus.status_code == HTTPStatus.UNAUTHORIZED
-    assert bogus.json()["code"] == "not_authenticated"
+    assert response["Content-Length"] == "0"
+    assert response.content == b""
 
 
 # --- ScopedThrottle -----------------------------------------------------------
@@ -241,132 +202,3 @@ def test_the_response_argument_reaches_the_view() -> None:
     assert response.status_code == HTTPStatus.OK
     assert response["X-Seen"] == "1"
     assert _seen == [UUID(int=1)]
-
-
-# --- pagination and schema helpers --------------------------------------------
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize("url", [DOCS_URL, "/api/v1/schema/"])
-def test_options_on_staff_docs_is_not_available_to_a_regular_user(
-    user_client: Client, url: str
-) -> None:
-    response = user_client.options(url)
-    assert response.status_code == HTTPStatus.FORBIDDEN
-    assert response.json()["code"] == "permission_denied"
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize("url", [DOCS_URL, "/api/v1/schema/"])
-def test_options_on_staff_docs_allows_staff(admin_client: Client, url: str) -> None:
-    response = admin_client.options(url)
-    assert response.status_code == HTTPStatus.OK
-    assert response["Allow"] == "GET, HEAD, OPTIONS"
-
-
-# SpectacularAPIView's OPTIONS in the previous contract (DRF SimpleMetadata).
-SCHEMA_OPTIONS_METADATA = {
-    "name": "Schema",
-    "description": "Staff-only OpenAPI schema; errors stay application/json.",
-    "renders": [
-        "application/vnd.oai.openapi",
-        "application/yaml",
-        "application/vnd.oai.openapi+json",
-        "application/json",
-    ],
-    "parses": ["application/json"],
-}
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize(
-    ("accept", "content_type"),
-    [
-        (None, "application/vnd.oai.openapi; charset=utf-8"),
-        ("application/yaml", "application/yaml; charset=utf-8"),
-        ("application/json", "application/json"),
-        ("application/vnd.oai.openapi+json", "application/vnd.oai.openapi+json"),
-    ],
-)
-def test_options_on_the_schema_answers_its_metadata_in_the_schema_format(
-    admin_client: Client, accept: str | None, content_type: str
-) -> None:
-    # As SpectacularAPIView: the metadata goes through the renderer the Accept
-    # chose, so it is YAML by default and indented JSON on request.
-    headers = {} if accept is None else {"Accept": accept}
-    response = admin_client.options("/api/v1/schema/", headers=headers)
-    assert response.status_code == HTTPStatus.OK
-    assert response["Content-Type"] == content_type
-    assert response["Allow"] == "GET, HEAD, OPTIONS"
-    if content_type.endswith("json"):
-        assert response.content.startswith(b'{\n    "name": "Schema"')
-        assert json.loads(response.content) == SCHEMA_OPTIONS_METADATA
-    else:
-        assert response.content.startswith(b"name: Schema\n")
-        assert yaml.safe_load(response.content) == SCHEMA_OPTIONS_METADATA
-
-
-@pytest.mark.django_db
-def test_options_on_the_docs_keeps_its_json_metadata(admin_client: Client) -> None:
-    # The negative case: the docs page is not the schema. The previous contract
-    # failed there with a 500; this answer is the API's JSON metadata.
-    response = admin_client.options(DOCS_URL)
-    assert response.status_code == HTTPStatus.OK
-    assert response["Content-Type"] == "application/json"
-    assert response.json() == {
-        "name": "api-docs",
-        "description": "",
-        "renders": ["application/json"],
-        "parses": ["application/json"],
-    }
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize("url", [DOCS_URL, "/api/v1/schema/"])
-@pytest.mark.parametrize(
-    ("who", "status", "code"),
-    [
-        ("client", HTTPStatus.UNAUTHORIZED, "not_authenticated"),
-        ("user_client", HTTPStatus.FORBIDDEN, "permission_denied"),
-    ],
-)
-def test_options_refused_by_the_staff_gate_still_has_allow(
-    request: pytest.FixtureRequest, url: str, who: str, status: int, code: str
-) -> None:
-    # DRF's finalize_response set Allow on every response of the view, the
-    # 401/403 of the permission check included.
-    response = request.getfixturevalue(who).options(url)
-    assert response.status_code == status
-    assert response.json()["code"] == code
-    assert response["Allow"] == "GET, HEAD, OPTIONS"
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize("url", [DOCS_URL, "/api/v1/schema/"])
-def test_the_staff_gate_refusal_on_options_carries_no_metadata(
-    client: Client, user_client: Client, url: str
-) -> None:
-    # The negative case: Allow is the only thing the refusal shares with the
-    # staff answer; the metadata body stays behind the gate.
-    for caller in (client, user_client):
-        body = caller.options(url).json()
-        assert set(body) == {"code", "detail"}
-
-
-def test_options_parses_lists_each_request_body_media_type() -> None:
-    # An upload operation (ninja File/Form) takes multipart/form-data; OPTIONS
-    # must not advertise JSON only (DRF listed the view's parser classes).
-    upload: dict[str, Any] = {
-        "summary": "Upload a file",
-        "requestBody": {"content": {"multipart/form-data": {"schema": {}}}},
-    }
-    patch: dict[str, Any] = {
-        "requestBody": {"content": {"application/json": {"schema": {}}}}
-    }
-    assert _parses({"POST": upload}) == ["multipart/form-data"]
-    assert _parses({"PATCH": patch, "POST": upload}) == [
-        "application/json",
-        "multipart/form-data",
-    ]
-    # A route without a request body keeps DRF's default JSON parser.
-    assert _parses({"GET": {"summary": "List users"}}) == ["application/json"]

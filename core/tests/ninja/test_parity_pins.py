@@ -37,14 +37,6 @@ if TYPE_CHECKING:
 ME_URL = "/api/v1/users/me/"
 
 
-@pytest.mark.django_db
-def test_anonymous_options_is_401_with_allow(client: Client) -> None:
-    response = client.options(ME_URL)
-    assert response.status_code == HTTPStatus.UNAUTHORIZED
-    assert response["WWW-Authenticate"] == "X-Session-Token"
-    assert response["Allow"] == "GET, PATCH, HEAD, OPTIONS"
-
-
 def test_scoped_throttle_cache_key_names_the_scope(rf) -> None:
     throttle = ScopedThrottle("1/min", scope="uploads")
     request = rf.get("/", REMOTE_ADDR="203.0.113.9")
