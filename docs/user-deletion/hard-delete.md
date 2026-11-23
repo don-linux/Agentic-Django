@@ -16,4 +16,4 @@ What a hard delete loses, beyond the user:
 - The user's allauth email addresses and MFA authenticators.
 - Anything a project later points at users with `CASCADE`.
 
-A foreign key with `PROTECT` stops the command with an error that names it: delete or reassign those rows first, or anonymize the user instead.
+A foreign key with `PROTECT` or `RESTRICT` stops the command with an error that names it: delete or reassign those rows first, or anonymize the user instead.

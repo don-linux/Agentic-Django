@@ -35,6 +35,33 @@ def test_seed_dev_is_idempotent() -> None:
 
 
 @override_settings(DEBUG=True)
+def test_seeding_again_keeps_the_seeded_users_signed_in() -> None:
+    # docs/development.md: running it again changes nothing, so a session
+    # token from the first run still works after the second.
+    _seed()
+    token = (
+        Client()
+        .post(
+            "/_allauth/app/v1/auth/login",
+            {"email": "user@example.com", "password": PASSWORD},
+            content_type="application/json",
+        )
+        .json()["meta"]["session_token"]
+    )
+    _seed()
+    me = Client().get("/api/v1/users/me/", HTTP_X_SESSION_TOKEN=token)
+    assert me.status_code == HTTPStatus.OK
+
+
+@override_settings(DEBUG=True)
+def test_seeding_reactivates_a_deactivated_seed_user() -> None:
+    _seed()
+    User.objects.filter(email="user@example.com").update(is_active=False)
+    _seed()
+    assert User.objects.get(email="user@example.com").is_active is True
+
+
+@override_settings(DEBUG=True)
 def test_seeded_user_can_log_in_through_allauth_headless() -> None:
     _seed()
 

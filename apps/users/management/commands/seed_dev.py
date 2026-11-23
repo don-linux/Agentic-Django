@@ -19,6 +19,7 @@ from django.db import transaction
 
 from apps.users.models import User
 from apps.users.services import user_primary_email_sync
+from apps.users.services import user_reactivate
 from apps.users.services import user_update
 
 if TYPE_CHECKING:
@@ -84,14 +85,23 @@ def _seed_user(*, email: str, name: str, is_superuser: bool, password: str) -> U
         )
         user = create(email, password)
     else:
-        user.email = email
-        user.set_password(password)
-        user.is_active = True
-        user.is_staff = is_superuser
-        user.is_superuser = is_superuser
-        user.save(
-            update_fields=["email", "password", "is_active", "is_staff", "is_superuser"]
-        )
+        changed: list[str] = []
+        if user.email != email:
+            user.email = email
+            changed.append("email")
+        # A new hash would change the session auth hash and sign the seeded
+        # user out of every session: set the password only when it differs.
+        if not user.check_password(password):
+            user.set_password(password)
+            changed.append("password")
+        if (user.is_staff, user.is_superuser) != (is_superuser, is_superuser):
+            user.is_staff = is_superuser
+            user.is_superuser = is_superuser
+            changed += ["is_staff", "is_superuser"]
+        if changed:
+            user.save(update_fields=changed)
+        if not user.is_active:
+            user_reactivate(user=user)
     user_update(user=user, name=name)
     user_primary_email_sync(user=user, verify=True)
     return user
