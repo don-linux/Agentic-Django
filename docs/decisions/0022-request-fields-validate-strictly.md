@@ -18,7 +18,7 @@ Ninja validates a request with Pydantic's `model_validate` on the parsed JSON, w
 
 - **JSON-native types in a body are Pydantic's strict types:** `StrictInt`, `StrictFloat` (which takes an integer, as JSON Schema's `number` does) and `StrictBool`.
 - **A query parameter keeps the lax type,** because its value is text: `int`, `bool`, and `FiniteFloat`, which refuses `nan` and `inf`.
-- **Datetimes are exact RFC 3339.** `core.api.schemas.UTCDateTime` takes the date, `T`, the time with seconds, and a time zone (`Z` or `±hh:mm`). Anything else is a 400 with Pydantic's error types (`datetime_type`, `datetime_parsing`): a number, a date alone, a space for `T`, or no time zone. Output is unchanged: UTC with `Z`, microseconds kept.
+- **Datetimes are exact RFC 3339.** `core.api.schemas.UTCDateTime` takes the date, `T`, the time with seconds, and a time zone (`Z` or `±hh:mm`). Anything else is a 400 with Pydantic's error types (`datetime_type`, `datetime_parsing`): a number, a date alone, a space for `T`, or no time zone. The year is 1000 to 9998, which the request schema publishes as a `pattern`. Python's `datetime` ends at years 1 and 9999, so an offset would push `0001-01-01T00:00:00+00:01` past it in UTC: schemathesis found that 500 in the audit's final run. Output is unchanged: UTC with `Z`, microseconds kept, and its schema has no `pattern`.
 - **Dates are exact too.** `core.api.schemas.ISODate` takes a full-date only.
 - **UUIDs a request sends** use `core.api.schemas.PublicId`: the hyphenated form, in either case, which the path converter already requires.
 - `docs/api.md#field-types` lists the types for a body, a query parameter and a response.

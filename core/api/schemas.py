@@ -25,12 +25,17 @@ from pydantic_core import PydanticKnownError
 from core.api.converters import PublicIdConverter
 
 # RFC 3339, section 5.6: full-date "T" full-time, where the time offset ("Z" or
-# +hh:mm) is required; "T" and "Z" may be lowercase. ASCII digits only.
+# +hh:mm) is required; "T" and "Z" may be lowercase. ASCII digits only. A
+# request's year is 1000 to 9998: Python's datetime ends at years 1 and 9999,
+# and an offset would push 0001-01-01T00:00:00+00:01 past it in UTC.
 _FULL_DATE = r"[0-9]{4}-[0-9]{2}-[0-9]{2}"
-_DATE_TIME = re.compile(
-    _FULL_DATE
-    + r"[Tt][0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:[Zz]|[+-][0-9]{2}:[0-9]{2})"
+_YEAR_1000_TO_9998 = r"(?:[1-8][0-9]{3}|9[0-8][0-9]{2}|99[0-8][0-9]|999[0-8])"
+DATE_TIME_PATTERN = (
+    _YEAR_1000_TO_9998
+    + r"-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?"
+    + r"(?:[Zz]|[+-][0-9]{2}:[0-9]{2})"
 )
+_DATE_TIME = re.compile(DATE_TIME_PATTERN)
 _DATE = re.compile(_FULL_DATE)
 # RFC 9562's hyphenated form, in either case, as the public_id path converter.
 _UUID = re.compile(PublicIdConverter.regex)
@@ -54,7 +59,8 @@ def _rfc3339_date_time(value: object) -> object:
         raise PydanticKnownError(_DATETIME_TYPE)
     if not _DATE_TIME.fullmatch(value):
         raise PydanticKnownError(
-            _DATETIME_PARSING, {"error": "expected RFC 3339 with a time zone"}
+            _DATETIME_PARSING,
+            {"error": "expected RFC 3339 with a time zone, in years 1000 to 9998"},
         )
     return value
 
@@ -107,7 +113,14 @@ UTCDateTime = Annotated[
     BeforeValidator(_rfc3339_date_time),
     AfterValidator(_as_utc),
     PlainSerializer(_iso_z, return_type=str),
-    WithJsonSchema({"type": "string", "format": "date-time"}),
+    # Ninja publishes a request in "validation" mode and a response in
+    # "serialization" mode: a request declares the pattern it must match, and a
+    # response is any UTC date-time, which can fall in year 999 or 9999.
+    WithJsonSchema(
+        {"type": "string", "format": "date-time", "pattern": f"^{DATE_TIME_PATTERN}$"},
+        mode="validation",
+    ),
+    WithJsonSchema({"type": "string", "format": "date-time"}, mode="serialization"),
 ]
 
 # Use for every date field of /api/v1/ (docs/api.md#representation). Ninja's

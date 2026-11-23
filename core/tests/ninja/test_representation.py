@@ -25,6 +25,7 @@ from pydantic import StrictBool
 from pydantic import StrictFloat
 from pydantic import StrictInt
 
+from core.api.schemas import DATE_TIME_PATTERN
 from core.api.schemas import BaseSchema
 from core.api.schemas import InputSchema
 from core.api.schemas import ISODate
@@ -229,11 +230,46 @@ def test_destroy_is_204_with_an_empty_body() -> None:
 
 
 def test_utc_datetime_is_a_date_time_string_in_the_schema() -> None:
-    schema = _When.model_json_schema()
+    # A request declares the pattern the server checks; a response is any UTC
+    # date-time (Ninja publishes them in validation and serialization mode).
+    schema = _When.model_json_schema(mode="validation")
     assert schema["properties"]["at"] == {
         "format": "date-time",
+        "pattern": f"^{DATE_TIME_PATTERN}$",
         "title": "At",
         "type": "string",
     }
     out = _Out.model_json_schema(mode="serialization")
-    assert out["properties"]["at"]["format"] == "date-time"
+    assert out["properties"]["at"] == {
+        "format": "date-time",
+        "title": "At",
+        "type": "string",
+    }
+
+
+@pytest.mark.parametrize(
+    ("sent", "echoed"),
+    [
+        # The extremes a request may send: an offset pushes them to years 999
+        # and 9999 in UTC, both inside Python's datetime.
+        ("1000-01-01T00:00:00+23:59", "0999-12-31T00:01:00Z"),
+        ("9998-12-31T23:59:59-23:59", "9999-01-01T23:58:59Z"),
+    ],
+)
+def test_a_request_year_from_1000_to_9998_converts_to_utc(
+    sent: str, echoed: str
+) -> None:
+    response = _post(_client(), "/echo/", {"at": sent})
+    assert response.status_code == HTTPStatus.OK, response.content
+    assert response.json()["at"] == echoed
+
+
+@pytest.mark.parametrize(
+    "sent",
+    # 0001-01-01T00:00:00+00:01 is year 0 in UTC, which Python's datetime
+    # cannot hold: without the bound it was a 500 (OverflowError).
+    ["0001-01-01T00:00:00+00:01", "0999-12-31T23:00:00Z", "9999-01-01T00:00:00Z"],
+)
+def test_a_request_year_outside_1000_to_9998_is_400(sent: str) -> None:
+    response = _post(_client(), "/echo/", {"at": sent})
+    assert _field_code(response, "at") == "datetime_parsing"
