@@ -147,14 +147,21 @@ def test_the_schema_refuses_an_accept_it_cannot_produce(
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("method", ["HEAD", "OPTIONS", "POST"])
-def test_the_schema_406_comes_before_the_method_checks(
-    admin_client: Client, method: str
+@pytest.mark.parametrize(
+    ("method", "status"),
+    [
+        ("POST", HTTPStatus.METHOD_NOT_ALLOWED),
+        ("OPTIONS", HTTPStatus.OK),
+        ("HEAD", HTTPStatus.NOT_ACCEPTABLE),
+    ],
+)
+def test_the_schema_405_and_options_come_before_the_406(
+    admin_client: Client, method: str, status: int
 ) -> None:
     response = admin_client.generic(
         method, reverse(SCHEMA), headers={"Accept": "text/plain"}
     )
-    assert response.status_code == HTTPStatus.NOT_ACCEPTABLE
+    assert response.status_code == status
 
 
 @pytest.mark.django_db

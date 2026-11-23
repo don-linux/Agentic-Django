@@ -90,28 +90,6 @@ def _route_operations(request: HttpRequest) -> dict[str, Any] | None:
     return _operations_by_route().get(route)
 
 
-# DRF 3.18.3 DefaultContentNegotiation's bounds on the Accept header
-# (rest_framework/negotiation.py: max_accept_header_length, max_accept_tokens
-# and max_media_type_length).
-_MAX_ACCEPT_HEADER_LENGTH = 8192
-_MAX_ACCEPT_TOKENS = 64
-_MAX_MEDIA_TYPE_LENGTH = 256
-
-
-def _accept_members(accept: str) -> list[str]:
-    """DRF's get_accept_list: the Accept members it reads, at most 64.
-
-    A header over 8192 characters is cut after its last comma before that
-    length (to nothing without one), and empty members and members over 256
-    characters are skipped, not counted.
-    """
-    if len(accept) > _MAX_ACCEPT_HEADER_LENGTH:
-        accept = accept[: accept.rfind(",", 0, _MAX_ACCEPT_HEADER_LENGTH) + 1]
-    members = [member.strip() for member in accept.split(",")]
-    kept = [m for m in members if m and len(m) <= _MAX_MEDIA_TYPE_LENGTH]
-    return kept[:_MAX_ACCEPT_TOKENS]
-
-
 # RFC 9110 section 12.4.2: qvalue = ( "0" [ "." 0*3DIGIT ] ) / ...
 _QVALUE_DECIMALS = 3
 
@@ -126,13 +104,13 @@ def _media_ranges(accept: str) -> list[tuple[str, str, dict[str, str]]]:
     """The Accept header's media ranges as (type, subtype, parameters), lowercased.
 
     RFC 9110 section 12.5.1: a media range is */*, type/* or type/subtype, so
-    "*/json" is none and matches nothing (DRF 3.18.3 matched it). A range with
-    q=0 is kept: it is "not acceptable" (section 12.4.2) for the media types it
-    gives the weight to (_is_acceptable). A present but empty Accept has no
-    range: it is a 406.
+    "*/json" is none and matches nothing. A range with q=0 is kept: it is "not
+    acceptable" (section 12.4.2) for the media types it gives the weight to
+    (_is_acceptable). A present but empty Accept has no range: it is a 406. The
+    header's size is bounded by the server (gunicorn limit_request_field_size).
     """
     ranges: list[tuple[str, str, dict[str, str]]] = []
-    for member in _accept_members(accept):
+    for member in filter(None, (part.strip() for part in accept.split(","))):
         media_type, *pairs = member.split(";")
         main, _, sub = media_type.strip().lower().partition("/")
         if main == "*" and sub != "*":
@@ -147,8 +125,8 @@ def _media_ranges(accept: str) -> list[tuple[str, str, dict[str, str]]]:
 
 
 def _precedence(main: str, sub: str, params: dict[str, str]) -> int:
-    """DRF's _MediaType.precedence: */* 0, type/* 1, type/subtype 2, with a
-    parameter other than q 3."""
+    """How specific a media range is (RFC 9110 section 12.5.1): */* 0, type/* 1,
+    type/subtype 2, with a parameter other than q 3."""
     if main == "*":
         return 0
     if sub == "*":
@@ -157,8 +135,8 @@ def _precedence(main: str, sub: str, params: dict[str, str]) -> int:
 
 
 def _covers(r_main: str, r_sub: str, main: str, sub: str) -> bool:
-    """Whether the media range r_main/r_sub matches main/sub (as DRF's
-    _MediaType.match for a media type without parameters)."""
+    """Whether the media range r_main/r_sub matches the media type main/sub,
+    which has no parameters."""
     return r_main in {"*", main} and r_sub in {"*", sub}
 
 
@@ -177,7 +155,9 @@ def _is_acceptable(
     type give its weight (type/subtype with parameters, type/subtype, type/*,
     then */*, as _precedence). It is acceptable unless all of them have q=0;
     a media type no range covers is not acceptable. A q=0 range with
-    parameters covers none (_refuses_only_its_variant); above 0 it does."""
+    parameters covers none (_refuses_only_its_variant); above 0 it does. Of
+    two equally specific ranges, one above 0 and one with q=0, the media type
+    is acceptable: RFC 9110 does not define that case."""
     main, _, sub = media_type.partition("/")
     covering = [
         r
@@ -194,37 +174,17 @@ def _is_acceptable(
     )
 
 
-def _negotiate(
-    accept: str | None, offered: tuple[str, ...]
-) -> tuple[str, dict[str, str]] | None:
-    """DRF's DefaultContentNegotiation.select_renderer over `offered`, in order,
-    after RFC 9110's weights.
+def _produces(subpath: str) -> str:
+    """The one media type a route renders: the docs page is HTML, the rest JSON."""
+    return "text/html" if subpath == "docs/" else JSON
 
-    Only the acceptable media types count (_is_acceptable). The most specific
-    media ranges above q=0 go first; among ranges of one precedence the first
-    acceptable media type that one of them matches wins. q values other than 0
-    are ignored, as in DRF. A request without Accept is */*. Returns the media
-    type and the parameters of the range it matched, or None (406).
-    """
+
+def _acceptable(request: HttpRequest, subpath: str) -> bool:
+    """Whether the request's Accept takes what the route renders. No Accept is
+    */*; a present but empty one offers nothing."""
+    accept = request.headers.get("Accept")
     ranges = _media_ranges("*/*" if accept is None else accept)
-    acceptable = [m for m in offered if _is_acceptable(m, ranges)]
-    for level in (3, 2, 1, 0):
-        same = [
-            r
-            for r in ranges
-            if _precedence(*r) == level and not _is_zero_weight(r[2].get("q", ""))
-        ]
-        for media_type in acceptable:
-            main, _, sub = media_type.partition("/")
-            for r_main, r_sub, params in same:
-                if _covers(r_main, r_sub, main, sub):
-                    return media_type, params
-    return None
-
-
-def _produces(subpath: str) -> tuple[str, ...]:
-    """What the route renders: the docs page is HTML, everything else JSON."""
-    return {"docs/": ("text/html",)}.get(subpath, (JSON,))
+    return _is_acceptable(_produces(subpath), ranges)
 
 
 _COMPACT: dict[str, Any] = {"separators": (",", ":"), "ensure_ascii": False}
@@ -260,7 +220,7 @@ class ApiContractMiddleware:
 
         operations = _route_operations(request)
         allow = _allow_header(operations) if operations is not None else None
-        early = self._before(request, subpath, operations, allow)
+        early = self._before(request, subpath, allow)
         # 415 is decided by core.api.parsers, when Ninja reads the body.
         # Every API route is in the schema (test_method_negotiation pins it), so
         # a method the route lacks never reaches Ninja: _before answered 405.
@@ -269,26 +229,25 @@ class ApiContractMiddleware:
         return early if early is not None else self._dispatch(request)
 
     def _before(
-        self,
-        request: HttpRequest,
-        subpath: str,
-        operations: dict[str, Any] | None,
-        allow: str | None,
+        self, request: HttpRequest, subpath: str, allow: str | None
     ) -> HttpResponse | None:
-        """406, 405 and OPTIONS answered before the operation runs."""
+        """405, OPTIONS and 406 answered before the operation runs.
+
+        In the order Django and Ninja dispatch: a path that matches no route is
+        Django's 404 whatever the Accept, then a method the route lacks is 405,
+        and OPTIONS answers without negotiating, as it has no body. Only then
+        is an Accept the route cannot produce a 406, before the staff and
+        authentication checks, even when anonymous.
+        """
         method = request.method or "GET"
-        # Content negotiation comes first, as in DRF's APIView.initial: an Accept
-        # the route cannot produce is 406 before the 405, OPTIONS and the staff
-        # and auth checks, even when anonymous. A path that matches no route is
-        # Django's 404 whatever the Accept.
-        if operations is not None and not _negotiate(
-            request.headers.get("Accept"), _produces(subpath)
-        ):
-            return _not_acceptable()
-        if allow is not None and method not in {m.strip() for m in allow.split(",")}:
+        if allow is None:
+            return None
+        if method not in {m.strip() for m in allow.split(",")}:
             return self._not_allowed(method, allow)
-        if method == "OPTIONS" and allow is not None:
+        if method == "OPTIONS":
             return self._options(allow)
+        if not _acceptable(request, subpath):
+            return _not_acceptable()
         return None
 
     def _dispatch(self, request: HttpRequest) -> HttpResponse:
