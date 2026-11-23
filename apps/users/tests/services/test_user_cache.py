@@ -9,6 +9,7 @@ import pytest
 from django.db import transaction
 
 from apps.users.selectors import USER_NAMESPACE
+from apps.users.services import user_anonymize
 from apps.users.services import user_deactivate
 from apps.users.services import user_reactivate
 from apps.users.services import user_update
@@ -26,6 +27,7 @@ SERVICES: dict[str, Callable[[User], object]] = {
     "user_update": lambda user: user_update(user=user, name="Ada Lovelace"),
     "user_deactivate": lambda user: user_deactivate(user=user),
     "user_reactivate": lambda user: user_reactivate(user=user),
+    "user_anonymize": lambda user: user_anonymize(user=user),
 }
 
 

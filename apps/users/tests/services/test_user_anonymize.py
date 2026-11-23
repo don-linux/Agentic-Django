@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from http import HTTPStatus
 from typing import TYPE_CHECKING
-from typing import Any
 from unittest import mock
 
 import pytest
@@ -11,8 +9,9 @@ from allauth.mfa.models import Authenticator
 from django.contrib.admin.models import CHANGE
 from django.contrib.admin.models import LogEntry
 from django.contrib.contenttypes.models import ContentType
+from django.contrib.sessions.backends.cached_db import SessionStore
+from django.contrib.sessions.models import Session
 from django.core.exceptions import ValidationError
-from django.test import Client
 
 from apps.users.models import User
 from apps.users.selectors import user_get
@@ -32,14 +31,6 @@ def _verified_user() -> User:
     user = UserFactory(email=EMAIL, name="Ada Lovelace", password=PASSWORD)
     EmailAddress.objects.create(user=user, email=EMAIL, primary=True, verified=True)
     return user
-
-
-def _login(email: str) -> Any:
-    return Client().post(
-        "/_allauth/app/v1/auth/login",
-        {"email": email, "password": PASSWORD},
-        content_type="application/json",
-    )
 
 
 def test_anonymize_erases_personal_data_and_keeps_the_row() -> None:
@@ -69,13 +60,14 @@ def test_anonymize_removes_addresses_and_authenticators() -> None:
 
 def test_anonymize_signs_the_user_out_and_frees_the_email() -> None:
     user = _verified_user()
-    token = _login(EMAIL).json()["meta"]["session_token"]
+    store = SessionStore()
+    store["_auth_user_id"] = str(user.pk)
+    store.create()
 
     user_anonymize(user=user)
 
-    me = Client().get("/api/v1/users/me/", HTTP_X_SESSION_TOKEN=token)
-    assert me.status_code == HTTPStatus.UNAUTHORIZED
-    assert _login(EMAIL).status_code == HTTPStatus.BAD_REQUEST
+    assert not Session.objects.filter(session_key=store.session_key).exists()
+    assert not User.objects.filter(email=EMAIL).exists()
     UserFactory(email=EMAIL)
 
 
