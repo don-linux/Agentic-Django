@@ -50,6 +50,7 @@ The step unsets the workflow's `POSTGRES_*` and `DJANGO_SETTINGS_MODULE` first: 
   - The image's `runtime` stage is built without its layer cache (`no-cache-filters`), so its `apt-get upgrade` installs the Debian security updates published that day. The `builder` stage keeps its cache.
   - When the scan still fails, the fix is not in Debian yet, or the package is a Python one: bump the base image digest or the package to clear it.
 - A service cannot override its command, so the image's flags are appended, and the throwaway Valkey password is repeated in the steps that start django. The first container is left running for the next request.
+- The Swagger page at `/api/v1/docs/` is Ninja's template, and `{% static %}` resolves its CSS and scripts through the manifest of `CompressedManifestStaticFilesStorage`. The step renders the template in the running container and checks that each file has a hashed name, is in `STATIC_ROOT`, and is the URL the page links to. A name missing from the manifest would make the page a 500 in production; the tests use the plain storage, so only the image shows it.
 - A failed login must answer 400, never 500, and leave allauth's rate-limit counters in Valkey: a cache that failed open would also answer 400, and only the missing counters show it.
 - The same image runs the Celery worker with the production settings: it must reach the broker, answer the healthcheck's ping, run a task and log it as one JSON object. No request enqueued that task, so its task id stands in for the request id.
 

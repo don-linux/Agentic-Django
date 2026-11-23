@@ -337,6 +337,32 @@ jobs:
           done
           exit 1
 
+      # The Swagger page is Ninja's template: {% static %} resolves its files
+      # through the manifest of CompressedManifestStaticFilesStorage, and a name
+      # missing from it would make /api/v1/docs/ a 500. See docs/ci.md#docker-smoke.
+      - name: Smoke test the Swagger page's static files
+        run: |
+          set -euo pipefail
+          trap 'docker logs django-prod-smoke; docker rm -f django-prod-smoke' EXIT
+          docker exec -i django-prod-smoke python - <<'PY'
+          import django
+
+          django.setup()
+
+          from django.contrib.staticfiles.storage import staticfiles_storage as storage
+          from django.template.loader import render_to_string
+
+          html = render_to_string("ninja/swagger.html", {"swagger_settings": "{}"})
+          for name in ("swagger-ui.css", "swagger-ui-bundle.js", "swagger-ui-init.js"):
+              hashed = storage.stored_name(f"ninja/{name}")
+              assert hashed != f"ninja/{name}", name
+              assert storage.exists(hashed), hashed
+              assert storage.url(f"ninja/{name}") in html, name
+              print(storage.url(f"ninja/{name}"))
+          PY
+          # Left running: the next step sends it a request.
+          trap - EXIT
+
       # A failed login must answer 400 and leave allauth's counters in Valkey: a
       # fail-open cache would answer 400 too. See docs/ci.md#docker-smoke.
       - name: Smoke test a rate-limited login against Valkey

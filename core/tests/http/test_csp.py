@@ -35,6 +35,8 @@ def test_admin_login_is_served_with_the_policy(client: Client) -> None:
 def test_swagger_init_script_is_a_static_file(admin_client: Client) -> None:
     # The docs page loads Swagger UI's init code from a static file and keeps its
     # settings in a JSON data block, so script-src 'self' needs no inline script.
+    # The test settings keep static names as they are; production hashes them,
+    # which the docker job's smoke checks (docs/ci.md#docker-smoke).
     response = admin_client.get("/api/v1/docs/")
     html = response.content.decode()
 

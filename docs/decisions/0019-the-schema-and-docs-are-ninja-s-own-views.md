@@ -14,7 +14,7 @@
 
 They kept the URL names and the HTTP contract of the DRF version. DRF parity stopped being a requirement on 2026-11-22, and the committed contract has been JSON since [0011](0011-openapi-contract-as-native-json.md).
 
-Ninja 1.8.0 serves both itself: `NinjaAPI(openapi_url=..., docs_url=..., docs_decorator=...)`. Its Swagger template keeps the settings in a `<script type="application/json">` data block and loads its init code from `/static/ninja/swagger-ui-init.js`, so it needs no inline script under the CSP.
+Ninja 1.8.0 serves both itself: `NinjaAPI(openapi_url=..., docs_url=..., docs_decorator=...)`. Its Swagger template keeps the settings in a `<script type="application/json">` data block and loads its init code from the static file `ninja/swagger-ui-init.js` (through `{% static %}`, so production serves it under its hashed name), so it needs no inline script under the CSP.
 
 ## Decision
 
