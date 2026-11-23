@@ -14,7 +14,7 @@ Short records of why the template is the way it is, one decision per file (a lig
 | [0008](0008-dependency-audit-is-required.md) | The dependency audit is a required check | Accepted |
 | [0009](0009-bruno-runtime-variables.md) | Bruno scripts store values with `bru.setVar` | Accepted |
 | [0010](0010-versioned-api-and-breaking-changes.md) | The API is versioned under `/api/v1/`; a breaking change needs `/api/v2/` | Superseded by 0011 |
-| [0011](0011-openapi-contract-as-native-json.md) | The API contract is versioned as native OpenAPI 3.1.0 JSON | Accepted |
+| [0011](0011-openapi-contract-as-native-json.md) | The API contract is versioned as native OpenAPI 3.1.0 JSON | Superseded by 0024 |
 | [0012](0012-http-and-ninja-test-layout.md) | Tests split into `http/` and `ninja/` | Accepted |
 | [0013](0013-business-logic-in-services-and-selectors.md) | Business logic lives in services and selectors; the API framework stays in `api/` | Accepted |
 | [0014](0014-user-extends-abstractbaseuser-and-permissionsmixin.md) | `User` extends `AbstractBaseUser` and `PermissionsMixin`, not `AbstractUser` | Accepted |
@@ -27,6 +27,7 @@ Short records of why the template is the way it is, one decision per file (a lig
 | [0021](0021-what-stays-after-drf-parity-and-why.md) | What stays after DRF parity, and why | Accepted |
 | [0022](0022-request-fields-validate-strictly.md) | Request fields validate strictly | Accepted |
 | [0023](0023-a-duplicate-is-a-409-conflict.md) | A duplicate is a 409 conflict | Accepted |
+| [0024](0024-one-api-on-api-v1.md) | One API, on `/api/v1/`, with its contract as native OpenAPI 3.1.0 JSON | Accepted |
 
 ## Writing one
 

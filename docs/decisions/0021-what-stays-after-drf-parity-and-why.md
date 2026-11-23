@@ -44,7 +44,7 @@ These stay, each for the reason given:
 ## Consequences
 
 - These are the template's own behaviors now. Their comments and docs give these reasons, not DRF.
-- Changing one is a contract decision with its own record, and some of them need `/api/v2/`.
+- Changing one is a contract decision with its own record. A change that breaks the contract goes through deprecation, because the API stays on `/api/v1/` ([0024](0024-one-api-on-api-v1.md)).
 
 ## Alternatives
 

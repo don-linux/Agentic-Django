@@ -116,7 +116,7 @@ In `apps/<app>/api/views.py`:
 - The body parameter may have any name (`body` is the convention); errors are keyed by field name without it.
 - Mount the router in `config/api.py`, next to the users one, as `api.add_router("/<resource>/", <app>_router)`. Not in `config/urls.py`: a test that reloads the URLconf would mount it again, and Ninja refuses that. Do not add a second API instance, an API root, or a route under another prefix.
 - Static path segments are kebab-case and end with `/` (`"/{public_id:id}/change-password/"`, never `change_password`). At most one level of nesting. A path without the trailing slash must 404 (not redirect). Enforced by `core/tests/http/test_rest_conventions.py`. Why: [api.md#paths](../../../docs/api.md#paths).
-- Compatible additions stay on `/api/v1/`. Open `/api/v2/` only for an incompatible change. Deprecate before removing ([api.md#deprecating-endpoints-and-fields](../../../docs/api.md#deprecating-endpoints-and-fields)).
+- Everything stays on `/api/v1/`, the template's only API: make every change compatible, and deprecate before removing ([api.md#deprecating-endpoints-and-fields](../../../docs/api.md#deprecating-endpoints-and-fields)).
 - Create endpoints that clients may retry (mobile, lost response) follow [api.md#idempotent-retries](../../../docs/api.md#idempotent-retries). A first internal POST does not have to implement `Idempotency-Key`; say so in the plan if you skip it.
 - Responses are `no-store` by default (`ApiNoStoreMiddleware`). Never `cache_page` or the per-site cache middleware. Why: [api.md#caching](../../../docs/api.md#caching).
 
@@ -157,7 +157,7 @@ If you are already inside the container, or on a host with the toolchain (`uv ru
 python manage.py export_openapi_schema --settings config.settings.test --api config.api.api --indent 2 > docs/openapi.json
 ```
 
-`scripts/check.sh lint` and `core/tests/ninja/test_openapi_contract.py` fail when the file drifts. A diff that removes or renames a path, field, or enum value is a breaking change and needs `/api/v2/`. Check it with oasdiff as CI does, including `--flatten-allof` ([api.md#breaking-changes](../../../docs/api.md#breaking-changes)).
+`scripts/check.sh lint` and `core/tests/ninja/test_openapi_contract.py` fail when the file drifts. A diff that removes or renames a path, field, or enum value is a breaking change, and the `api-contract` job refuses it: add the new one next to the old one and deprecate the old one. Check it with oasdiff as CI does, including `--flatten-allof` ([api.md#breaking-changes](../../../docs/api.md#breaking-changes)).
 
 ## 9. Tests (including negative paths)
 
