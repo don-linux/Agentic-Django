@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from typing import Annotated
 from typing import Any
+from typing import Final
 from uuid import UUID
 
 from django.http import Http404
@@ -18,7 +19,7 @@ from ninja.pagination import paginate
 from pydantic import Field
 from pydantic import WithJsonSchema
 from pydantic import field_validator
-from pydantic_core import PydanticCustomError
+from pydantic_core import PydanticKnownError
 
 from apps.users.models import User
 from apps.users.selectors import user_list
@@ -38,10 +39,10 @@ if TYPE_CHECKING:
 router = Router(tags=["users"])
 
 
-# Pydantic's own error for a None sent to a str field
+# Pydantic's own error for a None sent to a str field, raised as a known error
+# so Pydantic writes the message
 # (https://docs.pydantic.dev/latest/errors/validation_errors/#string_type).
-STRING_TYPE_CODE = "string_type"
-STRING_TYPE_DETAIL = "Input should be a valid string"
+_STRING_TYPE: Final = "string_type"
 
 
 class UserOut(BaseSchema):
@@ -71,7 +72,8 @@ class UserUpdateIn(InputSchema):
     # changes the schema; SkipJsonSchema[None] would turn the Optional into a
     # union and nest its errors under name.str / name.none. Pydantic's MISSING
     # default would say this natively, but Ninja 1.8.0 cannot publish it
-    # (NinjaGenerateJsonSchema.default_schema encodes every non-None default).
+    # (NinjaGenerateJsonSchema.default_schema encodes every non-None default):
+    # vitalik/django-ninja#1655, tracked in docs/typing.md#tracked-upstream.
     name: Annotated[
         str | None, WithJsonSchema({"type": "string", "maxLength": 255})
     ] = Field(default=None, max_length=255)
@@ -80,7 +82,7 @@ class UserUpdateIn(InputSchema):
     @classmethod
     def reject_null(cls, value: object) -> object:
         if value is None:
-            raise PydanticCustomError(STRING_TYPE_CODE, STRING_TYPE_DETAIL)
+            raise PydanticKnownError(_STRING_TYPE)
         return value
 
 
