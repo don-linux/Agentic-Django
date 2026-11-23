@@ -1,8 +1,7 @@
 """docs/api.md#representation on Ninja: UTC datetimes, decimals, 201 and 204.
 
-Restores what core/tests/drf/test_serializers.py and test_create_and_destroy.py
-pinned for DRF (UTCDateTimeField, COERCE_DECIMAL_TO_STRING, CreateModelMixin's
-Location, DestroyModelMixin's empty 204).
+UTCDateTime, decimals as strings, a 201 with Location from the url field, and
+an empty 204, as the representation rules of the template say.
 """
 
 from __future__ import annotations
@@ -91,7 +90,7 @@ def test_an_offset_input_is_converted_to_utc() -> None:
 def test_output_datetimes_render_in_utc_with_z(settings: Settings) -> None:
     settings.TIME_ZONE = "America/Mexico_City"
     response = _client().get("/local/")
-    # DRF's ISO_8601 keeps microseconds; DjangoJSONEncoder would cut them to ms.
+    # Microseconds kept (ADR 0021); DjangoJSONEncoder would cut them to ms.
     assert response.json()["at"] == "2026-11-13T18:00:00.123456Z"
 
 

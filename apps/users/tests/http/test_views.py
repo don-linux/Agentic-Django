@@ -303,3 +303,32 @@ class TestUsersAPI:
                 "name": [{"code": "invalid", "detail": "Reserved display name."}],
             },
         }
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("target", ["me", "detail"])
+def test_an_empty_patch_body_changes_nothing(
+    user: User, user_client: Client, target: str
+) -> None:
+    # The PATCH body is optional in the contract (requestBody required: false).
+    path = "/api/v1/users/me/" if target == "me" else f"/api/v1/users/{user.public_id}/"
+    before = user.name
+    response = user_client.patch(path, "", content_type="application/json")
+    assert response.status_code == HTTPStatus.OK
+    user.refresh_from_db()
+    assert user.name == before
+
+
+@pytest.mark.django_db
+def test_a_nul_character_in_name_is_a_field_error(user_client: Client) -> None:
+    # PostgreSQL text cannot store NUL (ADR 0018).
+    response = user_client.patch(
+        "/api/v1/users/me/", {"name": "a\x00b"}, content_type="application/json"
+    )
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()["fields"]["name"] == [
+        {
+            "code": "null_characters_not_allowed",
+            "detail": "Null characters are not allowed.",
+        }
+    ]

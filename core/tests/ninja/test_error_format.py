@@ -114,3 +114,13 @@ def test_throttled_keeps_retry_after_header() -> None:
     assert response.status_code == HTTPStatus.TOO_MANY_REQUESTS
     assert response.json()["code"] == "throttled"
     assert int(response.headers["Retry-After"]) == wait
+
+
+def test_throttled_without_a_wait_has_no_retry_after() -> None:
+    def raises() -> None:
+        raise Throttled(wait=None)
+
+    response = _client(raises).get("/err/")
+    assert response.status_code == HTTPStatus.TOO_MANY_REQUESTS
+    assert response.json() == {"code": "throttled", "detail": "Too many requests."}
+    assert not response.has_header("Retry-After")

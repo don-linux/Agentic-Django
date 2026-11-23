@@ -1,8 +1,8 @@
 """UserOut.url keeps the script prefix the server mounts the project under.
 
 Behind a path prefix (the server's SCRIPT_NAME, or FORCE_SCRIPT_NAME behind a
-proxy) WSGIHandler sets Django's script prefix and reverse() includes it, as the
-DRF hyperlinked field did. Django's test Client never sets the script prefix, so
+proxy) WSGIHandler sets Django's script prefix and reverse() includes it.
+Django's test Client never sets the script prefix, so
 these requests go through WSGIHandler, as on a real server.
 """
 

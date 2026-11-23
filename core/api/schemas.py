@@ -15,16 +15,17 @@ from pydantic import WithJsonSchema
 
 
 def _as_utc(value: dt.datetime) -> dt.datetime:
-    # A naive datetime in a request is UTC, whatever TIME_ZONE is (DRF
-    # DateTimeField(default_timezone=UTC) in the previous UTCDateTimeField).
+    # A naive datetime in a request is UTC, whatever TIME_ZONE is: with USE_TZ,
+    # saving a naive datetime warns (a test error) and guesses a zone.
     if value.tzinfo is None:
         return value.replace(tzinfo=dt.UTC)
     return value.astimezone(dt.UTC)
 
 
 def _iso_z(value: dt.datetime) -> str:
-    # DRF ISO_8601 output: isoformat() with "Z"; microseconds kept, which
-    # DjangoJSONEncoder (Ninja's renderer) would cut to milliseconds.
+    # ISO 8601 in UTC with "Z", microseconds kept, so a client can send the
+    # value back (a filter, a comparison) without losing precision; Ninja's
+    # renderer, DjangoJSONEncoder, would cut it to milliseconds (ADR 0021).
     return _as_utc(value).isoformat().replace("+00:00", "Z")
 
 

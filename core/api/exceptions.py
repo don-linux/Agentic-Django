@@ -47,8 +47,9 @@ if TYPE_CHECKING:
 
 
 def _set_rollback() -> None:
-    # DRF's exception handler (rest_framework.views.set_rollback): with
-    # ATOMIC_REQUESTS, a handled error must not commit the view's earlier writes.
+    # With ATOMIC_REQUESTS, a handled error must not commit the view's earlier
+    # writes: the handler turns the exception into a response, so Django's
+    # transaction would otherwise commit.
     for connection in connections.all(initialized_only=True):
         if connection.settings_dict["ATOMIC_REQUESTS"] and connection.in_atomic_block:
             connection.set_rollback(True)

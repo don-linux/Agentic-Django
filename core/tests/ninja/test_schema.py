@@ -90,7 +90,7 @@ def test_an_undeclared_method_is_405_before_authentication(
     client: Client, user_client: Client, admin_client: Client, route: str
 ) -> None:
     # docs/api.md: 405 comes before authentication. The view would answer an
-    # anonymous 401 and a non-staff 403, as DRF did, if the method got that far.
+    # anonymous 401 and a non-staff 403 if the method got that far.
     url = reverse(route)
     callers = {"anonymous": client, "user": user_client, "staff": admin_client}
     for method in UNDECLARED_METHODS:

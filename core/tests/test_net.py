@@ -74,7 +74,7 @@ def test_axes_uses_the_shared_client_ip_rule(trusted_proxies: TrustedProxies) ->
         assert get_client_ip_address(request) == "203.0.113.7"
 
 
-def test_the_proxy_count_is_a_django_setting_not_a_drf_one() -> None:
+def test_the_proxy_count_is_the_django_setting() -> None:
     # The client IP must not depend on the API framework (docs/api.md#throttling).
     with override_settings(TRUSTED_PROXY_COUNT=1):
         assert get_client_ip(_request("6.6.6.6, 203.0.113.7")) == "203.0.113.7"

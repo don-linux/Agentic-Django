@@ -78,7 +78,7 @@ def _route_operations(request: HttpRequest) -> dict[str, Any] | None:
     """The operations of the API route this request resolves to, else None.
 
     A path that resolves to nothing is Django's 404, not a 405: Resolver404
-    happens before any method check, as in the DRF contract.
+    happens before any method check, as in Django's URL resolution.
     """
     try:
         match = resolve(request.path_info)

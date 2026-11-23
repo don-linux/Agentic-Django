@@ -221,3 +221,24 @@ def test_page_number_pagination_refuses_async_views(paginator: type) -> None:
                 RequestFactory().get("/"),
             )
         )
+
+
+@pytest.mark.django_db
+def test_the_previous_link_to_the_first_page_has_no_page_parameter() -> None:
+    # ninja.testing's request URL has no query string, so only the page
+    # parameter shows here.
+    _create_users(3)
+    second = _list(ordered_api(), "?page=2&page_size=1").json()
+    third = _list(ordered_api(), "?page=3&page_size=1").json()
+    assert second["previous"] == "http://testlocation/"
+    assert third["previous"] == "http://testlocation/?page=2"
+
+
+@pytest.mark.django_db
+def test_cached_count_counts_a_plain_list() -> None:
+    users = 2
+    _create_users(users)
+    api = cached_count_api(lambda: list(User.objects.order_by("pk")))
+    response = _list(api)
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["count"] == users

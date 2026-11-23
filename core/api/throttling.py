@@ -32,8 +32,8 @@ if TYPE_CHECKING:
 
 
 # One throttle instance serves every request of a process (core/api/api.py), and
-# Ninja's SimpleRateThrottle keeps key/history/now on it. DRF built one per request
-# (APIView.get_throttles). Each check runs on a per-thread copy instead; Ninja calls
+# Ninja's SimpleRateThrottle keeps key/history/now on it, which threads would
+# share. Each check runs on a per-thread copy instead; Ninja calls
 # wait() right after allow_request() in the same thread (ninja/operation.py);
 # core/tests/ninja/test_throttle_call_order.py pins that order.
 _STATE = threading.local()
@@ -77,7 +77,7 @@ class UserThrottle(IdentMixin, RefreshingRateMixin, UserRateThrottle):
 
 
 class ScopedThrottle(IdentMixin, RefreshingRateMixin, SimpleRateThrottle):
-    """SimpleRateThrottle for a named per-endpoint scope (DRF's ScopedRateThrottle)."""
+    """SimpleRateThrottle for a named per-endpoint scope, per user or client IP."""
 
     def __init__(self, rate: str | None = None, scope: str | None = None) -> None:
         if scope is not None:

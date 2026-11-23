@@ -10,13 +10,18 @@ from core.api.parsers import JSONParser
 
 
 @pytest.mark.django_db
-def test_views_reject_multipart_by_default(user_client) -> None:
-    url = reverse("api:user-me")
-    response = user_client.patch(url, data={"name": "Ada"})
-    assert response.status_code in {
-        HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
-        HTTPStatus.BAD_REQUEST,
-    }
+def test_a_multipart_body_is_415(user_client) -> None:
+    response = user_client.patch(reverse("api:user-me"), data={"name": "Ada"})
+    assert response.status_code == HTTPStatus.UNSUPPORTED_MEDIA_TYPE
+    assert response.json()["code"] == "unsupported_media_type"
+
+
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity"])
+def test_the_parser_rejects_non_finite_numbers(rf, value: str) -> None:
+    # RFC 8259, section 6: JSON numbers have no NaN or Infinity.
+    request = rf.post("/", data=f'{{"n": {value}}}', content_type="application/json")
+    with pytest.raises(ValueError, match="not JSON compliant"):
+        JSONParser().parse_body(request)
 
 
 def test_the_default_json_parser_is_the_template_one() -> None:

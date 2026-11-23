@@ -10,13 +10,17 @@ from typing import override
 
 import pytest
 from django.core.exceptions import ImproperlyConfigured
+from django.http import HttpRequest  # noqa: TC002  # runtime: Ninja signature
 from django.test import override_settings
 from ninja import Router
+from ninja.testing import TestClient
+from ninja.throttling import BaseThrottle
 from ninja.throttling import SimpleRateThrottle
 
 from config.settings import base as base_settings
 from config.settings.guards import assert_throttle_rates
 from core.api.throttling import AnonThrottle
+from core.api.throttling import ScopedThrottle
 from core.api.throttling import UserThrottle
 from core.tests.ninja.support import client_get
 from core.tests.ninja.support import make_api
@@ -223,3 +227,47 @@ def test_a_malformed_rate_in_the_environment_refuses_to_start() -> None:
 
     assert "DJANGO_THROTTLE_USER_RATE" in excinfo.value.stderr
     assert "600 per minute" not in excinfo.value.stderr
+
+
+def test_scoped_throttle_cache_key_names_the_scope(rf) -> None:
+    throttle = ScopedThrottle("1/min", scope="uploads")
+    request = rf.get("/", REMOTE_ADDR="203.0.113.9")
+    request.user = None
+    assert throttle.get_cache_key(request) == "throttle_uploads_203.0.113.9"
+
+
+class _RefusingThrottle(BaseThrottle):
+    """Ninja's public custom throttle: refuse, and ask for `seconds` (a float)."""
+
+    def __init__(self, seconds: float) -> None:
+        self.seconds = seconds
+
+    @override
+    def allow_request(self, request: HttpRequest) -> bool:
+        return False
+
+    @override
+    def wait(self) -> float:
+        return self.seconds
+
+
+def _refused_after(seconds: float) -> TestClient:
+    api = make_api(throttle=[_RefusingThrottle(seconds)])
+    router = Router()
+
+    @router.get("/refused/", auth=None)
+    def refused(request: HttpRequest) -> None:
+        return None
+
+    api.add_router("/", router)
+    return TestClient(api)
+
+
+@pytest.mark.parametrize(("wait", "seconds"), [(1.2, "2"), (0.4, "1")])
+def test_a_fractional_wait_is_rounded_up(wait: float, seconds: str) -> None:
+    # Retry-After is integer delta-seconds (RFC 9110): Ninja's _check_throttles
+    # rounds the wait up (ninja/operation.py), and the detail is Throttled's text.
+    response = _refused_after(wait).get("/refused/")
+    assert response.status_code == HTTPStatus.TOO_MANY_REQUESTS
+    assert response["Retry-After"] == seconds
+    assert response.json() == {"code": "throttled", "detail": "Too many requests."}

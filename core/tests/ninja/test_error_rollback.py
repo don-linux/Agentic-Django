@@ -1,7 +1,7 @@
-"""A handled API error rolls back the request transaction, as DRF's handler did.
+"""A handled API error rolls back the request transaction.
 
-Only with ATOMIC_REQUESTS: Django wraps the view in atomic(), and the handler
-marks it for rollback (rest_framework.views.set_rollback; Django docs,
+Only with ATOMIC_REQUESTS: Django wraps the view in atomic(), and the handler,
+which turns the exception into a response, marks it for rollback (Django docs,
 "Tying transactions to HTTP requests" and Atomic.set_rollback).
 """
 

@@ -1,4 +1,4 @@
-"""Contract pins beyond test_parity_pins: OPTIONS as Django answers it,
+"""Contract pins: OPTIONS as Django answers it,
 ScopedThrottle and explicit rates, error-code mapping, and Ninja validating the
 whole request before the view looks an object up.
 """

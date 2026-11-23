@@ -14,9 +14,10 @@ def get_client_ip(request: HttpRequest) -> str:
     """
     Return the client IP: the TRUSTED_PROXY_COUNT-th X-Forwarded-For entry from the end.
 
-    DRF's NUM_PROXIES rule, but blank hops are skipped, so a trailing comma never
-    gives every client the same empty IP. Reads the Django setting, not DRF's, so
-    the rule outlives the API framework. See docs/api.md#throttling.
+    Blank hops are skipped, so a trailing comma never gives every client the same
+    empty IP. It reads a Django setting, not one of the API framework's (such as
+    NINJA_NUM_PROXIES), so axes and the throttles share one rule that outlives
+    the framework. See docs/api.md#throttling.
     """
     remote_addr: str = request.META.get("REMOTE_ADDR", "")
     num_proxies: int = settings.TRUSTED_PROXY_COUNT

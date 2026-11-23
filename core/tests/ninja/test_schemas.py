@@ -54,3 +54,9 @@ def test_the_error_schema_is_closed_like_an_error_body() -> None:
     assert [error["type"] for error in excinfo.value.errors()] == ["extra_forbidden"]
     assert ErrorSchema.model_validate({"code": "x", "detail": "y"}).extra == {}
     assert ErrorSchema.model_json_schema()["additionalProperties"] is False
+
+
+@pytest.mark.django_db
+def test_user_url_without_a_request_is_relative() -> None:
+    user = UserFactory()
+    assert UserOut.resolve_url(user) == f"/api/v1/users/{user.public_id}/"

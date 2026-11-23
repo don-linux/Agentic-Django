@@ -24,6 +24,7 @@ Short records of why the template is the way it is, one decision per file (a lig
 | [0018](0018-the-api-accepts-exactly-what-its-contract-declares.md) | The API accepts exactly what its contract declares | Accepted |
 | [0019](0019-the-schema-and-docs-are-ninja-s-own-views.md) | The schema and docs are Ninja's own views | Accepted |
 | [0020](0020-options-allow-and-406-follow-django-and-rfc-9110.md) | OPTIONS, Allow and 406 follow Django and RFC 9110 | Accepted |
+| [0021](0021-what-stays-after-drf-parity-and-why.md) | What stays after DRF parity, and why | Accepted |
 
 ## Writing one
 

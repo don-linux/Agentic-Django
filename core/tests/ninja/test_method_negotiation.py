@@ -2,7 +2,7 @@
 
 core.api.negotiation used to hard-code the users routes: any path under
 /api/v1/users/ answered 405 to a write (even one that is not a route, which
-DRF answered 404), and a new router got Ninja's text/plain 405 and no HEAD.
+must be 404), and a new router got Ninja's text/plain 405 and no HEAD.
 """
 
 from __future__ import annotations
@@ -107,14 +107,14 @@ def test_the_schema_has_no_head_operations_and_unique_operation_ids() -> None:
     assert all(count == 1 for count in ids.values()), ids
 
 
-def test_allow_header_orders_methods_like_drf() -> None:
+def test_allow_orders_the_methods_like_django() -> None:
     assert _allow_header({"patch", "get"}) == "GET, PATCH, HEAD, OPTIONS"
     assert _allow_header({"post"}) == "POST, OPTIONS"
     assert _allow_header({"delete", "get", "put", "post"}) == (
         "GET, POST, PUT, DELETE, HEAD, OPTIONS"
     )
-    # DRF APIView.allowed_methods follows View.http_method_names: get, post,
-    # put, patch, delete, then head and options.
+    # Django's View.http_method_names order: get, post, put, patch, delete,
+    # then head and options.
     assert _allow_header({"delete", "patch", "put", "post", "get"}) == (
         "GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS"
     )

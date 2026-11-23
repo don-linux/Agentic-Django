@@ -26,13 +26,15 @@ register_converter(PublicIdConverter, "public_id")
 
 
 class CompactJSONRenderer(JSONRenderer):
-    """DRF's JSONRenderer bytes: no spaces after separators, UTF-8 (not \\u escapes)."""
+    """Compact JSON in UTF-8: no spaces after separators, no \\u escapes (RFC 8259,
+    section 8.1, makes UTF-8 the encoding). Smaller bodies; see ADR 0021."""
 
     json_dumps_params = {"separators": (",", ":"), "ensure_ascii": False}
 
 
 class ContractAPI(NinjaAPI):
-    """Match the previous Content-Type: application/json (no charset)."""
+    """Content-Type application/json without a charset parameter, which RFC 8259
+    (section 11) does not define for JSON. See ADR 0021."""
 
     @override
     def get_content_type(self) -> str:

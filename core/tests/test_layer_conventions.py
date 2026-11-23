@@ -15,7 +15,7 @@ import pytest
 BASE_DIR = Path(__file__).resolve().parents[2]
 LAYERS = ("services", "selectors")
 # Transport objects: the API layer turns them into plain values first.
-HTTP_MODULES = ("django.http", "rest_framework", "drf_spectacular", "ninja")
+HTTP_MODULES = ("django.http", "ninja")
 HTTP_PARAMETERS = frozenset({"request", "serializer", "validated_data", "response"})
 
 
@@ -96,7 +96,7 @@ def test_services_and_selectors_follow_the_conventions() -> None:
         "def user_create(*, validated_data):\n    pass\n",
         "async def user_get(public_id):\n    pass\n",
         "from django.http import HttpRequest\n",
-        "import rest_framework.serializers\n",
+        "import ninja.pagination\n",
         "def f():\n    from ninja import Schema\n",
     ],
 )

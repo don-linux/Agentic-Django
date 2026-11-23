@@ -39,7 +39,7 @@ A request without valid credentials gets 401 with `WWW-Authenticate: X-Session-T
 
 ### Representation
 
-- One resource is a bare JSON object; a list is the pagination envelope (`count`, `next`, `previous`, `results`, with absolute links).
+- One resource is a bare JSON object; a list is the pagination envelope (`count`, `next`, `previous`, `results`, with absolute links). Why these representation rules stay, now that DRF parity is gone: [ADR 0021](decisions/0021-what-stays-after-drf-parity-and-why.md).
 - Every resource exposes its public UUID as `id` (a string). Integer primary keys never leave the server, including `/_allauth/` payloads (`apps.users.adapters.HeadlessAdapter`). Detail URLs use the same UUID (`/api/v1/users/{id}/`); an integer in that position is a plain 404.
 - Datetimes are ISO 8601 in UTC with a `Z` suffix, whatever `TIME_ZONE` is. A naive datetime in a request is read as UTC. Declare datetime fields as `core.api.schemas.UTCDateTime`; a plain `datetime` keeps the offset it was given and loses microseconds in the JSON encoder. Dates are `YYYY-MM-DD`. Clients convert to local time; `TIME_ZONE` only drives date boundaries and reports.
 - Decimals are strings, and declared fields are always present (`null`, never omitted).

@@ -1,10 +1,10 @@
-"""A write without valid credentials is 401, not a CSRF 403 (DRF parity).
+"""A write without valid credentials is 401, not a CSRF 403 (AGENTS.md).
 
 django_auth (ninja SessionAuth) runs check_csrf before it looks at the
 session, so an anonymous PATCH or one with a bad X-Session-Token used to
-answer 403 "CSRF check Failed". DRF's SessionAuthentication only enforces
-CSRF for an authenticated session. django.test.Client skips CSRF unless
-enforce_csrf_checks=True, which is why every case here sets it.
+answer 403 "CSRF check Failed". core.api.auth.cookieAuth checks the session
+first, so CSRF only applies to an authenticated session. django.test.Client
+skips CSRF unless enforce_csrf_checks=True, which is why every case here sets it.
 """
 
 from __future__ import annotations

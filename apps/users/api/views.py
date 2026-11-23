@@ -59,8 +59,8 @@ class UserOut(BaseSchema):
     @staticmethod
     def resolve_url(obj: User, context: dict[str, Any] | None = None) -> str:
         request = (context or {}).get("request")
-        # reverse() keeps the script prefix (SCRIPT_NAME, FORCE_SCRIPT_NAME), as
-        # the DRF hyperlinked field did; build_absolute_uri() only adds the host.
+        # reverse() keeps the script prefix (SCRIPT_NAME, FORCE_SCRIPT_NAME);
+        # build_absolute_uri() only adds the host.
         path = reverse("api:user-detail", kwargs={"id": obj.public_id})
         if request is not None:
             return request.build_absolute_uri(path)
@@ -136,7 +136,8 @@ PublicUserId = Annotated[
 # Path accepts alias). PathEx is the type-checker spelling of Path[T, P(...)].
 UserIdPath = PathEx[PublicUserId, P(alias="id")]
 
-# An empty PATCH body is no change (DRF parity). BodyEx, exported in ninja.__all__,
+# The body is optional, so an empty PATCH changes nothing, as an empty {} does
+# (ADR 0021: requiring it is an oasdiff ERR). BodyEx, exported in ninja.__all__,
 # is the type-checker spelling of Body[T, P(...)] (ninja/params/__init__.py,
 # guide/body/).
 UserPatchBody = BodyEx[UserUpdateIn, P(default_factory=UserUpdateIn)]
