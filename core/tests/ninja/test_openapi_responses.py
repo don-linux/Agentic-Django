@@ -55,6 +55,16 @@ def test_error_responses_document_their_headers() -> None:
         assert responses["406"]["description"] != "Not Acceptable"
 
 
+def test_a_400_mentions_a_body_only_on_an_operation_with_one() -> None:
+    # A list's 400 is a malformed query parameter: there is no body to parse.
+    for (path, method), op in _operations().items():
+        responses = {str(code): body for code, body in op["responses"].items()}
+        if "400" not in responses:
+            continue
+        mentions_body = "body" in responses["400"]["description"]
+        assert mentions_body == ("requestBody" in op), (path, method)
+
+
 def test_read_only_and_non_nullable_fields_match_the_runtime() -> None:
     schemas = api.get_openapi_schema()["components"]["schemas"]
     user = schemas["UserOut"]["properties"]

@@ -128,7 +128,7 @@
             }
           },
           "400": {
-            "description": "Validation error (`fields` present), or a request body that cannot be parsed (no `fields`).",
+            "description": "Validation error; `fields` lists each error.",
             "content": {
               "application/json": {
                 "schema": {

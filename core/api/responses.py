@@ -13,6 +13,7 @@ the documented operation openapi_extra option, from RESPONSE_DOCS.
 
 from __future__ import annotations
 
+from http import HTTPStatus
 from typing import Annotated
 from typing import Any
 
@@ -88,12 +89,19 @@ RESPONSE_DOCS: dict[str, dict[str, Any]] = {
 }
 
 
+# A 400 whose only body is ValidationErrorSchema (LIST_ERRORS: query parameters,
+# no request body to parse).
+_VALIDATION_ONLY_400 = {"description": "Validation error; `fields` lists each error."}
+
+
 def response_docs(errors: dict[int, Any]) -> dict[str, Any]:
     """Operation openapi_extra (guide/operations/#openapi_extra), no schema rewrite."""
     return {
         "responses": {
-            code: RESPONSE_DOCS[str(code)]
-            for code in errors
+            code: _VALIDATION_ONLY_400
+            if code == HTTPStatus.BAD_REQUEST and schema is ValidationErrorSchema
+            else RESPONSE_DOCS[str(code)]
+            for code, schema in errors.items()
             if str(code) in RESPONSE_DOCS
         }
     }
