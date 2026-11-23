@@ -78,7 +78,22 @@ def test_unknown_storage_backend_is_refused() -> None:
     with pytest.raises(subprocess.CalledProcessError) as excinfo:
         _storages({"DJANGO_STORAGE_BACKEND": "gcs"})
 
-    assert "DJANGO_STORAGE_BACKEND must be 'local' or 's3'" in excinfo.value.stderr
+    stderr = excinfo.value.stderr
+    assert "DJANGO_STORAGE_BACKEND: Input should be 'local' or 's3'" in stderr
+    # The message names the variable, never its value.
+    assert "gcs" not in stderr
+
+
+def test_s3_without_a_bucket_is_refused() -> None:
+    with pytest.raises(subprocess.CalledProcessError) as excinfo:
+        load_production_settings(
+            "STORAGES", env={**S3_ENV, "DJANGO_AWS_STORAGE_BUCKET_NAME": None}
+        )
+
+    assert (
+        "Set the DJANGO_AWS_STORAGE_BUCKET_NAME environment variable."
+        in excinfo.value.stderr
+    )
 
 
 def test_s3_without_the_image_extra_is_refused() -> None:

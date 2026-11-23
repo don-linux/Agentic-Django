@@ -33,6 +33,7 @@ In `apps/<app>/models.py`:
 - Subclass `core.models.BaseModel`. That gives `public_id` (UUIDv7, unique, non-editable), `created_at` and `updated_at` from the database clock. Custom managers subclass `core.models.BaseManager`.
 - Annotate every field with its django-stubs generic type: `title: models.CharField[str, str] = models.CharField(max_length=120)`, `owner: models.ForeignKey[User, User] = models.ForeignKey(User, on_delete=models.PROTECT)`, `str | None` on the read side for `null=True`. `core/tests/test_model_field_annotations.py` fails on a bare field. Why: [typing.md#model-field-annotations](../../../docs/typing.md#model-field-annotations).
 - `class Meta(BaseModel.Meta):` inherits the abstract base's options and needs no suppression; a factory's `class Meta:` does ([typing.md#suppressions](../../../docs/typing.md#suppressions)).
+- mypy checks `models.py` and `managers.py` in strict mode, as it does services and selectors: no `Any`. A keyword argument passed through untouched is `object` (`**extra_fields: object`), and an override of `save()` repeats Django's keyword-only signature (`core.models.BaseModel.save` is the pattern), marked `@override` ([ARCHITECTURE.md#strict-typing](../../../docs/ARCHITECTURE.md#strict-typing)).
 - Put invariants in database constraints where possible (`CheckConstraint`, `UniqueConstraint(..., condition=Q(...))` for partial uniqueness). Services will call `full_clean()` as well.
 - Foreign keys default to `on_delete=models.PROTECT`. Use `CASCADE` only for a child owned by its parent, and add the field to `CASCADE_ALLOWED` in `core/tests/test_on_delete_policy.py` with a reason. Use `SET_NULL` only when losing the link is acceptable. Why: [ARCHITECTURE.md#layers](../../../docs/ARCHITECTURE.md#layers).
 - Records that must persist are deactivated, not deleted, unless the on-delete policy already covers a true child row.
@@ -89,7 +90,7 @@ Why: [ARCHITECTURE.md#caching](../../../docs/ARCHITECTURE.md#caching). Outages: 
 
 ## 5. Schemas
 
-In `apps/<app>/api/views.py`, above the operations (pattern: `UserOut` and `UserUpdateIn` in `apps/users/api/views.py`):
+In `apps/<app>/api/views.py`, above the operations (pattern: `UserOut` and `UserUpdateIn` in `apps/users/api/views.py`). pyright checks `apps/<app>/api/` in strict mode, so a validator gives its raw `Any` input a real type before using it ([typing.md#strict-api](../../../docs/typing.md#strict-api)):
 
 - Output schemas subclass `core.api.schemas.BaseSchema`; input schemas subclass `core.api.schemas.InputSchema`, so an unknown body key is a 400 with code `unknown_field`, not a silent ignore ([Ninja: schemas](https://django-ninja.dev/guide/schemas/)).
 - Expose `public_id` as `id`, a string, read-only: `id: UUID = Field(json_schema_extra={"readOnly": True})` with a `resolve_id(obj) -> UUID` static method that returns `obj.public_id` ([Ninja: resolvers](https://django-ninja.dev/guide/schemas/#resolvers)). Mark every other server-set field `readOnly` the same way.
@@ -172,6 +173,8 @@ Every new endpoint needs:
 
 If the selector is cached, also test: a second read makes zero queries (`cache_writes` + `django_assert_num_queries(0)`), a write through the service returns fresh data, and a rolled-back write leaves the cache untouched. Behaviour that only a real Valkey can show belongs in `core/tests/test_valkey_integration.py` (marker `valkey`).
 
+`core/tests/test_openapi_conformance.py` already sends the new operations requests generated from the schema (schemathesis), and fails on any response the schema does not describe. Fix the server or the schema; never widen its `filter_failure` to make it pass ([api.md#contract-conformance](../../../docs/api.md#contract-conformance)).
+
 If the operation has a scoped throttle, test that the N+1th call returns `429` `throttled`. Set the rate with the `throttle_rates` fixture (`core/tests/ninja/adapters.py`); a test under `tests/http/` never patches Ninja itself.
 
 Fix N+1 queries in the selector (`select_related` / `prefetch_related`); do not widen `ZEAL_ALLOWLIST` except for third-party models (`config/settings/test.py`). Paginated querysets must be ordered (`UnorderedObjectListWarning` is an error). Do not add `pytest` markers without registering them in `pyproject.toml`. Do not change coverage `fail_under`: it stays at 98.
@@ -231,7 +234,7 @@ python manage.py export_openapi_schema --settings config.settings.test --api con
 scripts/check.sh
 ```
 
-`scripts/check.sh` runs ruff (with the `ANN` annotation rules), the `cache.clear()` guard, mypy, stubtest, pyright, the import contracts, django-upgrade, the OpenAPI drift check, `makemigrations --check`, and pytest with coverage. Both type checkers must pass with no new suppression; when one is unavoidable, scope it to the rule and record it in [typing.md#upstream-workarounds](../../../docs/typing.md#upstream-workarounds). After a dependency change: `uv lock`, then `uv sync --locked` in the container. Commits follow Conventional Commits in English (`feat:`, `fix:`, `test:`, `docs:`), imperative mood.
+`scripts/check.sh` runs ruff (with the `ANN` annotation rules), the `cache.clear()` guard, mypy, pyright, the import contracts, django-upgrade, the OpenAPI drift check, `makemigrations --check`, and pytest with coverage. Both type checkers must pass with no new suppression, pyright in strict mode on `apps/<app>/api/`, and every method that overrides a base class's (`save`, `clean`, admin hooks) carries `@override` from `typing` ([typing.md#overrides](../../../docs/typing.md#overrides)); when one is unavoidable, scope it to the rule and record it in [typing.md#upstream-workarounds](../../../docs/typing.md#upstream-workarounds). After a dependency change: `uv lock`, then `uv sync --locked` in the container. Commits follow Conventional Commits in English (`feat:`, `fix:`, `test:`, `docs:`), imperative mood.
 
 ## When the endpoint also enqueues work
 

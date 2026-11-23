@@ -1,5 +1,4 @@
 # ruff: noqa: E501
-import os
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -7,12 +6,15 @@ from urllib.parse import quote
 from urllib.parse import urlsplit
 from urllib.parse import urlunsplit
 
+import dj_database_url
 import django_stubs_ext
-import environ
 from corsheaders.defaults import default_headers
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.csp import CSP
 
+from .env import BaseEnv
+from .env import read_env
+from .env import required
 from .guards import assert_throttle_rates
 
 # Adds __class_getitem__ to Django generics such as QuerySet, so annotations
@@ -20,36 +22,40 @@ from .guards import assert_throttle_rates
 django_stubs_ext.monkeypatch()
 
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
-env = environ.Env()
+# Every variable this module reads, typed (config/settings/_env.py).
+_env = read_env(BaseEnv)
 
-DEBUG = env.bool("DJANGO_DEBUG", False)
+DEBUG = _env.DJANGO_DEBUG
 # The running release (the git commit in CI), stamped into the production image
 # by the APP_RELEASE build arg. Sentry and JSON log lines report it.
-APP_RELEASE = env("APP_RELEASE", default="dev")
+APP_RELEASE = _env.APP_RELEASE
 # Display and date-boundary zone. Data is always stored in UTC (USE_TZ=True).
-TIME_ZONE = env("DJANGO_TIME_ZONE", default="UTC")
+TIME_ZONE = _env.DJANGO_TIME_ZONE
 LANGUAGE_CODE = "en-us"
 # English-only API; no translations are shipped.
 USE_I18N = False
 USE_TZ = True
 
 
-if os.getenv("DATABASE_URL", default=None):
-    default_database: dict[str, Any] = env.db("DATABASE_URL")
+if _env.DATABASE_URL is not None:
+    default_database: dict[str, Any] = {
+        **dj_database_url.parse(_env.DATABASE_URL.get_secret_value())
+    }
 else:
     default_database = {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": env.str("POSTGRES_DB"),
-        "USER": env.str("POSTGRES_USER"),
-        "PASSWORD": env.str("POSTGRES_PASSWORD"),
-        "HOST": env.str("POSTGRES_HOST", default="postgres_db"),
-        "PORT": env.str("POSTGRES_PORT", default="5432"),
+        "NAME": required(_env.POSTGRES_DB, "POSTGRES_DB"),
+        "USER": required(_env.POSTGRES_USER, "POSTGRES_USER"),
+        "PASSWORD": required(
+            _env.POSTGRES_PASSWORD, "POSTGRES_PASSWORD"
+        ).get_secret_value(),
+        "HOST": _env.POSTGRES_HOST,
+        "PORT": _env.POSTGRES_PORT,
     }
 DATABASES: dict[str, dict[str, Any]] = {"default": default_database}
 # Give up on an unreachable server instead of hanging the request (and /health/).
-DATABASES["default"].setdefault("OPTIONS", {})["connect_timeout"] = env.int(
-    "POSTGRES_CONNECT_TIMEOUT",
-    default=5,
+DATABASES["default"].setdefault("OPTIONS", {})["connect_timeout"] = (
+    _env.POSTGRES_CONNECT_TIMEOUT
 )
 
 
@@ -70,12 +76,12 @@ def build_postgres_options(*, statement_timeout_ms: int, lock_timeout_ms: int) -
 # Valkey, the shared cache everywhere but tests. VALKEY_URL is redis:// or
 # rediss://, with no credentials (VALKEY_PASSWORD) and no database number.
 # See docs/ARCHITECTURE.md#caching.
-VALKEY_URL = env("VALKEY_URL", default="redis://localhost:6379")
-VALKEY_USERNAME = env("VALKEY_USERNAME", default="")
-VALKEY_PASSWORD = env("VALKEY_PASSWORD", default="")
+VALKEY_URL = _env.VALKEY_URL
+VALKEY_USERNAME = _env.VALKEY_USERNAME
+VALKEY_PASSWORD = _env.VALKEY_PASSWORD.get_secret_value()
 # The cache and the task broker use different databases of the same server.
-VALKEY_CACHE_DB = env.int("VALKEY_CACHE_DB", default=0)
-VALKEY_BROKER_DB = env.int("VALKEY_BROKER_DB", default=1)
+VALKEY_CACHE_DB = _env.VALKEY_CACHE_DB
+VALKEY_BROKER_DB = _env.VALKEY_BROKER_DB
 VALKEY_SCHEMES = ("redis", "rediss")
 
 
@@ -106,24 +112,18 @@ def positive_seconds(name: str, value: int) -> int:
 
 # Seconds to wait for a connection and for each reply. Short on purpose: a stalled
 # Valkey must not hold a gunicorn thread.
-VALKEY_CONNECT_TIMEOUT = env.float("VALKEY_CONNECT_TIMEOUT", default=1.0)
-VALKEY_SOCKET_TIMEOUT = env.float("VALKEY_SOCKET_TIMEOUT", default=1.0)
+VALKEY_CONNECT_TIMEOUT = _env.VALKEY_CONNECT_TIMEOUT
+VALKEY_SOCKET_TIMEOUT = _env.VALKEY_SOCKET_TIMEOUT
 # The TTL of a key written with timeout=None (30 days): Valkey evicts only keys
 # that have one (core.cache_backend.ValkeyCache).
-VALKEY_MAX_TTL = positive_seconds(
-    "VALKEY_MAX_TTL",
-    env.int("VALKEY_MAX_TTL", default=2_592_000),
-)
+VALKEY_MAX_TTL = positive_seconds("VALKEY_MAX_TTL", _env.VALKEY_MAX_TTL)
 # The project slug, so two projects never share keys. An empty value would leave
 # the keys unprefixed, so it falls back to the default too.
-CACHE_KEY_PREFIX = env("DJANGO_CACHE_KEY_PREFIX", default="") or "project"
+CACHE_KEY_PREFIX = _env.DJANGO_CACHE_KEY_PREFIX or "project"
 # Raise it to drop every entry after a change of format. Never derive it from
 # APP_RELEASE: each deploy would reset throttles and rate limits.
-CACHE_VERSION = env.int("DJANGO_CACHE_VERSION", default=1)
-CACHE_TIMEOUT = positive_seconds(
-    "DJANGO_CACHE_TIMEOUT",
-    env.int("DJANGO_CACHE_TIMEOUT", default=300),
-)
+CACHE_VERSION = _env.DJANGO_CACHE_VERSION
+CACHE_TIMEOUT = positive_seconds("DJANGO_CACHE_TIMEOUT", _env.DJANGO_CACHE_TIMEOUT)
 
 
 def build_valkey_cache(
@@ -203,7 +203,7 @@ def check_task_time_limits(*, soft: int, hard: int, visibility_timeout: int) -> 
 
 # A full URL in CELERY_BROKER_URL replaces the one built from VALKEY_* (a project
 # whose broker runs somewhere else). Celery itself reads that variable first.
-CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="") or build_broker_url(
+CELERY_BROKER_URL = _env.CELERY_BROKER_URL.get_secret_value() or build_broker_url(
     url=VALKEY_URL,
     db=VALKEY_BROKER_DB,
     username=VALKEY_USERNAME,
@@ -251,24 +251,18 @@ CELERY_TASK_RETRY_ON_WORKER_LOST = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 # Seconds. The soft limit raises SoftTimeLimitExceeded inside the task; the hard
 # one kills its process.
-CELERY_TASK_SOFT_TIME_LIMIT = env.int("CELERY_TASK_SOFT_TIME_LIMIT", default=1500)
-CELERY_TASK_TIME_LIMIT = env.int("CELERY_TASK_TIME_LIMIT", default=1800)
+CELERY_TASK_SOFT_TIME_LIMIT = _env.CELERY_TASK_SOFT_TIME_LIMIT
+CELERY_TASK_TIME_LIMIT = _env.CELERY_TASK_TIME_LIMIT
 check_task_time_limits(
     soft=CELERY_TASK_SOFT_TIME_LIMIT,
     hard=CELERY_TASK_TIME_LIMIT,
     visibility_timeout=CELERY_VISIBILITY_TIMEOUT,
 )
-CELERY_WORKER_CONCURRENCY = env.int("CELERY_WORKER_CONCURRENCY", default=2)
+CELERY_WORKER_CONCURRENCY = _env.CELERY_WORKER_CONCURRENCY
 # A pool process is replaced after this many tasks, or once it holds this much
 # memory (KiB): a leak in one task cannot grow forever.
-CELERY_WORKER_MAX_TASKS_PER_CHILD = env.int(
-    "CELERY_WORKER_MAX_TASKS_PER_CHILD",
-    default=100,
-)
-CELERY_WORKER_MAX_MEMORY_PER_CHILD = env.int(
-    "CELERY_WORKER_MAX_MEMORY_PER_CHILD",
-    default=200_000,
-)
+CELERY_WORKER_MAX_TASKS_PER_CHILD = _env.CELERY_WORKER_MAX_TASKS_PER_CHILD
+CELERY_WORKER_MAX_MEMORY_PER_CHILD = _env.CELERY_WORKER_MAX_MEMORY_PER_CHILD
 # Seconds a stopping worker lets running tasks finish before it returns the rest
 # to the queue. Keep it below the stop grace period of its container.
 CELERY_WORKER_SOFT_SHUTDOWN_TIMEOUT = 20.0
@@ -325,9 +319,9 @@ PASSWORD_HASHERS = [
 # Argon2 cost. Defaults are Django 6.1's (time 2, 102400 KiB, parallelism 8). Each
 # concurrent hash allocates ARGON2_MEMORY_COST_KIB; on a 1-2 GB server consider the
 # OWASP minimum (19456 KiB, time 2, parallelism 1). See docs/deploy.md#capacity.
-ARGON2_TIME_COST = env.int("DJANGO_ARGON2_TIME_COST", default=2)
-ARGON2_MEMORY_COST_KIB = env.int("DJANGO_ARGON2_MEMORY_COST_KIB", default=102400)
-ARGON2_PARALLELISM = env.int("DJANGO_ARGON2_PARALLELISM", default=8)
+ARGON2_TIME_COST = _env.DJANGO_ARGON2_TIME_COST
+ARGON2_MEMORY_COST_KIB = _env.DJANGO_ARGON2_MEMORY_COST_KIB
+ARGON2_PARALLELISM = _env.DJANGO_ARGON2_PARALLELISM
 AUTH_PASSWORD_VALIDATORS = [
     {
         "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
@@ -373,21 +367,17 @@ STATIC_ROOT = str(BASE_DIR / "staticfiles")
 STATIC_URL = "/static/"
 
 # Uploads live in media/ at the repo root in development (/app/media in the image).
-MEDIA_ROOT = env("DJANGO_MEDIA_ROOT", default=str(BASE_DIR / "media"))
+MEDIA_ROOT = _env.DJANGO_MEDIA_ROOT
 # Can be an absolute URL for a separate media host (docs/NEXT-STEPS.md, nginx).
-MEDIA_URL = env("DJANGO_MEDIA_URL", default="/media/")
+MEDIA_URL = _env.DJANGO_MEDIA_URL
 # The host proxy reads uploads as another user: never leave modes to the umask.
 # See docs/files.md#permissions.
 FILE_UPLOAD_PERMISSIONS = 0o644
 FILE_UPLOAD_DIRECTORY_PERMISSIONS = 0o755
 # Files only their owner may download (core.files.private_storage); never under
 # MEDIA_ROOT. See docs/files.md#public-or-private.
-PRIVATE_MEDIA_ROOT = env(
-    "DJANGO_PRIVATE_MEDIA_ROOT", default=str(BASE_DIR / "private_media")
-)
-PRIVATE_MEDIA_ACCEL_REDIRECT_PREFIX = env(
-    "DJANGO_PRIVATE_MEDIA_ACCEL_REDIRECT_PREFIX", default=""
-)
+PRIVATE_MEDIA_ROOT = _env.DJANGO_PRIVATE_MEDIA_ROOT
+PRIVATE_MEDIA_ACCEL_REDIRECT_PREFIX = _env.DJANGO_PRIVATE_MEDIA_ACCEL_REDIRECT_PREFIX
 STORAGES: dict[str, dict[str, Any]] = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "private": {
@@ -442,7 +432,7 @@ DEFAULT_EXCEPTION_REPORTER_FILTER = "core.debug.SafeExceptionReporterFilter"
 ADMIN_URL = "admin/"
 # Comma-separated addresses, optionally '"Name" <email>' (names without commas).
 # Empty: no error emails.
-ADMINS = env.list("DJANGO_ADMINS", default=[])
+ADMINS = _env.DJANGO_ADMINS
 
 # DJANGO_LOG_FORMAT: "text" (default here) or "json" (one object per line).
 LOG_FORMATTERS = {
@@ -467,7 +457,7 @@ LOGGING: dict[str, Any] = {
             "level": "DEBUG",
             "class": "logging.StreamHandler",
             "filters": ["request_id"],
-            "formatter": env("DJANGO_LOG_FORMAT", default="text"),
+            "formatter": _env.DJANGO_LOG_FORMAT,
         },
     },
     "root": {"level": "INFO", "handlers": ["console"]},
@@ -479,7 +469,7 @@ LOGGING: dict[str, Any] = {
 AXES_ONLY_ADMIN_SITE = True
 # AXES_ONLY_ADMIN_SITE alone still counts non-admin failures; see the callable.
 AXES_WHITELIST_CALLABLE = "core.admin_lockout.is_outside_admin"
-AXES_FAILURE_LIMIT = env.int("AXES_FAILURE_LIMIT", default=5)
+AXES_FAILURE_LIMIT = _env.AXES_FAILURE_LIMIT
 AXES_COOLOFF_TIME = timedelta(minutes=15)
 # Lock a username from one IP, so an attacker cannot lock a staff member out everywhere.
 AXES_LOCKOUT_PARAMETERS = [["username", "ip_address"]]
@@ -492,17 +482,17 @@ AXES_HANDLER = "axes.handlers.cache.AxesCacheHandler"
 AXES_CLIENT_IP_CALLABLE = "core.net.get_client_ip"
 
 # Same in every environment, so Mailpit shows exactly what production sends.
-DEFAULT_FROM_EMAIL = env(
-    "DJANGO_DEFAULT_FROM_EMAIL", default="Project <noreply@example.com>"
+DEFAULT_FROM_EMAIL = _env.DJANGO_DEFAULT_FROM_EMAIL
+SERVER_EMAIL = (
+    DEFAULT_FROM_EMAIL if _env.DJANGO_SERVER_EMAIL is None else _env.DJANGO_SERVER_EMAIL
 )
-SERVER_EMAIL = env("DJANGO_SERVER_EMAIL", default=DEFAULT_FROM_EMAIL)
-EMAIL_SUBJECT_PREFIX = env("DJANGO_EMAIL_SUBJECT_PREFIX", default="[Project] ")
+EMAIL_SUBJECT_PREFIX = _env.DJANGO_EMAIL_SUBJECT_PREFIX
 # Without it allauth prefixes subjects with the request host (no sites framework).
 ACCOUNT_EMAIL_SUBJECT_PREFIX = EMAIL_SUBJECT_PREFIX
 # Signature of the account emails (templates/account/email/base_message.txt).
-EMAIL_SIGNATURE_NAME = env("DJANGO_EMAIL_SIGNATURE_NAME", default="Project")
+EMAIL_SIGNATURE_NAME = _env.DJANGO_EMAIL_SIGNATURE_NAME
 
-ACCOUNT_ALLOW_REGISTRATION = env.bool("DJANGO_ACCOUNT_ALLOW_REGISTRATION", True)
+ACCOUNT_ALLOW_REGISTRATION = _env.DJANGO_ACCOUNT_ALLOW_REGISTRATION
 ACCOUNT_LOGIN_METHODS = {"email"}
 ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*"]
 ACCOUNT_USER_MODEL_USERNAME_FIELD = None
@@ -546,7 +536,7 @@ def build_headless_frontend_urls(frontend_url: str) -> dict[str, str]:
 
 HEADLESS_ONLY = True
 HEADLESS_CLIENTS = ("app",)
-FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:3000").rstrip("/")
+FRONTEND_URL = _env.FRONTEND_URL.rstrip("/")
 HEADLESS_FRONTEND_URLS = build_headless_frontend_urls(FRONTEND_URL)
 
 # Proxies that append to X-Forwarded-For: the one count core.net.get_client_ip,
@@ -572,8 +562,8 @@ NINJA_MAX_PER_PAGE_SIZE = 100
 NINJA_PAGINATION_CLASS = "core.api.pagination.LimitPageNumberPagination"
 NINJA_NUM_PROXIES = TRUSTED_PROXY_COUNT
 NINJA_DEFAULT_THROTTLE_RATES = {
-    "anon": env("DJANGO_THROTTLE_ANON_RATE", default="60/min"),
-    "user": env("DJANGO_THROTTLE_USER_RATE", default="600/min"),
+    "anon": _env.DJANGO_THROTTLE_ANON_RATE,
+    "user": _env.DJANGO_THROTTLE_USER_RATE,
     # Scoped rates go here as "<app>.<action>": "5/min".
 }
 # A bad rate is a 500 on every request: refuse it at startup.
@@ -581,10 +571,10 @@ assert_throttle_rates(NINJA_DEFAULT_THROTTLE_RATES)
 
 # Deepest page LimitPageNumberPagination serves; deeper pages are a 404.
 # Env var stays DJANGO_API_MAX_PAGE_NUMBER; the setting is framework-neutral.
-API_MAX_PAGE_NUMBER = env.int("DJANGO_API_MAX_PAGE_NUMBER", default=1000)
+API_MAX_PAGE_NUMBER = _env.DJANGO_API_MAX_PAGE_NUMBER
 
 CORS_URLS_REGEX = r"^/(api|_allauth)/.*$"
-CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
+CORS_ALLOWED_ORIGINS = _env.CORS_ALLOWED_ORIGINS
 CORS_ALLOW_HEADERS = (
     *default_headers,
     "x-session-token",

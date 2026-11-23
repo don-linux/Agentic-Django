@@ -61,7 +61,7 @@ The pins in `pyproject.toml` are also the minimum versions. For each direct pack
 - `requires-python`, the Python classifier, ruff `target-version`, mypy `python_version` and pyright `pythonVersion` for a Python minor release.
 - django-upgrade `--target-version` (`.pre-commit-config.yaml` and `scripts/check.sh`), `django-stubs` and the "Django X.Y" mentions in `AGENTS.md` and `README.md` for a Django feature release.
 - Which Django versions the new django-allauth, django-ninja, django-axes and django-cors-headers support, and the reverse.
-- `django-stubs` and `django-stubs-ext` move together and with Django; `celery-types` with Celery, `kombu` with Celery, `pydantic` within the range django-ninja supports. Pyright (`pyright[nodejs]`) moves on its own, and a new release may report new errors: fix them, or scope a suppression and record it in [docs/typing.md](../../../docs/typing.md#suppressions).
+- `django-stubs` and `django-stubs-ext` move together and with Django; `celery-types` with Celery, `kombu` with Celery, `pydantic` within the range django-ninja supports, and `pydantic-settings` with `pydantic`; `python-dotenv` stays within the range pydantic-settings requires, and `dj-database-url` moves on its own. `hypothesis` stays within the range `schemathesis` requires; a new release of either can generate new requests in `core/tests/test_openapi_conformance.py`, and what they find is a bug to fix, not noise. Pyright (`pyright[nodejs]`) moves on its own, and a new release may report new errors: fix them, or scope a suppression and record it in [docs/typing.md](../../../docs/typing.md#suppressions).
 - When django-stubs, django-ninja or pyright moves, review [docs/typing.md#upstream-workarounds](../../../docs/typing.md#upstream-workarounds) (step 6 below).
 
 ### Docker images
@@ -189,7 +189,7 @@ Add the open Dependabot pull requests, and anything you could not check and why.
 6. After each commit:
 
    ```bash
-   scripts/check.sh                 # lint (ruff, mypy, stubtest, pyright), migrations check, pytest with coverage
+   scripts/check.sh                 # lint (ruff, mypy, pyright), migrations check, pytest with coverage
    python manage.py export_openapi_schema --settings config.settings.test --api config.api.api --indent 2 > docs/openapi.json
    git diff --exit-code docs/openapi.json
    ```

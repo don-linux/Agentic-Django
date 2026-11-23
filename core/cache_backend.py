@@ -11,6 +11,7 @@ import threading
 import time
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import override
 
 from django.core.cache.backends.base import DEFAULT_TIMEOUT
 from django.core.cache.backends.redis import RedisCache
@@ -85,6 +86,7 @@ class ValkeyCache(RedisCache):
         super().__init__(server, params)
         self.max_ttl = int(params.get("MAX_TTL", DEFAULT_MAX_TTL))
 
+    @override
     def get_backend_timeout(self, timeout: Any = DEFAULT_TIMEOUT) -> int:
         backend_timeout = super().get_backend_timeout(timeout)
         return self.max_ttl if backend_timeout is None else int(backend_timeout)
@@ -108,6 +110,7 @@ class ValkeyCache(RedisCache):
         """Store a value, raising when Valkey is unreachable."""
         super().set(key, value, timeout, version)
 
+    @override
     def get(self, key: Any, default: Any = None, version: int | None = None) -> Any:
         try:
             return super().get(key, default, version)
@@ -115,6 +118,7 @@ class ValkeyCache(RedisCache):
             outage_log.warn("get", error)
             return default
 
+    @override
     def get_many(self, keys: Any, version: int | None = None) -> dict[Any, Any]:
         try:
             return super().get_many(keys, version)
@@ -122,6 +126,7 @@ class ValkeyCache(RedisCache):
             outage_log.warn("get_many", error)
             return {}
 
+    @override
     def has_key(self, key: Any, version: int | None = None) -> bool:
         try:
             return super().has_key(key, version)
@@ -129,6 +134,7 @@ class ValkeyCache(RedisCache):
             outage_log.warn("has_key", error)
             return False
 
+    @override
     def set(
         self,
         key: Any,
@@ -141,6 +147,7 @@ class ValkeyCache(RedisCache):
         except OUTAGE_ERRORS as error:
             outage_log.warn("set", error)
 
+    @override
     def set_many(
         self,
         data: Any,
@@ -154,6 +161,7 @@ class ValkeyCache(RedisCache):
             # Django's contract: the keys that could not be stored.
             return list(data)
 
+    @override
     def add(
         self,
         key: Any,
@@ -169,6 +177,7 @@ class ValkeyCache(RedisCache):
             # wait a second and then answer 429 to every login.
             return True
 
+    @override
     def touch(
         self,
         key: Any,
@@ -181,6 +190,7 @@ class ValkeyCache(RedisCache):
             outage_log.warn("touch", error)
             return False
 
+    @override
     def incr(self, key: Any, delta: int = 1, version: int | None = None) -> int:
         try:
             return super().incr(key, delta, version)
@@ -190,6 +200,7 @@ class ValkeyCache(RedisCache):
             message = f"Key {key!r} not found."
             raise ValueError(message) from error
 
+    @override
     def delete(self, key: Any, version: int | None = None) -> bool:
         try:
             return super().delete(key, version)

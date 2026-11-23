@@ -4,6 +4,7 @@ import dataclasses
 import logging
 import smtplib
 import typing
+from typing import override
 
 from allauth.account.adapter import DefaultAccountAdapter
 from allauth.headless.adapter import DefaultHeadlessAdapter
@@ -26,9 +27,11 @@ _PHONE_DISABLED = (
 
 
 class AccountAdapter(DefaultAccountAdapter):
+    @override
     def is_open_for_signup(self, request: HttpRequest) -> bool:
         return getattr(settings, "ACCOUNT_ALLOW_REGISTRATION", True)
 
+    @override
     def clean_email(self, email: str) -> str:
         # Signup, login and add-email look up the same normalized key.
         return UserManager.normalize_email(super().clean_email(email))
@@ -63,6 +66,7 @@ class AccountAdapter(DefaultAccountAdapter):
     ) -> None:
         raise NotImplementedError(_PHONE_DISABLED)
 
+    @override
     def send_mail(
         self,
         template_prefix: str,
@@ -98,6 +102,7 @@ class HeadlessAdapter(DefaultHeadlessAdapter):
     ID_DESCRIPTION = "The public user ID (UUID)."
     ID_EXAMPLE = "0196f0c8-5b8e-7c1a-9d2e-3f4a5b6c7d8e"
 
+    @override
     def get_user_dataclass(self) -> type:
         fields: list[tuple[str, typing.Any, typing.Any]] = []
         for field in dataclasses.fields(super().get_user_dataclass()):
@@ -117,6 +122,7 @@ class HeadlessAdapter(DefaultHeadlessAdapter):
                 )
         return dataclasses.make_dataclass("User", fields)
 
+    @override
     def user_as_dataclass(self, user: AbstractBaseUser) -> typing.Any:
         # DefaultHeadlessAdapter types `user` as AbstractBaseUser. Narrowing the
         # parameter to User is an incompatible override for pyright.

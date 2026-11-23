@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from typing import Annotated
 from typing import Any
+from typing import cast
 from uuid import UUID
 from weakref import WeakKeyDictionary
 
@@ -47,6 +48,8 @@ NULL_CODE = "null"
 NULL_DETAIL = "This field may not be null."
 NUL_CHAR_CODE = "null_characters_not_allowed"
 NUL_CHAR_DETAIL = "Null characters are not allowed."
+# Keys UserOut returns that a client may send back in a PATCH; they are ignored.
+READ_ONLY = frozenset({"id", "url"})
 
 
 class UserOut(BaseSchema):
@@ -83,9 +86,9 @@ class UserUpdateIn(InputSchema):
     def drop_read_only(cls, data: Any) -> Any:
         # A GET body sent back includes id and url; those stay out of the write.
         if isinstance(data, dict):
-            data = dict(data)
-            data.pop("id", None)
-            data.pop("url", None)
+            # A JSON object: its keys are strings.
+            sent = cast("dict[str, object]", data)
+            return {key: value for key, value in sent.items() if key not in READ_ONLY}
         return data
 
     @field_validator("name", mode="before")
@@ -147,7 +150,8 @@ def _current_user(request: HttpRequest) -> User:
 def _validate_visible_id(value: UUID, info: ValidationInfo) -> UUID:
     # Ninja passes {"request": request} to Pydantic validation. A public
     # AfterValidator on a path argument runs before the body is parsed.
-    request = (info.context or {}).get("request")
+    context: dict[str, Any] = info.context or {}
+    request: HttpRequest | None = context.get("request")
     if request is not None:
         _visible_user(request, value)
     return value

@@ -2,21 +2,14 @@
 
 from __future__ import annotations
 
-from http import HTTPStatus
-
-from allauth.account.models import EmailAddress
-from django.test import Client
-
-from apps.users.tests.factories import UserFactory
 from core.cache_backend import ValkeyCache
-from core.tests.credentials import PASSWORD
+from core.tests.session_tokens import session_token
 
 # A closed port: building the backend opens no connection, and every call to it
 # fails at once, as when Valkey is down.
 LOCATION = "redis://127.0.0.1:1/15"
 MAX_TTL = 3600
 ONE_MINUTE = 60
-LOGIN_URL = "/_allauth/app/v1/auth/login"
 SESSION_URL = "/_allauth/app/v1/auth/session"
 # The default cache of the outage tests: a closed port with short timeouts.
 DEAD_LOCATION = "redis://127.0.0.1:1/7"
@@ -36,17 +29,7 @@ def _backend(**params: object) -> ValkeyCache:
 
 
 def _login() -> str:
-    user = UserFactory(email="outage@example.com", password=PASSWORD)
-    EmailAddress.objects.create(
-        user=user, email=user.email, primary=True, verified=True
-    )
-    response = Client().post(
-        LOGIN_URL,
-        {"email": user.email, "password": PASSWORD},
-        content_type="application/json",
-    )
-    assert response.status_code == HTTPStatus.OK
-    return response.json()["meta"]["session_token"]
+    return session_token("outage@example.com")
 
 
 def _root_cause(error: BaseException, expected: type[BaseException]) -> bool:

@@ -43,7 +43,7 @@ The rules that keep business logic out of the API layer, so another API framewor
 
 ### Strict typing
 
-pyright and mypy check every module ([typing.md](typing.md)); mypy requires annotations everywhere (`disallow_untyped_defs`). Services, selectors, `core.exceptions` and `core.errors` also get the rest of `--strict` plus `disallow_any_explicit` (`[[tool.mypy.overrides]]` in `pyproject.toml`): no `Any`, no bare `list` or `dict`, no call into untyped code, no `Any` returned. They are what another API framework would call, so their signatures are the contract; a wrong argument fails `mypy` before any test runs. When a library returns `Any` (a cache `get()`, `Session.get_decoded()`), narrow it with `cast()` or a typed variable at that line, never with a suppression comment ([typing.md#suppressions](typing.md#suppressions)).
+pyright and mypy check every module ([typing.md](typing.md)); mypy requires annotations everywhere (`disallow_untyped_defs`). The domain layer also gets the rest of `--strict` plus `disallow_any_explicit` (`[[tool.mypy.overrides]]` in `pyproject.toml`): services, selectors, models and managers of every app, and `core.models`, `core.exceptions`, `core.errors`, `core.cache` and `core.tasks`. That means no `Any`, no bare `list` or `dict`, no call into untyped code, no `Any` returned. They are what another API framework would call, so their signatures are the contract; a wrong argument fails `mypy` before any test runs. An argument passed through untouched is `object`, not `Any` (`**extra_fields: object`), and an override of `Model.save` repeats Django's keyword-only signature. When a library returns `Any` (a cache `get()`, `Session.get_decoded()`), narrow it with `cast()` or a typed variable at that line, never with a suppression comment ([typing.md#suppressions](typing.md#suppressions)).
 
 ### Import contracts
 
@@ -194,7 +194,7 @@ sequenceDiagram
 | `config.settings.test` | pytest, mypy | locmem outbox | In memory (LocMem) | Inline, on an in-memory transport |
 | `config.settings.production` | the production image | SMTP from `DJANGO_MAILER_*` variables | Valkey (`VALKEY_URL`, DB 0) | The `celery_worker` service |
 
-All of them read the environment through `env` in `config/settings/base.py`. Email uses the `MAILERS` setting from Django 6.1. In production, error emails go through the `admin-logging` mailer, which drops the message when SMTP fails, so an SMTP outage never turns a 500 into a dropped connection. The cache is Valkey; see [Caching](#caching). The `celery` command has no `manage.py` to choose the settings for it: `config/celery.py` defaults to production, and the dev worker sets `config.settings.local` in its compose service.
+Each module reads the environment through its typed class in `config/settings/env.py` ([settings.md#environment-variables](settings.md#environment-variables)). Email uses the `MAILERS` setting from Django 6.1. In production, error emails go through the `admin-logging` mailer, which drops the message when SMTP fails, so an SMTP outage never turns a 500 into a dropped connection. The cache is Valkey; see [Caching](#caching). The `celery` command has no `manage.py` to choose the settings for it: `config/celery.py` defaults to production, and the dev worker sets `config.settings.local` in its compose service.
 
 ## Deployment
 

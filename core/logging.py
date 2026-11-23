@@ -13,6 +13,7 @@ from datetime import UTC
 from datetime import datetime
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import override
 
 from core.middleware import NO_REQUEST_ID
 from core.middleware import request_id_var
@@ -59,6 +60,7 @@ def unbind_task(*, task_id: str) -> None:
 class RequestIdFilter(logging.Filter):
     """Set `record.request_id` from the current request ("-" outside requests)."""
 
+    @override
     def filter(self, record: logging.LogRecord) -> bool:
         record.request_id = request_id_var.get()
         return True
@@ -72,6 +74,7 @@ class JsonFormatter(logging.Formatter):
         # The image's APP_RELEASE (settings.LOG_FORMATTERS passes it).
         self.release = release
 
+    @override
     def format(self, record: logging.LogRecord) -> str:
         entry: dict[str, object] = {
             "timestamp": datetime.fromtimestamp(record.created, tz=UTC)

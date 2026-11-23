@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import override
 
 from allauth.headless.account.views import ManagePhoneView
 from allauth.headless.base.response import AuthenticationResponse
@@ -22,6 +23,7 @@ class PhoneView(ManagePhoneView):
 
     _METHODS = ("GET", "POST")
 
+    @override
     def dispatch(
         self, request: HttpRequest, *args: Any, **kwargs: Any
     ) -> HttpResponseBase:

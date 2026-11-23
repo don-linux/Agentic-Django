@@ -714,6 +714,7 @@
         "type": "object"
       },
       "ErrorSchema": {
+        "additionalProperties": false,
         "properties": {
           "code": {
             "title": "Code",

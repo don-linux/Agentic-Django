@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import uuid
 from typing import TYPE_CHECKING
-from typing import Any
+from typing import override
 
 from django.db import models
 from django.db.models.functions import Now
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from datetime import date
     from datetime import datetime
 
+    from django.db.models.base import ModelBase
     from django.db.models.expressions import Combinable
 
     type _DateTimeIn = str | datetime | date | Combinable
@@ -42,7 +44,8 @@ class BaseQuerySet[M: models.Model](models.QuerySet[M]):
     See docs/ARCHITECTURE.md#layers.
     """
 
-    def update(self, **kwargs: Any) -> int:
+    @override
+    def update(self, **kwargs: object) -> int:
         fields = {field.name for field in self.model._meta.concrete_fields}
         if "updated_at" in fields and "updated_at" not in kwargs:
             kwargs["updated_at"] = Now()
@@ -74,15 +77,32 @@ class BaseModel(PublicIdModel):
     class Meta(PublicIdModel.Meta):
         abstract = True
 
-    def save(self, *args: Any, **kwargs: Any) -> None:
-        update_fields = kwargs.get("update_fields")
+    @override
+    def save(
+        self,
+        *,
+        force_insert: bool | tuple[ModelBase, ...] = False,
+        force_update: bool = False,
+        using: str | None = None,
+        update_fields: Iterable[str] | None = None,
+    ) -> None:
         if update_fields is not None:
             update_fields_set = set(update_fields)
             if not update_fields_set:
                 # Django skips the write, so nothing would refresh an assigned
                 # Now(): leave updated_at untouched.
-                super().save(*args, **kwargs)
+                super().save(
+                    force_insert=force_insert,
+                    force_update=force_update,
+                    using=using,
+                    update_fields=update_fields,
+                )
                 return
-            kwargs["update_fields"] = [*update_fields_set | {"updated_at"}]
+            update_fields = [*update_fields_set | {"updated_at"}]
         self.updated_at = Now()
-        super().save(*args, **kwargs)
+        super().save(
+            force_insert=force_insert,
+            force_update=force_update,
+            using=using,
+            update_fields=update_fields,
+        )

@@ -10,6 +10,7 @@ import importlib
 import importlib.util
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import override
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
@@ -33,6 +34,7 @@ SEED_USERS = (
 class Command(BaseCommand):
     help = "Create or refresh development users and run each app's seed_dev() hook."
 
+    @override
     def add_arguments(self, parser: ArgumentParser) -> None:
         parser.add_argument(
             "--password",
@@ -45,6 +47,7 @@ class Command(BaseCommand):
             help="Run even when DEBUG is False. Never use it in production.",
         )
 
+    @override
     def handle(self, *args: Any, **options: Any) -> None:
         if not settings.DEBUG and not options["allow_non_debug"]:
             msg = "seed_dev only runs with DEBUG=True (or --allow-non-debug)."

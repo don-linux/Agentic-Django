@@ -274,6 +274,10 @@ jobs:
           cache-from: type=gha,scope=django-prod
           # A cache write that fails (quota, outage) must not fail the build.
           cache-to: type=gha,scope=django-prod,mode=max,ignore-error=true
+          # The runtime stage installs Debian's security updates. A cached layer
+          # would keep the packages of the build that first made it, and the scan
+          # below would fail on fixes Debian has already published.
+          no-cache-filters: runtime
 
       # OS and Python packages with a fixed HIGH or CRITICAL vulnerability fail the
       # build; bump the base image digest or the package to fix it.

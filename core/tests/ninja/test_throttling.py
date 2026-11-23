@@ -6,6 +6,7 @@ import subprocess
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import override
 
 import pytest
 from django.core.exceptions import ImproperlyConfigured
@@ -48,6 +49,7 @@ def _scoped_api(scope: str) -> Any:
             self.scope = scope
             super().__init__()
 
+        @override
         def get_cache_key(self, request):
             return self.cache_format % {
                 "scope": self.scope,

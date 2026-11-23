@@ -4,6 +4,7 @@ import re
 from contextlib import suppress
 from http import HTTPStatus
 from typing import TYPE_CHECKING
+from typing import override
 
 import pytest
 from django.contrib.auth.models import Group
@@ -167,6 +168,7 @@ def test_signed_url_storages_redirect() -> None:
     class SignedStorage(InMemoryStorage):
         querystring_auth = True
 
+        @override
         def url(self, name: str | None) -> str:
             return f"https://bucket.example.org/{name}?X-Amz-Signature=abc"
 
@@ -233,6 +235,7 @@ class _RollbackError(Exception):
 
 
 class _FailingStorage(InMemoryStorage):
+    @override
     def delete(self, name: str) -> None:
         msg = f"cannot delete {name}"
         raise OSError(msg)

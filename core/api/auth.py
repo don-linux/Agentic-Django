@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import override
 
 from allauth.headless.contrib.ninja.security import (
     XSessionTokenAuth as AllauthXSessionTokenAuth,
@@ -43,6 +44,7 @@ class cookieAuth(SessionAuth):  # noqa: N801
         "production). PATCH, POST, PUT and DELETE also require CSRF."
     )
 
+    @override
     def __call__(self, request: HttpRequest) -> Any:
         # Auth objects are public callables (guide/authentication/). Check the
         # session before delegating to SessionAuth's public callable: all cookie

@@ -83,6 +83,12 @@ def test_declared_errors_do_not_drift() -> None:
         {"$ref": "#/components/schemas/ValidationErrorSchema"},
         {"$ref": "#/components/schemas/ErrorSchema"},
     ]
+    # oneOf takes exactly one branch: a validation body has "fields", which
+    # ValidationErrorSchema requires and the closed ErrorSchema refuses.
+    components = schema["components"]["schemas"]
+    assert "fields" in components["ValidationErrorSchema"]["required"]
+    assert components["ErrorSchema"]["additionalProperties"] is False
+    assert "fields" not in components["ErrorSchema"]["properties"]
     assert "put" not in schema["paths"]["/api/v1/users/{id}/"]
     assert "put" not in schema["paths"]["/api/v1/users/me/"]
     # 405 stays implicit: allowed methods are the operation keys.

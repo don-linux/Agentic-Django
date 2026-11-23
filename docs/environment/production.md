@@ -72,7 +72,7 @@ From `docker/prod/.env.example`, the only production env file. Compose reads it 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
 | `VALKEY_PASSWORD` | Yes | | Password of the Valkey service, 32 characters or more; never inside `VALKEY_URL`. |
-| `VALKEY_URL` | No | `redis://valkey:6379` | Only for a managed Valkey: its URL without credentials or a database number; `rediss://` must end with `?ssl_cert_reqs=required`. |
+| `VALKEY_URL` | No | `redis://valkey:6379` | Only for a managed Valkey: its URL without credentials or a database number; `rediss://` must end with `?ssl_cert_reqs=required`. Compose passes the default when it is unset; the production settings themselves require a value. |
 | `VALKEY_MAXMEMORY` | No | `256mb` | Memory Valkey uses before it evicts cache entries. |
 | `DOCKER_PROD_VALKEY_MEM_LIMIT` | No | `512m` | Memory limit of the Valkey container, about twice `VALKEY_MAXMEMORY`. |
 | `VALKEY_CONNECT_TIMEOUT` | No | `1` | Seconds to wait for a connection. |
@@ -111,7 +111,7 @@ From `docker/prod/.env.example`, the only production env file. Compose reads it 
 | `DJANGO_EMAIL_SUBJECT_PREFIX` | No | `[Project]` and a space | Prefix of every email subject; quote it, or Compose drops the space. |
 | `DJANGO_MAILER_TIMEOUT` | No | `10` | Seconds per SMTP operation. |
 | `DJANGO_MAILER_HOST` | Yes | | Your provider's SMTP host. |
-| `DJANGO_MAILER_PORT` | No | `587` in the example | SMTP port. |
+| `DJANGO_MAILER_PORT` | No | The protocol's port: 587 with TLS, 465 with SSL | SMTP port; the example sets `587`. Empty is the same as unset. |
 | `DJANGO_MAILER_USERNAME` | No | Empty | SMTP user. |
 | `DJANGO_MAILER_PASSWORD` | No | Empty | SMTP password. |
 | `DJANGO_MAILER_USE_TLS` | No | `True` | STARTTLS, for port 587. |

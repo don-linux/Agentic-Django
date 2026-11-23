@@ -57,7 +57,7 @@ from core.tests.cache_helpers import _root_cause
 from core.tests.credentials import PASSWORD
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator
 
     from django.http import HttpRequest
     from django.http import HttpResponse
@@ -105,7 +105,7 @@ def _session_token(user: User, password: str = PASSWORD) -> str:
 
 
 @contextmanager
-def hanging_tcp_server() -> Iterator[int]:
+def hanging_tcp_server() -> Generator[int]:
     sock = socket.socket()
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("127.0.0.1", 0))

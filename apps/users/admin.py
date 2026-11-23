@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from typing import override
 
 from django.contrib import admin
 from django.contrib import messages
@@ -68,13 +69,14 @@ class UserAdmin(auth_admin.UserAdmin):
         ),
     )
 
+    @override
     @transaction.atomic
     def save_model(
         self,
         request: HttpRequest,
         obj: User,
         form: forms.ModelForm[User],
-        change: bool,  # noqa: FBT001
+        change: bool,
     ) -> None:
         # is_active goes through the services, which also sign the user out.
         is_active_changed = change and "is_active" in form.changed_data
@@ -98,6 +100,7 @@ class UserAdmin(auth_admin.UserAdmin):
     # Only a superuser grants or removes privileges, or touches a privileged user.
     _PRIVILEGE_FIELDS = ("is_staff", "is_superuser", "groups", "user_permissions")
 
+    @override
     def get_readonly_fields(
         self, request: HttpRequest, obj: User | None = None
     ) -> tuple[str, ...] | list[str]:
@@ -106,6 +109,7 @@ class UserAdmin(auth_admin.UserAdmin):
             readonly += [f for f in self._PRIVILEGE_FIELDS if f not in readonly]
         return readonly
 
+    @override
     def has_change_permission(
         self, request: HttpRequest, obj: User | None = None
     ) -> bool:
@@ -120,6 +124,7 @@ class UserAdmin(auth_admin.UserAdmin):
     # Users are deactivated or anonymized, never deleted: see
     # docs/user-deletion/README.md. Without delete permission the admin also
     # hides the "delete selected" action.
+    @override
     def has_delete_permission(
         self, request: HttpRequest, obj: User | None = None
     ) -> bool:

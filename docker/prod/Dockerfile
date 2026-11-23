@@ -28,7 +28,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
         $(for extra in $UV_EXTRAS; do printf -- '--extra %s ' "$extra"; done)
 
 
-FROM base
+# The image that runs. CI builds this stage without its layer cache, so the
+# security updates below are the ones Debian publishes that day.
+FROM base AS runtime
 
 ARG USER_UID=1000
 ARG USER_GID=1000

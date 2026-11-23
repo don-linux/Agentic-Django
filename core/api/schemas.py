@@ -58,6 +58,13 @@ class InputSchema(Schema):
 
 
 class ErrorSchema(BaseSchema):
+    # An error body carries only these keys (core.errors.ErrorBody). Closing the
+    # published schema keeps the 400 oneOf unambiguous: a validation body has
+    # "fields", which this schema refuses. Set in the JSON schema alone: Ninja
+    # never validates an error body against it, and extra="forbid" stays on
+    # input schemas (BaseSchema).
+    model_config = ConfigDict(json_schema_extra={"additionalProperties": False})
+
     code: str
     detail: str
     extra: dict[str, object] = Field(

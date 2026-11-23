@@ -10,12 +10,10 @@ Inside the dev container, run `scripts/check.sh lint`. On the host, or from CI, 
 uv run scripts/check.sh lint                               # every check below, as CI runs it
 uv run pyright                                             # pyright alone, on the whole repository
 uv run mypy .                                              # mypy with the django-stubs plugin
-MYPYPATH=typings uv run stubtest environ --ignore-missing-stub   # typings/ against the installed package
 ```
 
-- `pyright` is installed as `pyright[nodejs]`. The `nodejs` extra pulls `nodejs-wheel-binaries`, pinned in `uv.lock`, and pyright-python uses it before anything else, so Node.js is never downloaded at run time. `[tool.pyright]` in `pyproject.toml` sets `standard` mode and no `include` or `exclude`. pyright's defaults already skip hidden directories (`.venv`, `.agents`), `__pycache__` and `node_modules`.
-- `mypy` reads `[tool.mypy]`. Every module needs annotations (`disallow_untyped_defs`), and `enable_error_code` adds `possibly-undefined`, `truthy-bool`, `ignore-without-code`, `exhaustive-match` and `unimported-reveal`. Services, selectors, `core.exceptions` and `core.errors` also get the rest of `--strict` ([ARCHITECTURE.md#strict-typing](ARCHITECTURE.md#strict-typing)).
-- `stubtest` compares the stubs in `typings/` with the installed package, so a dependency bump that changes a signature fails `lint`.
+- `pyright` is installed as `pyright[nodejs]`. The `nodejs` extra pulls `nodejs-wheel-binaries`, pinned in `uv.lock`, and pyright-python uses it before anything else, so Node.js is never downloaded at run time. `[tool.pyright]` in `pyproject.toml` sets `standard` mode and no `include` or `exclude`. pyright's defaults already skip hidden directories (`.venv`, `.agents`), `__pycache__` and `node_modules`. The API layer runs in `strict` mode ([below](#strict-api)).
+- `mypy` reads `[tool.mypy]`. Every module needs annotations (`disallow_untyped_defs`), and `enable_error_code` adds `possibly-undefined`, `truthy-bool`, `ignore-without-code`, `exhaustive-match`, `unimported-reveal`, `explicit-override` ([Overrides](#overrides)) and `deprecated` ([Deprecated APIs](#deprecated-apis)). The domain layer also gets the rest of `--strict`: services, selectors, models and managers, and `core.models`, `core.exceptions`, `core.errors`, `core.cache` and `core.tasks` ([ARCHITECTURE.md#strict-typing](ARCHITECTURE.md#strict-typing)).
 - ruff's `ANN` rules fail on a public function without annotations, also in pre-commit, before any checker runs.
 
 ## What each one catches
@@ -30,12 +28,42 @@ What each tool reports for a typical mistake:
 | `.first().name` without a `None` check | no | yes | yes | yes |
 | A method of the wrong type on a model field (`obj.public_id.upper()`) | no | yes | yes, with the field annotation ([below](#model-field-annotations)) | yes |
 | A variable that may be unbound | no | yes (`possibly-undefined`) | yes | no |
+| A value of unknown type in an endpoint or schema, such as a `dict` built from `Any` | no | no | yes, in `apps/*/api/` ([strict](#strict-api)) | no |
+| A hook that a dependency upgrade renamed or removed, so the method overrides nothing | no | yes ([`@override`](#overrides)) | yes | only if a test calls it |
+| A call to an API its library marks `@deprecated`, such as `datetime.utcnow()` | some (`DTZ`, `UP`) | yes ([`deprecated`](#deprecated-apis)) | yes | when a test runs it (warnings are errors) |
 | A setting that does not exist (`settings.API_MAX_PAGE_NUMBR`) | no | yes (plugin) | no | yes |
 | An ORM lookup on a field that does not exist (`filter(nmae=...)`) | no | yes (plugin) | no | yes |
 | `user.pk` used as something other than an `int` | no | yes | no (`Any`) | yes |
 | An operation that returns a status code missing from its `response=` map | no | no | no | yes |
 
 Only mypy with the plugin sees the settings and the ORM. Only the tests see what Ninja does at run time.
+
+## Strict API
+
+pyright checks `apps/*/api/` and `core/api/schemas.py` in `strict` mode (`strict` in `[tool.pyright]`). Every endpoint and schema an app adds lives under `apps/<app>/api/`, so new API code gets it without any change. In strict mode an `Unknown` type is an error: a value whose type pyright cannot work out, such as a `dict` taken from an `Any`, or a generic class used without its type arguments.
+
+The raw input of a Pydantic validator is `Any`, so it needs a real type before you use it:
+
+- After `isinstance(data, dict)`, `cast("dict[str, object]", data)`: a JSON object's keys are always strings.
+- Annotate what you read from a context: `context: dict[str, Any] = info.context or {}`, then `request: HttpRequest | None = context.get("request")`.
+
+The rest of `core/api/` stays in `standard` mode. Strict would demand stubs for django-allauth, which ships no types (`reportMissingTypeStubs`), and it would reject Django Ninja's own partially unknown types. Neither has a fix in this repository that is not a local stub or a suppression.
+
+## Overrides
+
+Every method that overrides a method or attribute of a base class says so with `@override`, from `typing`: model `save` and `clean`, admin and allauth adapter hooks, the cache backend, throttles, paginators, parsers, middleware and management commands. Both checkers enforce it: pyright with `reportImplicitOverride`, mypy with the `explicit-override` error code.
+
+When a dependency upgrade renames or removes a hook the template overrides, the method keeps its `@override` but no longer overrides anything. Both checkers then fail ("marked as override, but no base method"), where before the method would silently never be called.
+
+- Put `@override` above the method's other decorators. With `@property`, put it below `@property`: `override` takes a function, not a `property`.
+- ruff does not ask for keyword-only booleans (`FBT001`) in a method marked `@override`: its signature belongs to the base class.
+
+## Deprecated APIs
+
+A call to a function, class or overload that its library marks `@deprecated` ([PEP 702](https://peps.python.org/pep-0702/)) fails both checkers: pyright through `reportDeprecated`, mypy through the `deprecated` error code. typeshed and django-stubs mark deprecations this way, so a deprecated call shows up before any test runs it. The tests catch the same calls only when they execute them (warnings are errors).
+
+- pyright also reports a deprecated overload that mypy does not. One example: `@contextmanager` on a function annotated `-> Iterator[T]`, which should be `-> Generator[T]`.
+- Replace the call with what the deprecation message names. Do not suppress it.
 
 ## Suppressions
 
@@ -74,10 +102,6 @@ Without the annotation pyright sees the field as `Unknown` and lets any use of i
 
 This is a workaround with an expiry date; see [Tracked: model field annotations](#tracked-model-field-annotations).
 
-## Local stubs
-
-`typings/` holds stubs for packages that ship no types. Today that is only django-environ 0.14.0, which has no `py.typed` marker. pyright reads the stubs through `stubPath` and mypy through `mypy_path`. `stubtest` keeps them honest.
-
 ## Upstream workarounds
 
 These are the places where the code works around a limitation of django-stubs, pyright, Django Ninja or another dependency. The ones with an upstream issue or pull request to wait for are in [Tracked upstream](#tracked-upstream): one table, a command to check each one, and what to remove when the fix ships. The rest are permanent: each comes with its reason and its source. Check this section whenever django-stubs, Django Ninja or pyright is upgraded ([maintain-django-template](../.agents/skills/maintain-django-template/SKILL.md)).
@@ -111,7 +135,6 @@ Run each row's check on every django-stubs or django-ninja upgrade ([maintain-dj
 | Both comments on the `time_cost`, `memory_cost` and `parallelism` properties | `core/hashers.py` | Properties make `override_settings` reach the hasher. django-stubs declares them as plain `int` attributes. | django-stubs 6.1.2 `contrib/auth/hashers.pyi` |
 | Both comments on `before_send` and `before_send_transaction` | `core/sentry.py` | sentry-sdk types an event as a `TypedDict`. `scrub_event` walks arbitrary nested data as `dict[str, Any]`. | sentry-sdk 2.75.0 `sentry_sdk/_types.py` (`Event`, `EventProcessor`) |
 | `# type: ignore[misc]` on a factory's `__new__` under `TYPE_CHECKING` | `apps/*/tests/factories.py` | Calling a factory class returns a model instance. factory-boy 3.3.3 types `create()` and `build()` as returning the model, but not the metaclass `__call__` behind `UserFactory(...)`, so this `__new__` tells the checkers; mypy rejects a `__new__` that returns another type. | factory-boy 3.3.3 `factory/base.py` (`FactoryMetaClass.__call__`, `BaseFactory.create`) |
-| `typings/environ/` stubs | `typings/` | django-environ 0.14.0 ships no types. `stubtest` checks the stubs against each release. | PyPI wheel `django_environ-0.14.0` (no `py.typed`) |
 
 ### Django Ninja mechanisms
 

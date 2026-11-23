@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import override
 
 from django.conf import settings
 from django.urls import register_converter
@@ -39,9 +40,11 @@ class CompactJSONRenderer(JSONRenderer):
 class ContractAPI(NinjaAPI):
     """Match the previous Content-Type: application/json (no charset)."""
 
+    @override
     def get_content_type(self) -> str:
         return self.renderer.media_type or "application/json"
 
+    @override
     def validation_error_from_error_contexts(
         self, error_contexts: list[ValidationErrorContext[Any]]
     ) -> ValidationError:

@@ -16,6 +16,6 @@ Which value wins when the same variable is set in more than one place, from stro
 1. The process environment: a variable exported in the shell, or one Compose sets under `environment:`. Compose's `environment:` beats its `env_file`, so a value the compose file pins (such as `DJANGO_SETTINGS_MODULE` in production) cannot be changed from the env file.
 2. The services' `env_file`: the root `.env` in development, `docker/prod/.env` in production.
 3. The root `.env` that `config/settings/local.py` reads when Django runs outside Docker (`config/settings/_env_file.py`). It never replaces a variable that is already set. Production and test settings never read a `.env` file.
-4. The default in `config/settings/`, when there is one. A variable with no default is required: settings refuse to load without it.
+4. The default of the variable's field in `config/settings/env.py`, when there is one. A field with no default is required: settings refuse to load without it ([settings.md#environment-variables](../settings.md#environment-variables)).
 
 `${VAR}` inside a compose file is resolved before any container starts: from the shell first, then from the `.env` next to that compose file (`docker/dev/.env` or `docker/prod/.env`).

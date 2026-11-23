@@ -17,6 +17,7 @@ from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import cast
+from typing import override
 
 from django.conf import settings
 from django.core.exceptions import SuspiciousFileOperation
@@ -60,9 +61,11 @@ class UploadTo:
             extension = ""
         return f"{self.prefix}/{uuid.uuid4().hex}{extension}"
 
+    @override
     def __eq__(self, other: object) -> bool:
         return isinstance(other, UploadTo) and other.prefix == self.prefix
 
+    @override
     def __hash__(self) -> int:
         return hash(self.prefix)
 
@@ -85,12 +88,14 @@ class MaxFileSizeValidator:
                 params={"max_bytes": self.max_bytes},
             )
 
+    @override
     def __eq__(self, other: object) -> bool:
         return (
             isinstance(other, MaxFileSizeValidator)
             and other.max_bytes == self.max_bytes
         )
 
+    @override
     def __hash__(self) -> int:
         return hash(self.max_bytes)
 

@@ -19,6 +19,7 @@ from __future__ import annotations
 import copy
 import threading
 from typing import TYPE_CHECKING
+from typing import override
 
 from ninja.throttling import AnonRateThrottle
 from ninja.throttling import SimpleRateThrottle
@@ -39,6 +40,7 @@ _STATE = threading.local()
 
 
 class IdentMixin(SimpleRateThrottle):
+    @override
     def get_ident(self, request: HttpRequest) -> str:
         return get_client_ip(request)
 
@@ -52,6 +54,7 @@ class RefreshingRateMixin(SimpleRateThrottle):
         self._fixed_rate = rate
         super().__init__(rate)
 
+    @override
     def allow_request(self, request: HttpRequest) -> bool:
         worker: RefreshingRateMixin = copy.copy(self)
         worker.rate = self._fixed_rate or worker.get_rate()
@@ -59,6 +62,7 @@ class RefreshingRateMixin(SimpleRateThrottle):
         setattr(_STATE, f"throttle_{id(self)}", worker)
         return super(RefreshingRateMixin, worker).allow_request(request)
 
+    @override
     def wait(self) -> float | None:
         worker: RefreshingRateMixin = getattr(_STATE, f"throttle_{id(self)}", self)
         return super(RefreshingRateMixin, worker).wait()
@@ -80,6 +84,7 @@ class ScopedThrottle(IdentMixin, RefreshingRateMixin, SimpleRateThrottle):
             self.scope = scope
         super().__init__(rate)
 
+    @override
     def get_cache_key(self, request: HttpRequest) -> str:
         user = getattr(request, "user", None)
         if user is not None and user.is_authenticated:

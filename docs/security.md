@@ -127,11 +127,17 @@ Opt-in, for a project that stores national IDs, tax IDs, TOTP secrets, or third-
 Add `cryptography` as a direct dependency, pinned to the version already in `uv.lock` (`uv add --no-sync "cryptography==50.0.2"` on the host), and two settings read from the environment:
 
 ```python
-# config/settings/base.py
+# config/settings/env.py, in BaseEnv
 # Comma separated Fernet keys: the first one encrypts, all of them decrypt.
-FIELD_ENCRYPTION_KEYS = env.list("DJANGO_FIELD_ENCRYPTION_KEYS", default=[])
+DJANGO_FIELD_ENCRYPTION_KEYS: CommaSecrets = []
 # HMAC key for search hashes (lookups and unique constraints on encrypted values).
-SEARCH_HASH_KEY = env("DJANGO_SEARCH_HASH_KEY", default="")
+DJANGO_SEARCH_HASH_KEY: SecretStr = SecretStr("")
+
+# config/settings/base.py
+FIELD_ENCRYPTION_KEYS = [
+    key.get_secret_value() for key in _env.DJANGO_FIELD_ENCRYPTION_KEYS
+]
+SEARCH_HASH_KEY = _env.DJANGO_SEARCH_HASH_KEY.get_secret_value()
 ```
 
 ```python
