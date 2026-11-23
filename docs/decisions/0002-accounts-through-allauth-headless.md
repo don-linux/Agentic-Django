@@ -16,8 +16,8 @@ django-allauth in headless mode (`HEADLESS_ONLY = True`) owns every account flow
 - No service, serializer or view re-implements an account flow ([ARCHITECTURE.md#services-and-selectors](../ARCHITECTURE.md#services-and-selectors)).
 - `/_allauth/` keeps allauth's own response format and conventions, which differ from `/api/v1/` ([api.md#out-of-scope-_allauth](../api.md#out-of-scope-_allauth)).
 - allauth security releases are applied at once (AGENTS.md).
-- allauth is independent of the API framework: a move away from DRF keeps it.
+- allauth is independent of the API framework: a change of API framework keeps it.
 
 ## Alternatives
 
-- dj-rest-auth or hand-written views on DRF: rejected, more code to keep secure, and tied to DRF.
+- dj-rest-auth or hand-written account views: rejected, more code to keep secure, and tied to one API framework.

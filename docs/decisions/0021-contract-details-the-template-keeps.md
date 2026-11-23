@@ -1,28 +1,34 @@
-# 0021. What stays after DRF parity, and why
+# 0021. Contract details the template keeps, and why
 
 - Status: Accepted
 - Date: 2026-11-23
 
 ## Context
 
-DRF parity stopped being a requirement on 2026-11-22. Most of what the migration copied from DRF went:
+Several behaviors of the API are not the framework's default, and without a reason they look arbitrary:
 
-- the input leniencies ([0018](0018-the-api-accepts-exactly-what-its-contract-declares.md));
-- the error wording ([0017](0017-error-texts-come-from-the-code-that-raises-the-error.md));
-- the schema views ([0019](0019-the-schema-and-docs-are-ninja-s-own-views.md));
-- OPTIONS, `Allow` and the 406 order ([0020](0020-options-allow-and-406-follow-django-and-rfc-9110.md)).
+- the pagination envelope;
+- the optional `PATCH` body;
+- the datetime format;
+- the JSON bytes;
+- the error body and the 405;
+- the rollback of handled errors;
+- the parser;
+- the 401 for a write without credentials;
+- throttling and the client IP;
+- the `url` field.
 
-Some behaviors that look like DRF stay, because they have a reason of their own. Without a record, a later agent could remove them as leftovers.
+This record gives each one its reason, so nobody removes it as a leftover.
 
 ## Decision
 
-These stay, each for the reason given:
+Each is kept for the reason given:
 
-- **Pagination envelope.** It stays `count`, `next`, `previous`, `results`, with absolute links, 20 per page and at most 100.
+- **Pagination envelope.** `count`, `next`, `previous` and `results`, with absolute links, 20 per page and at most 100.
   - Ninja's native `{items, count}` is a breaking change: oasdiff reports 3 ERR (`response-required-property-removed`).
   - A page past the last one, or deeper than `DJANGO_API_MAX_PAGE_NUMBER`, is a 404, because every page costs a `COUNT(*)` and an `OFFSET`.
-- **Optional `PATCH` body.** An empty `PATCH` changes nothing, as `{}` does. A required body is an oasdiff ERR (`request-body-became-required`), so the one-item `allOf` and `--flatten-allof` stay.
-- **`UTCDateTime`.** Output is UTC with `Z`. Microseconds are kept, so a client can send a timestamp back exactly, for example in a filter; Ninja's encoder would cut them to milliseconds. Input is exact RFC 3339 with a time zone ([0022](0022-request-fields-validate-strictly.md)); this record first read a value without one as UTC.
+- **Optional `PATCH` body.** An empty `PATCH` changes nothing, as `{}` does. A required body is an oasdiff ERR (`request-body-became-required`), so Ninja's one-item `allOf` and oasdiff's `--flatten-allof` are needed.
+- **`UTCDateTime`.** Output is UTC with `Z`. Microseconds are kept, so a client can send a timestamp back exactly, for example in a filter; Ninja's encoder would cut them to milliseconds. Input is exact RFC 3339 with a time zone ([0022](0022-request-fields-validate-strictly.md)).
 - **JSON bytes.**
   - The body is compact UTF-8 with no `\u` escapes; RFC 8259, section 8.1, makes UTF-8 the encoding. Error bodies built outside Ninja use the same bytes (`core.errors.json_error`). The schema document is Ninja's own view ([0019](0019-the-schema-and-docs-are-ninja-s-own-views.md)), with Django's default separators.
   - The Content-Type is `application/json` without `charset`, which RFC 8259, section 11, does not define.
@@ -43,9 +49,9 @@ These stay, each for the reason given:
 
 ## Consequences
 
-- These are the template's own behaviors now. Their comments and docs give these reasons, not DRF.
+- The comments and docs that describe these behaviors give these reasons.
 - Changing one is a contract decision with its own record. A change that breaks the contract goes through deprecation, because the API stays on `/api/v1/` ([0024](0024-one-api-on-api-v1.md)).
 
 ## Alternatives
 
-- **Remove everything DRF had, whatever its reason.** Rejected: some removals break the contract, and others drop a standard (RFC 8259, RFC 9110) or a safety property (the rollback, the 401).
+- **The framework's default everywhere.** Rejected: some defaults break the contract (the envelope, the required body). Others drop a standard (RFC 8259, RFC 9110) or a safety property (the rollback, the 401).

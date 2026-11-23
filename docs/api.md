@@ -39,7 +39,7 @@ A request without valid credentials gets 401 with `WWW-Authenticate: X-Session-T
 
 ### Representation
 
-- One resource is a bare JSON object; a list is the pagination envelope (`count`, `next`, `previous`, `results`, with absolute links). Why these representation rules stay, now that DRF parity is gone: [ADR 0021](decisions/0021-what-stays-after-drf-parity-and-why.md).
+- One resource is a bare JSON object; a list is the pagination envelope (`count`, `next`, `previous`, `results`, with absolute links). Why the template keeps these rules: [ADR 0021](decisions/0021-contract-details-the-template-keeps.md).
 - Every resource exposes its public UUID as `id` (a string). Integer primary keys never leave the server, including `/_allauth/` payloads (`apps.users.adapters.HeadlessAdapter`). Detail URLs use the same UUID (`/api/v1/users/{id}/`); an integer in that position is a plain 404.
 - Datetimes are RFC 3339 in UTC with a `Z` suffix, whatever `TIME_ZONE` is. A request sends RFC 3339 with a time zone (`Z` or `+hh:mm`); a value without one, a date alone or a number is a 400, so the server never guesses a zone ([ADR 0022](decisions/0022-request-fields-validate-strictly.md)). Declare datetime fields as `core.api.schemas.UTCDateTime`; a plain `datetime` keeps the offset it was given, loses microseconds in the JSON encoder, and takes a Unix time. Dates are `YYYY-MM-DD` (`core.api.schemas.ISODate`). Clients convert to local time; `TIME_ZONE` only drives date boundaries and reports.
 - Decimals are strings, and declared fields are always present (`null`, never omitted).
@@ -148,7 +148,7 @@ def things_list(
 - Never pass a client's string to `order_by()`. The `Literal` lets through only the listed fields, and anything else is a 400 `literal_error` under `fields.ordering`.
 - The field types are those of a query parameter ([Field types](#field-types)), and the `storable_text` validator keeps a NUL out of the SQL, as `InputSchema` does for a body.
 - Every filter and every ordering a client may choose needs an index ([ARCHITECTURE.md#indexes](ARCHITECTURE.md#indexes)). Add the selector to `core/tests/ninja/test_list_indexes.py` once per ordering; that test checks the ordering, and the review checks the filters.
-- An unknown query parameter is still ignored ([ADR 0021](decisions/0021-what-stays-after-drf-parity-and-why.md)): a misspelled filter filters nothing.
+- An unknown query parameter is still ignored ([ADR 0021](decisions/0021-contract-details-the-template-keeps.md)): a misspelled filter filters nothing.
 
 ## Idempotent retries
 

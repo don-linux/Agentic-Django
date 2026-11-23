@@ -6,12 +6,12 @@
 
 ## Context
 
-This repository is a template: a project starts from it, keeps its code and conventions, and builds its own endpoints on them. [0011](0011-openapi-contract-as-native-json.md) made `docs/openapi.json` the committed contract. It also said that an incompatible change goes to `/api/v2/`, but nothing in the template supports a second version: `ApiContractMiddleware` serves `/api/v1/` only, the conformance test reads one schema, and the endpoint skill forbids a second `NinjaAPI`. The promise only misled the reader.
+This repository is a template: a project starts from it, keeps its code and conventions, and builds its own endpoints on them. [0011](0011-openapi-contract-as-native-json.md) made `docs/openapi.json` the committed contract. It also said that an incompatible change goes to `/api/v2/`, but nothing in the template supports a second version: `ApiContractMiddleware` serves `/api/v1/` only, the conformance test reads one schema, and the endpoint skill forbids a second `NinjaAPI`.
 
 ## Decision
 
 - **One API.** Every route is under `/api/v1/`, served by the one `NinjaAPI` in `config/api.py`. There is no second version and no second API instance.
-- **The contract.** `docs/openapi.json` is the committed contract, OpenAPI 3.1.0 as Ninja generates it. CI fails when the file drifts from the code. On a pull request, oasdiff fails on a breaking change against the base branch. Component renames that Ninja emits (`ErrorSchema`, `UserOut`, and the like) are not breaking.
+- **The contract.** `docs/openapi.json` is the committed contract, OpenAPI 3.1.0 as Ninja generates it. CI fails when the file drifts from the code. On a pull request, oasdiff fails on a breaking change against the base branch.
 - **Changes are compatible.** A breaking change is not made. The replacement is added next to the old endpoint or field, and the old one is deprecated, announced with `Deprecation` and `Sunset`, and answers 410 `gone` after the sunset date ([api.md#deprecating-endpoints-and-fields](../api.md#deprecating-endpoints-and-fields)).
 
 See [api.md#breaking-changes](../api.md#breaking-changes).
@@ -25,5 +25,5 @@ See [api.md#breaking-changes](../api.md#breaking-changes).
 
 ## Alternatives
 
-- **Keep the promise of `/api/v2/`.** Rejected by Fernando on 2026-11-23: the template stays on `/api/v1/`, and a project built from it starts there.
+- **A second version, `/api/v2/`, for incompatible changes.** Rejected: a project built from the template starts on `/api/v1/` and stays there, and clients never have to move.
 - **Support several versions in the template**: a middleware and a conformance test per API, and an exception in the skill. Rejected: it is code for a need the template does not have.

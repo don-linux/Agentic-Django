@@ -24,7 +24,7 @@ Short records of why the template is the way it is, one decision per file (a lig
 | [0018](0018-the-api-accepts-exactly-what-its-contract-declares.md) | The API accepts exactly what its contract declares | Accepted |
 | [0019](0019-the-schema-and-docs-are-ninja-s-own-views.md) | The schema and docs are Ninja's own views | Accepted |
 | [0020](0020-options-allow-and-406-follow-django-and-rfc-9110.md) | OPTIONS, Allow and 406 follow Django and RFC 9110 | Accepted |
-| [0021](0021-what-stays-after-drf-parity-and-why.md) | What stays after DRF parity, and why | Accepted |
+| [0021](0021-contract-details-the-template-keeps.md) | Contract details the template keeps, and why | Accepted |
 | [0022](0022-request-fields-validate-strictly.md) | Request fields validate strictly | Accepted |
 | [0023](0023-a-duplicate-is-a-409-conflict.md) | A duplicate is a 409 conflict | Accepted |
 | [0024](0024-one-api-on-api-v1.md) | One API, on `/api/v1/`, with its contract as native OpenAPI 3.1.0 JSON | Accepted |
@@ -33,5 +33,6 @@ Short records of why the template is the way it is, one decision per file (a lig
 
 - Copy [template.md](template.md) to `NNNN-short-title.md` with the next number, and add a row above.
 - Write it in the pull request that makes the decision. Keep it under a page: context, decision, consequences, alternatives.
-- Never rewrite an accepted record. A new decision that replaces one gets its own file; set the old one's status to `Superseded by NNNN` and change its row.
+- Never rewrite an accepted record's decision. A new decision that replaces one gets its own file; set the old one's status to `Superseded by NNNN` and change its row. The wording may be corrected when the decision does not change: a stale name, a typo, or a sentence that narrates how the template was built instead of why.
+- Write for the person who copies the template: no names, no dated narrative of who did what, no pull request or session references. The Date field carries the date.
 - Before changing something a record covers, read the record. If the reason no longer holds, supersede the record in the same pull request.

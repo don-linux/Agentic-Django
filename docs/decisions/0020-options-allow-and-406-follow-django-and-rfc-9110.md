@@ -5,14 +5,7 @@
 
 ## Context
 
-`core.api.negotiation.ApiContractMiddleware` answers HEAD, OPTIONS, 405 and 406 for every route under `/api/v1/`, because Ninja has no answer of its own for them. The DRF migration made it reproduce DRF:
-
-- **OPTIONS.** It answered SimpleMetadata (`{name, description, renders, parses}`) and was a 401 without credentials.
-- **`Allow`.** It went on every response of a route, as `finalize_response` set it.
-- **406.** It came before the 405 and OPTIONS, as content negotiation ran first in `APIView.initial`.
-- **`Accept`.** The header was cut at DRF 3.18.3's limits: 64 members, 256 characters per member and 8192 in all.
-
-DRF parity stopped being a requirement on 2026-11-22.
+Ninja has no answer of its own for HEAD, for OPTIONS, for a 405 in the API's error body, or for a 406: it ignores `Accept`. `core.api.negotiation.ApiContractMiddleware` answers them for every route under `/api/v1/`. So the template has to define three things: what OPTIONS returns, where `Allow` goes, and in which order the 405, OPTIONS and the 406 are checked.
 
 ## Decision
 
@@ -25,12 +18,13 @@ See [api.md#head-options-and-405](../api.md#head-options-and-405) and [api.md#re
 
 ## Consequences
 
-- A client that read the OPTIONS metadata gets an empty body. A client that read `Allow` from a 200 or a 401 has to send OPTIONS.
+- OPTIONS has an empty body: a client reads the methods from `Allow`.
 - A wrong method with an unacceptable `Accept` is a 405, not a 406.
-- The negotiation keeps only the RFC rules. The DRF limits and the choice between several renderers are gone, together with their tests.
+- The negotiation follows the RFC rules only: one media type per response, no choice between renderers.
 
 ## Alternatives
 
-- **Keep DRF's answers.** Rejected: they reproduce another framework with no reason of their own.
-- **Drop the 406, as Ninja does by ignoring `Accept`.** Rejected: the contract declares it, and honoring `Accept` is the template's own choice under RFC 9110.
+- **An OPTIONS body with metadata** (name, description, accepted and rendered types). Rejected: no standard defines it, and Django's `View.options()` answers with `Allow` only.
+- **`Allow` on every response.** Rejected: RFC 9110 requires it on a 405, and Django and Ninja send it there.
+- **Drop the 406, as Ninja does by ignoring `Accept`.** Rejected: the contract declares it, and honoring `Accept` follows RFC 9110.
 - **OPTIONS as a 405**, since Ninja has no answer for it. Rejected: Django answers OPTIONS on every view.
