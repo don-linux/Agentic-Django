@@ -56,7 +56,7 @@ def invoices_download(
 ) -> HttpResponse:
     # Scoped to the owner, so another user's invoice is a 404.
     invoice = get_object_or_404(
-        Invoice.objects.filter(owner=_owner(request)), public_id=invoice_id
+        Invoice.objects.filter(owner=request_user(request, User)), public_id=invoice_id
     )
     return protected_file_response(invoice.document, filename="invoice.pdf")
 ```

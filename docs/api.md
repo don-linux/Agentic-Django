@@ -138,7 +138,7 @@ def things_list(
     ordering: ThingOrdering = "-created_at",
 ) -> QuerySet[Thing]:
     return thing_list(
-        user=_caller(request),
+        user=request_user(request, User),
         where=filters.get_filter_expression(),
         ordering=ordering,
     )
@@ -458,7 +458,9 @@ ItemIdPath = PathEx[UUID, P(alias="id")]  # see Paths above
 def items_retrieve(
     request: HttpRequest, response: HttpResponse, item_id: ItemIdPath
 ) -> Item:
-    item = get_object_or_404(item_list(user=_owner(request)), public_id=item_id)
+    item = get_object_or_404(
+        item_list(user=request_user(request, User)), public_id=item_id
+    )
     response["ETag"] = item_etag(item)
     return item
 
@@ -475,7 +477,9 @@ def items_partial_update(
     item_id: ItemIdPath,
     body: ItemUpdateIn,
 ) -> Item:
-    item = get_object_or_404(item_list(user=_owner(request)), public_id=item_id)
+    item = get_object_or_404(
+        item_list(user=request_user(request, User)), public_id=item_id
+    )
     item = item_update(
         item=item, if_match=request.headers.get("If-Match"), name=body.name
     )

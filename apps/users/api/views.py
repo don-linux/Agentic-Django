@@ -8,7 +8,6 @@ from typing import Any
 from typing import Final
 from uuid import UUID
 
-from django.http import Http404
 from django.http import HttpRequest
 from django.urls import reverse
 from ninja import BodyEx
@@ -23,7 +22,9 @@ from pydantic_core import PydanticKnownError
 
 from apps.users.models import User
 from apps.users.selectors import user_list
+from apps.users.selectors import user_visible
 from apps.users.services import user_update
+from core.api.auth import request_user
 from core.api.pagination import LimitPageNumberPagination
 from core.api.responses import LIST_ERRORS
 from core.api.responses import LOOKUP_ERRORS
@@ -86,30 +87,6 @@ class UserUpdateIn(InputSchema):
         return value
 
 
-def _visible_user(request: HttpRequest, public_id: UUID) -> User:
-    # Called by the view, after Ninja has validated the path, the query and the
-    # body together: an invalid request is a 400 whether or not the user exists.
-    current = request.user
-    if (
-        not current.is_authenticated
-        or current.pk is None
-        or not isinstance(current, User)
-    ):
-        raise Http404
-    user = user_list(user=current).filter(public_id=public_id).first()
-    if user is None:
-        raise Http404
-    return user
-
-
-def _current_user(request: HttpRequest) -> User:
-    # API_AUTH only lets authenticated users through; narrow AnonymousUser away.
-    user = request.user
-    if not isinstance(user, User):
-        raise Http404
-    return user
-
-
 PublicUserId = Annotated[
     UUID,
     WithJsonSchema(
@@ -150,14 +127,7 @@ def _apply_update(user: User, data: dict[str, Any]) -> User:
 )
 @paginate(LimitPageNumberPagination)
 def users_list(request: HttpRequest) -> QuerySet[User]:
-    current = request.user
-    if (
-        not current.is_authenticated
-        or current.pk is None
-        or not isinstance(current, User)
-    ):
-        return User.objects.none()
-    return user_list(user=current)
+    return user_list(user=request_user(request, User))
 
 
 @router.get(
@@ -169,7 +139,7 @@ def users_list(request: HttpRequest) -> QuerySet[User]:
     summary="Retrieve the current user",
 )
 def users_me_retrieve(request: HttpRequest) -> User:
-    return _current_user(request)
+    return request_user(request, User)
 
 
 @router.patch(
@@ -181,7 +151,9 @@ def users_me_retrieve(request: HttpRequest) -> User:
     summary="Partially update the current user",
 )
 def users_me_partial_update(request: HttpRequest, body: UserPatchBody) -> User:
-    return _apply_update(_current_user(request), body.model_dump(exclude_unset=True))
+    return _apply_update(
+        request_user(request, User), body.model_dump(exclude_unset=True)
+    )
 
 
 @router.get(
@@ -193,7 +165,7 @@ def users_me_partial_update(request: HttpRequest, body: UserPatchBody) -> User:
     summary="Retrieve a user",
 )
 def users_retrieve(request: HttpRequest, user_id: UserIdPath) -> User:
-    return _visible_user(request, user_id)
+    return user_visible(user=request_user(request, User), public_id=user_id)
 
 
 @router.patch(
@@ -209,5 +181,5 @@ def users_partial_update(
     user_id: UserIdPath,
     body: UserPatchBody,
 ) -> User:
-    user = _visible_user(request, user_id)
+    user = user_visible(user=request_user(request, User), public_id=user_id)
     return _apply_update(user, body.model_dump(exclude_unset=True))

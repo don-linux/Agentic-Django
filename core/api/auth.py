@@ -10,6 +10,8 @@ from typing import override
 from allauth.headless.contrib.ninja.security import (
     XSessionTokenAuth as AllauthXSessionTokenAuth,
 )
+from django.contrib.auth.base_user import AbstractBaseUser
+from django.http import Http404
 from ninja.errors import AuthenticationError
 from ninja.errors import AuthorizationError
 from ninja.security import SessionAuth
@@ -102,3 +104,18 @@ def staff_docs_required(
         return view(request, *args, **kwargs)
 
     return wrapped
+
+
+def request_user[U: AbstractBaseUser](request: HttpRequest, model: type[U]) -> U:
+    """The authenticated caller of an operation, as the project's user model.
+
+    API_AUTH refuses an anonymous request with 401 before the view runs, but
+    request.user is still typed as the user model or AnonymousUser. This
+    narrows it once, without cast(): views call request_user(request, User).
+    An anonymous caller of an operation with auth=None is a 404, like an
+    object the caller cannot see.
+    """
+    user = request.user
+    if not isinstance(user, model):
+        raise Http404
+    return user

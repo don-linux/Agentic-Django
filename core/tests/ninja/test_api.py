@@ -72,12 +72,14 @@ def test_object_does_not_exist_maps_to_404_json() -> None:
         msg = "User matching query does not exist."
         raise User.DoesNotExist(msg)
 
-    # Ninja does not catch Model.DoesNotExist by default; our handler maps Http404.
-    # A 404 never repeats the exception's message, which may name a model.
+    # Ninja does not catch Model.DoesNotExist; core.api.exceptions maps it, and
+    # Http404, to 404. A 404 never repeats the exception's message, which may
+    # name a model.
     def raises_404() -> None:
         msg = "No User matches the given query."
         raise Http404(msg)
 
-    response = _client(raises_404).get("/test/")
-    assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"code": "not_found", "detail": "Not Found"}
+    for raiser in (raises, raises_404):
+        response = _client(raiser).get("/test/")
+        assert response.status_code == HTTPStatus.NOT_FOUND
+        assert response.json() == {"code": "not_found", "detail": "Not Found"}

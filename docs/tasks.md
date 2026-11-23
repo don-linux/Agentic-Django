@@ -225,6 +225,7 @@ from ninja.pagination import paginate
 from apps.reports.selectors import report_run_list
 from apps.reports.services import report_request
 from apps.users.models import User
+from core.api.auth import request_user
 from core.api.pagination import LimitPageNumberPagination
 from core.api.responses import LIST_ERRORS
 from core.api.responses import WRITE_ERRORS
@@ -238,13 +239,6 @@ if TYPE_CHECKING:
 router = Router(tags=["reports"])
 
 
-def _owner(request: HttpRequest) -> User:
-    # API_AUTH lets only authenticated users through; narrow AnonymousUser away.
-    if not isinstance(request.user, User):
-        raise Http404
-    return request.user
-
-
 @router.get(
     "/",
     response={200: list[ReportRunOut], **LIST_ERRORS},
@@ -253,7 +247,7 @@ def _owner(request: HttpRequest) -> User:
 )
 @paginate(LimitPageNumberPagination)
 def reports_list(request: HttpRequest) -> QuerySet[ReportRun]:
-    return report_run_list(user=_owner(request))
+    return report_run_list(user=request_user(request, User))
 
 
 @router.post(
@@ -265,7 +259,7 @@ def reports_list(request: HttpRequest) -> QuerySet[ReportRun]:
 def reports_create(
     request: HttpRequest, response: HttpResponse, body: ReportRunIn
 ) -> Any:
-    report = report_request(user=_owner(request), month=body.month)
+    report = report_request(user=request_user(request, User), month=body.month)
     # 202: accepted, not done. The client polls Location until the status is
     # "done" or "failed".
     response["Location"] = request.build_absolute_uri(
