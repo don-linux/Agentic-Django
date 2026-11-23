@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from math import ceil
 from typing import Any
+from typing import override
 from urllib.parse import parse_qs
 from urllib.parse import urlencode
 from urllib.parse import urlsplit
@@ -120,6 +121,7 @@ class LimitPageNumberPagination(PageNumberPagination):
             return queryset.count()
         return len(queryset)
 
+    @override
     async def apaginate_queryset(
         self,
         queryset: QuerySet,
@@ -132,6 +134,7 @@ class LimitPageNumberPagination(PageNumberPagination):
         msg = "LimitPageNumberPagination supports sync views only."
         raise NotImplementedError(msg)
 
+    @override
     def paginate_queryset(
         self,
         queryset: QuerySet,
@@ -210,6 +213,7 @@ class CachedCountPaginatorCount:
 class CachedCountPageNumberPagination(LimitPageNumberPagination):
     """Page numbers with the total cached for a minute (opt-in, large tables)."""
 
+    @override
     def count_items(self, queryset: QuerySet) -> int:
         if not isinstance(queryset, QuerySet):
             return len(queryset)

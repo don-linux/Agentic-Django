@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from http import HTTPStatus
 from typing import TYPE_CHECKING
+from typing import override
 
 import pytest
 from django.core.exceptions import PermissionDenied
@@ -122,9 +123,11 @@ class _RefusingThrottle(BaseThrottle):
     def __init__(self, seconds: float) -> None:
         self.seconds = seconds
 
+    @override
     def allow_request(self, request: HttpRequest) -> bool:
         return False
 
+    @override
     def wait(self) -> float:
         return self.seconds
 

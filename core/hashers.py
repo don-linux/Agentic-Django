@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import override
+
 from django.conf import settings
 from django.contrib.auth.hashers import (
     Argon2PasswordHasher as DjangoArgon2PasswordHasher,
@@ -19,13 +21,16 @@ class Argon2PasswordHasher(DjangoArgon2PasswordHasher):
     algorithm = "argon2"
 
     @property
+    @override
     def time_cost(self) -> int:  # type: ignore[override]  # pyright: ignore[reportIncompatibleVariableOverride]
         return settings.ARGON2_TIME_COST
 
     @property
+    @override
     def memory_cost(self) -> int:  # type: ignore[override]  # pyright: ignore[reportIncompatibleVariableOverride]
         return settings.ARGON2_MEMORY_COST_KIB
 
     @property
+    @override
     def parallelism(self) -> int:  # type: ignore[override]  # pyright: ignore[reportIncompatibleVariableOverride]
         return settings.ARGON2_PARALLELISM

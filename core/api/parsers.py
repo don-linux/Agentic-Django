@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import override
 
 from django.core.exceptions import RequestDataTooBig
 from django.core.exceptions import TooManyFieldsSent
@@ -28,6 +29,7 @@ class JSONParser(Parser):
     docs/api.md#error-codes. Source: django-ninja 1.8.0 ninja/parser.py.
     """
 
+    @override
     def parse_body(self, request: HttpRequest) -> dict[str, Any]:
         # Public Parser hook, after authentication and path validation. Ninja
         # deliberately does not inspect Content-Type (guide/parsers/).

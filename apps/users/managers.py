@@ -3,6 +3,7 @@ from __future__ import annotations
 import unicodedata
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import override
 
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.hashers import make_password
@@ -22,6 +23,7 @@ USER_DELETE_BLOCKED = (
 
 
 class UserQuerySet(QuerySet["User"]):
+    @override
     def delete(self) -> tuple[int, dict[str, int]]:
         raise ProtectedError(USER_DELETE_BLOCKED, set(self))
 
@@ -36,9 +38,11 @@ class UserManager(BaseUserManager["User"]):
 
     use_in_migrations = True
 
+    @override
     def get_queryset(self) -> UserQuerySet:
         return UserQuerySet(self.model, using=self._db)
 
+    @override
     @classmethod
     def normalize_email(cls, email: str | None) -> str:
         """

@@ -15,6 +15,7 @@ import uuid
 from contextvars import ContextVar
 from http import HTTPStatus
 from typing import TYPE_CHECKING
+from typing import override
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
@@ -155,6 +156,7 @@ class ApiCommonMiddleware(CommonMiddleware):
     "/" is a 404. See docs/api.md#paths.
     """
 
+    @override
     def should_redirect_with_slash(self, request: HttpRequest) -> bool:
         if request.path_info.startswith("/api/"):
             return False

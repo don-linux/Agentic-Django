@@ -2,6 +2,7 @@ import uuid
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import ClassVar
+from typing import override
 
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import PermissionsMixin
@@ -92,13 +93,16 @@ class User(AbstractBaseUser, PermissionsMixin):
             UniqueConstraint(Lower("email"), name="users_user_email_ci_uniq"),
         ]
 
+    @override
     def clean(self) -> None:
         super().clean()
         self.email = self.__class__.objects.normalize_email(self.email)
 
+    @override
     def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
         raise ProtectedError(USER_DELETE_BLOCKED, {self})
 
+    @override
     def save(self, *args: Any, **kwargs: Any) -> None:
         # Every write path (admin, ORM, allauth) stores the key that the unique
         # constraint and the login lookup use.

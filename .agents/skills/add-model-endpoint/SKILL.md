@@ -233,7 +233,7 @@ python manage.py export_openapi_schema --settings config.settings.test --api con
 scripts/check.sh
 ```
 
-`scripts/check.sh` runs ruff (with the `ANN` annotation rules), the `cache.clear()` guard, mypy, pyright, the import contracts, django-upgrade, the OpenAPI drift check, `makemigrations --check`, and pytest with coverage. Both type checkers must pass with no new suppression, pyright in strict mode on `apps/<app>/api/`; when one is unavoidable, scope it to the rule and record it in [typing.md#upstream-workarounds](../../../docs/typing.md#upstream-workarounds). After a dependency change: `uv lock`, then `uv sync --locked` in the container. Commits follow Conventional Commits in English (`feat:`, `fix:`, `test:`, `docs:`), imperative mood.
+`scripts/check.sh` runs ruff (with the `ANN` annotation rules), the `cache.clear()` guard, mypy, pyright, the import contracts, django-upgrade, the OpenAPI drift check, `makemigrations --check`, and pytest with coverage. Both type checkers must pass with no new suppression, pyright in strict mode on `apps/<app>/api/`, and every method that overrides a base class's (`save`, `clean`, admin hooks) carries `@override` from `typing` ([typing.md#overrides](../../../docs/typing.md#overrides)); when one is unavoidable, scope it to the rule and record it in [typing.md#upstream-workarounds](../../../docs/typing.md#upstream-workarounds). After a dependency change: `uv lock`, then `uv sync --locked` in the container. Commits follow Conventional Commits in English (`feat:`, `fix:`, `test:`, `docs:`), imperative mood.
 
 ## When the endpoint also enqueues work
 

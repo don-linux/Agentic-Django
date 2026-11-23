@@ -17,6 +17,7 @@ import uuid
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import override
 
 from ninja import Router
 from ninja.testing import TestAsyncClient
@@ -38,10 +39,12 @@ class RecordingThrottle(ScopedThrottle):
         self.name = name
         super().__init__("1/min", scope=f"pin-{name}-{uuid.uuid4().hex}")
 
+    @override
     def allow_request(self, request: HttpRequest) -> bool:
         self.events.append(("allow_request", self.name, threading.get_ident()))
         return super().allow_request(request)
 
+    @override
     def wait(self) -> float | None:
         self.events.append(("wait", self.name, threading.get_ident()))
         return super().wait()

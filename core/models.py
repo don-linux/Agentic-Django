@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import override
 
 from django.db import models
 from django.db.models.functions import Now
@@ -42,6 +43,7 @@ class BaseQuerySet[M: models.Model](models.QuerySet[M]):
     See docs/ARCHITECTURE.md#layers.
     """
 
+    @override
     def update(self, **kwargs: Any) -> int:
         fields = {field.name for field in self.model._meta.concrete_fields}
         if "updated_at" in fields and "updated_at" not in kwargs:
@@ -74,6 +76,7 @@ class BaseModel(PublicIdModel):
     class Meta(PublicIdModel.Meta):
         abstract = True
 
+    @override
     def save(self, *args: Any, **kwargs: Any) -> None:
         update_fields = kwargs.get("update_fields")
         if update_fields is not None:

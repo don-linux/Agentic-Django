@@ -3,6 +3,7 @@ from __future__ import annotations
 import secrets
 from typing import TYPE_CHECKING
 from typing import Any
+from typing import override
 
 from factory.django import DjangoModelFactory
 from factory.faker import Faker
@@ -29,12 +30,14 @@ class UserFactory(DjangoModelFactory[User]):
 
         def __new__(cls, *args: Any, **kwargs: Any) -> User: ...  # type: ignore[misc]
 
+    @override
     @classmethod
     def _adjust_kwargs(cls, **kwargs):
         if "email" in kwargs and isinstance(kwargs["email"], str):
             kwargs["email"] = User.objects.normalize_email(kwargs["email"])
         return kwargs
 
+    @override
     @classmethod
     def _build(cls, model_class: type[User], *args: Any, **kwargs: Any) -> User:
         # factory-boy's @post_generation calls the hook with the model instance
@@ -47,6 +50,7 @@ class UserFactory(DjangoModelFactory[User]):
         _apply_password(user, password, save=False)
         return user
 
+    @override
     @classmethod
     def _create(cls, model_class: type[User], *args: Any, **kwargs: Any) -> User:
         password = kwargs.pop("password", None)

@@ -11,6 +11,7 @@ from __future__ import annotations
 import uuid
 from collections import Counter
 from typing import Any
+from typing import override
 
 from django.core.management.base import BaseCommand
 from django.core.management.base import CommandError
@@ -31,6 +32,7 @@ class Command(BaseCommand):
         "from it, after confirming the user's email."
     )
 
+    @override
     def add_arguments(self, parser: Any) -> None:
         parser.add_argument("public_id", type=uuid.UUID)
         parser.add_argument(
@@ -47,6 +49,7 @@ class Command(BaseCommand):
             help="Do not prompt; --confirm must match the user's email.",
         )
 
+    @override
     def handle(self, *args: Any, **options: Any) -> None:
         try:
             user = User.objects.get(public_id=options["public_id"])

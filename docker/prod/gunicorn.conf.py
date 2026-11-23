@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import override
 
 
 def _int_env(name: str, default: int) -> int:
@@ -60,6 +61,7 @@ _PROBE_REQUESTS = ('"GET /health/ ', '"GET /health/live/ ')
 class SkipHealthAccessLog(logging.Filter):
     """Drop the readiness and liveness probes from the access log."""
 
+    @override
     def filter(self, record: logging.LogRecord) -> bool:
         message = record.getMessage()
         return not any(probe in message for probe in _PROBE_REQUESTS)
