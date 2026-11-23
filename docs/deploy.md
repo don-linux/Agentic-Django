@@ -35,6 +35,7 @@ One image runs the web process and the worker. Its name carries no release tag, 
 
 - Both stages of `docker/prod/Dockerfile` build on one `FROM ... AS base`, pinned by tag and digest, because Dependabot only updates the first `FROM` ([ci.md#image-pins](ci.md#image-pins)).
 - The image installs Debian security updates published since the base image was built and removes pip: nothing installs packages at runtime, and pip's vendored libraries would only add findings to the image scan.
+- A build that reuses its layer cache keeps the security updates of the build that first ran that `apt-get upgrade`. CI rebuilds the `runtime` stage on every run ([ci.md#docker-smoke](ci.md#docker-smoke)). On a server, `docker compose -f docker/prod/compose.yaml build --no-cache` picks up the updates published since.
 - `collectstatic` runs at build time with throwaway values that never reach the running container; they must still pass the production guards.
 - The release metadata (`APP_RELEASE` and the rest of `APP_*`) is declared after `collectstatic`, so a new value on every commit does not invalidate the cached layers above.
 

@@ -46,7 +46,9 @@ The step unsets the workflow's `POSTGRES_*` and `DJANGO_SETTINGS_MODULE` first: 
 
 ### Docker smoke
 
-- A fixed HIGH or CRITICAL vulnerability in an OS or Python package fails the build; bump the base image digest or the package to clear it.
+- A fixed HIGH or CRITICAL vulnerability in an OS or Python package fails the build.
+  - The image's `runtime` stage is built without its layer cache (`no-cache-filters`), so its `apt-get upgrade` installs the Debian security updates published that day. The `builder` stage keeps its cache.
+  - When the scan still fails, the fix is not in Debian yet, or the package is a Python one: bump the base image digest or the package to clear it.
 - A service cannot override its command, so the image's flags are appended, and the throwaway Valkey password is repeated in the steps that start django. The first container is left running for the next request.
 - A failed login must answer 400, never 500, and leave allauth's rate-limit counters in Valkey: a cache that failed open would also answer 400, and only the missing counters show it.
 - The same image runs the Celery worker with the production settings: it must reach the broker, answer the healthcheck's ping, run a task and log it as one JSON object. No request enqueued that task, so its task id stands in for the request id.
