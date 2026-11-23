@@ -117,7 +117,7 @@ When an advisory does not apply to this project, ignore that one advisory, never
 
 ## Dependabot
 
-Dependabot opens at most 5 pull requests per ecosystem each week, for versions at least 7 days old (`cooldown.default-days: 7` in `.github/dependabot.yml`); security updates ignore both the schedule and the cooldown. This 7-day cooldown applies only to Dependabot. Manual upgrades of this template may pin the latest stable release without waiting. Composite actions under `.github/actions/` need their own directory entry. The Python image gets patch updates only. Major PostgreSQL and Valkey upgrades are ignored: a major PostgreSQL needs a dump and restore, and a new Valkey may write data files the old one refuses to load, so changing the tag back does not undo it.
+Dependabot checks each ecosystem weekly and keeps at most 5 of its pull requests open, for versions at least 7 days old (`cooldown.default-days: 7` in `.github/dependabot.yml`); security updates ignore both the schedule and the cooldown. This 7-day cooldown applies only to Dependabot. Manual upgrades of this template may pin the latest stable release without waiting. Composite actions under `.github/actions/` need their own directory entry. The Python image gets patch updates only. Major PostgreSQL and Valkey upgrades are ignored: a major PostgreSQL needs a dump and restore, and a new Valkey may write data files the old one refuses to load, so changing the tag back does not undo it.
 
 What Dependabot skips (the [tool pins](#tool-pins), the service images in `ci.yml`, Python minor releases, PostgreSQL and Valkey majors, end-of-life dates), and everything after a long pause, is covered by the [maintain-django-template](../.agents/skills/maintain-django-template/SKILL.md) skill: a read-only audit first, then a tiered upgrade plan.
 
@@ -128,9 +128,13 @@ Dependabot does not bump these, so they move together, by hand:
 - uv: `.github/actions/setup-python-env`, both Dockerfiles (`COPY --from`, which Dependabot does not update; the image is pinned by tag and digest, so update both, from `docker buildx imagetools inspect ghcr.io/astral-sh/uv:<version>`) and the uv pre-commit hook. `core/tests/test_compose.py` fails when they differ. The same action sets Python 3.14 (`UV_PYTHON`) and caches the uv-managed Python.
 - gitleaks: the pre-commit hook and the version and checksum in `ci.yml`.
 - oasdiff: the version and checksum in `ci.yml` (`api-contract` job) and the command in [api.md#breaking-changes](api.md#breaking-changes).
+- pre-commit: `uvx pre-commit@<version>` in `ci.yml` and `uv tool install pre-commit==<version>` in [development.md#pre-commit](development.md#pre-commit).
+- lychee: `lycheeVersion` and the action SHA in `ci.yml`.
+- The Bruno CLI: `@usebruno/cli@<version>` in `ci.yml` and [development.md#bruno](development.md#bruno).
+- pip-audit: `uvx pip-audit==<version>` in `audit.yml` and [#audit](#audit).
 
-Dependabot does bump ruff and django-upgrade, but twice, in separate pull requests: the pre-commit hook and the `dev` group of `pyproject.toml`. Land both together; `core/tests/test_compose.py` fails while they differ.
+Dependabot does bump ruff and django-upgrade, but twice: the pre-commit hook in the pre-commit pull request, and the `dev` group of `pyproject.toml` in a pull request of its own (they are left out of the grouped `python` one). Merge the two together; `core/tests/test_compose.py` fails while they differ.
 
 ## Image pins
 
-Each Dockerfile builds every stage on its first `FROM`, the only one Dependabot updates ([deploy.md#image](deploy.md#image)). The service images in `ci.yml` (Postgres and Valkey) must match both compose files: Dependabot does not update service images in workflows, and `core/tests/test_compose.py` fails when they differ.
+Each Dockerfile builds every stage on its first `FROM`, the only one Dependabot updates ([deploy.md#image](deploy.md#image)). The service images in `ci.yml` (Postgres and Valkey) must match both compose files: Dependabot does not update service images in workflows, and `core/tests/test_compose.py` fails when they differ: a Dependabot pull request that bumps the Postgres or Valkey image stays red until the same tag is pushed to its branch for `ci.yml`.

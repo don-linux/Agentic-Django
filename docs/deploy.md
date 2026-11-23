@@ -25,6 +25,30 @@ Mail must work before anyone can sign up: production refuses to start until `DJA
 docker compose -f docker/prod/compose.yaml exec django python manage.py sendtestemail you@example.com
 ```
 
+## Managed PostgreSQL or Valkey
+
+The stack runs its own `postgres_db` and `valkey`. For a managed service instead, set `DATABASE_URL` or `VALKEY_URL` in `docker/prod/.env` ([environment/production.md](environment/production.md)), and add `docker/prod/compose.override.yaml`, which Compose reads next to `compose.yaml`, so the bundled services never start and nothing waits for them (Docker Compose 2.24 or later reads `!reset` and `!override`):
+
+```yaml
+services:
+  postgres_db:
+    profiles: [bundled]
+  valkey:
+    profiles: [bundled]
+  django:
+    depends_on: !reset []
+  celery_worker:
+    depends_on: !override
+      django:
+        condition: service_healthy
+  celery_beat:
+    depends_on: !override
+      django:
+        condition: service_healthy
+```
+
+Drop the lines of the service that stays bundled, and its `depends_on` entry comes back. Compose still reads the bundled services' variables, so keep `POSTGRES_DB`, `POSTGRES_USER`, a strong `POSTGRES_PASSWORD` and `VALKEY_PASSWORD` set; Django reads the password of a managed Valkey from `VALKEY_PASSWORD` too. Check the result with `docker compose -f docker/prod/compose.yaml -f docker/prod/compose.override.yaml config --services`.
+
 ## Uploads
 
 Uploads live outside the repository, in `DOCKER_PROD_DJANGO_UPLOADS_PATH` (default `/srv/project-name/uploads`), with `public` and `private` folders owned by uid 1000, the image's user. The `mkdir` and `chown` are in [Start](#start); the host proxy serves `public` ([Proxy](#proxy)), and [NEXT-STEPS.md#the-uploads-folder](NEXT-STEPS.md#the-uploads-folder) has the checklist.
@@ -89,7 +113,7 @@ The nginx configuration is in [NEXT-STEPS.md#nginx](NEXT-STEPS.md#nginx).
 
 ## TLS
 
-TLS ends at a proxy on the host (Caddy, nginx) in front of `127.0.0.1:8000`; the stack itself serves plain HTTP ([NEXT-STEPS.md#nginx](NEXT-STEPS.md#nginx)).
+TLS ends at a proxy on the host, in front of `127.0.0.1:8000`; the stack itself serves plain HTTP. [NEXT-STEPS.md#nginx](NEXT-STEPS.md#nginx) has the nginx configuration, which also serves private files through `X-Accel-Redirect` ([files.md](files.md)). With another proxy, such as Caddy, set `DJANGO_PRIVATE_MEDIA_ACCEL_REDIRECT_PREFIX=` (empty) in `docker/prod/.env`, since the image sets `/protected-media/`: `X-Accel-Redirect` is nginx's, and with no prefix Django streams private files itself.
 
 ## Worker
 

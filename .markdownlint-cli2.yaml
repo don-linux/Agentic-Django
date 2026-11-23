@@ -1,6 +1,6 @@
-# markdownlint-cli2 v0.24.2 (markdownlint v0.42.2).
-# Docs are long-line prose; .editorconfig only special-cases trailing
-# whitespace in Markdown. MD013 would fail 561 times on a wrap we do not want.
+# The version is the markdownlint-cli2 hook's rev in .pre-commit-config.yaml.
+# Docs are long-line prose, so MD013 (line length) is off; .editorconfig only
+# special-cases trailing whitespace in Markdown.
 # MD024 is siblings-only so reused recipe headings in docs/data.md are allowed.
 config:
   default: true

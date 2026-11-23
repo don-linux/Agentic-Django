@@ -4,16 +4,18 @@ The checklist after you copy this template, in order: personalize it, work on it
 
 ## After the copy
 
-1. **Personalize the placeholders.** Run the `personalize-django-template` skill. `project`, `Project`, `project-name`, `example.com` and `project_db` still appear in settings, Compose, email and the schema ([development.md#personalize](development.md#personalize)).
-2. **Bring the stack up**, with Docker or without it ([development/](development/README.md)). With Docker, the dev containers run as a non-root user, `django`, with `HOST_UID` and `HOST_GID` from `docker/dev/.env` (1000 by default). On Linux, if `id -u` or `id -g` prints something else, set them first. After changing them, or in a checkout whose old dev image ran as root, rebuild with `docker compose -f docker/dev/compose.yaml up -d --build` and give back the caches those root containers left ([with-docker.md#running-as-root](development/with-docker.md#running-as-root)).
-3. **Install the Git hooks** on the host ([development.md#pre-commit](development.md#pre-commit)).
-4. **Try the account flow.** Sign up, read the code in Mailpit, verify, and run the Bruno smoke requests after `seed_dev` ([development.md#accounts](development.md#accounts), [development.md#bruno](development.md#bruno)).
-5. **Write your domain invariants** in `AGENTS.md`, with the product owner, before creating domain apps.
+1. **Start the repository.** In a folder copy, with no `.git`, run `git init -b main`: CI runs on pushes to `main`, and the Git hooks need a repository.
+2. **Personalize the placeholders.** Run the `personalize-django-template` skill. `project`, `Project`, `project-name`, `example.com` and `project_db` still appear in settings, Compose, email and the schema ([development.md#personalize](development.md#personalize)).
+3. **Bring the stack up**, with Docker or without it ([development/](development/README.md)). With Docker, the dev containers run as a non-root user, `django`, with `HOST_UID` and `HOST_GID` from `docker/dev/.env` (1000 by default). On Linux, if `id -u` or `id -g` prints something else, set them first. After changing them, or in a checkout whose old dev image ran as root, rebuild with `docker compose -f docker/dev/compose.yaml up -d --build` and give back the caches those root containers left ([with-docker.md#running-as-root](development/with-docker.md#running-as-root)).
+4. **Install the Git hooks** on the host ([development.md#pre-commit](development.md#pre-commit)).
+5. **Try the account flow.** Sign up, read the code in Mailpit, verify, and run the Bruno smoke requests after `seed_dev` ([development.md#accounts](development.md#accounts), [development.md#bruno](development.md#bruno)).
+6. **Write your domain invariants** in `AGENTS.md`, with the product owner, before creating domain apps.
 
 ## CI
 
 1. **Push and let CI run.** `.github/workflows/ci.yml` runs on pull requests and pushes to `main`. It needs no GitHub Actions secrets: the `secrets` job is a gitleaks scan of the history ([ci.md](ci.md)). Never commit `docker/prod/.env`.
 2. **Protect `main`.** Mark the CI jobs as required checks ([ci.md#required-checks](ci.md#required-checks)).
+3. **Turn on Dependabot security updates** in the repository settings (Code security): `.github/dependabot.yml` configures only the version updates ([ci.md#dependabot](ci.md#dependabot)).
 
 ## Before the first production `up`
 
@@ -174,7 +176,7 @@ sudo mkdir -p /srv/project-name/uploads/public /srv/project-name/uploads/private
 sudo chown -R 1000:1000 /srv/project-name/uploads
 ```
 
-It is a bind mount of a host folder, not a named volume: a `git clean -fdx`, a fresh clone or an `rsync --delete` deploy never touches it, and the host nginx can read it (it cannot read `/var/lib/docker/volumes`). Compose refuses to start if `DOCKER_PROD_DJANGO_UPLOADS_PATH` is unset or the folder does not exist, and the container exits with the `chown` command to run if it cannot write there. Commands that read the compose file without the stack's environment need it too: `docker compose -f docker/prod/compose.yaml --env-file docker/prod/.env config`.
+It is a bind mount of a host folder, not a named volume: a `git clean -fdx`, a fresh clone or an `rsync --delete` deploy never touches it, and the host nginx can read it (it cannot read `/var/lib/docker/volumes`). Compose refuses to start if `DOCKER_PROD_DJANGO_UPLOADS_PATH` is unset or the folder does not exist, and the container exits with the `chown` command to run if it cannot write there. Compose reads `docker/prod/.env` from the compose file's folder, so every `docker compose -f docker/prod/compose.yaml` command, `config` included, sees the path.
 
 Modes and the public/private layout: [files.md#permissions](files.md#permissions), [files.md#public-or-private](files.md#public-or-private).
 
@@ -190,7 +192,7 @@ Modes and the public/private layout: [files.md#permissions](files.md#permissions
 - `DJANGO_DEFAULT_FROM_EMAIL`, an address on a domain verified with your provider.
 - `FRONTEND_URL`, the real frontend, used in email links.
 - `DJANGO_ALLOWED_HOSTS`, the API host.
-- `DJANGO_CSRF_TRUSTED_ORIGINS` and `CORS_ALLOWED_ORIGINS`, the frontend origin (the same origin as `FRONTEND_URL`), not the API host.
+- `CORS_ALLOWED_ORIGINS`, the frontend's origin (the same origin as `FRONTEND_URL`), not the API host. `DJANGO_CSRF_TRUSTED_ORIGINS` only for a frontend that writes with the session cookie; API clients send `X-Session-Token`, which CSRF does not apply to.
 - `DJANGO_TRUSTED_PROXY_COUNT`, the number of proxies that append to `X-Forwarded-For` (default `1`, for a single nginx).
 
 To rotate `DJANGO_SECRET_KEY` later without signing everyone out, see [security.md#rotating-secret_key](security.md#rotating-secret_key).
@@ -268,7 +270,7 @@ To change a value, edit that file and recreate the containers; Compose recreates
 
 ```bash
 docker compose -f docker/dev/compose.yaml up -d
-docker compose -f docker/prod/compose.yaml --env-file docker/prod/.env up -d
+docker compose -f docker/prod/compose.yaml up -d
 ```
 
 A change to `HOST_UID`, `HOST_GID`, `DOCKER_PROD_USER_UID`, `DOCKER_PROD_USER_GID` or `DOCKER_PROD_UV_EXTRAS` also needs `--build`. Every variable, with its purpose, default and file: [environment/](environment/README.md).

@@ -7,9 +7,9 @@ Two type checkers run on every change, and neither replaces the other. pyright i
 Inside the dev container, run `scripts/check.sh lint`. On the host, or from CI, use the project environment through uv:
 
 ```bash
-uv run scripts/check.sh lint                               # every check below, as CI runs it
+uv run --env-file .env scripts/check.sh lint               # every check below, as CI runs it
 uv run pyright                                             # pyright alone, on the whole repository
-uv run mypy .                                              # mypy with the django-stubs plugin
+uv run --env-file .env mypy .                              # mypy with the django-stubs plugin (it imports the settings)
 ```
 
 - `pyright` is installed as `pyright[nodejs]`. The `nodejs` extra pulls `nodejs-wheel-binaries`, pinned in `uv.lock`, and pyright-python uses it before anything else, so Node.js is never downloaded at run time. `[tool.pyright]` in `pyproject.toml` sets `standard` mode and no `include` or `exclude`. pyright's defaults already skip hidden directories (`.venv`, `.agents`), `__pycache__` and `node_modules`. The API layer runs in `strict` mode ([below](#strict-api)).

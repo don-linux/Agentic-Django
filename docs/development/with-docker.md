@@ -1,6 +1,6 @@
 # Development with Docker
 
-The dev stack in `docker/dev/compose.yaml`: Django, a Celery worker, Postgres, Valkey and Mailpit. The Dev Container in `.devcontainer/` reuses it.
+The dev stack in `docker/dev/compose.yaml`: Django, a Celery worker, Postgres, Valkey and Mailpit, and Celery beat with the `beat` profile. The Dev Container in `.devcontainer/` reuses it.
 
 ## Start the stack
 
@@ -33,7 +33,13 @@ docker compose -f docker/dev/compose.yaml restart celery_worker
 docker compose -f docker/dev/compose.yaml logs -f celery_worker
 ```
 
-Compose sets `DJANGO_SETTINGS_MODULE=config.settings.local` only on this service, because `config/celery.py` defaults to production. It starts Celery only once `migrate --check` finds nothing unapplied, so no task runs on an old schema; until then it logs `waiting for migrations`. It never migrates itself, because two `migrate` runs at once would race: the django service applies them on start, and in the Dev Container `postStartCommand` does. After you add a migration, run `migrate` before restarting the worker.
+Compose sets `DJANGO_SETTINGS_MODULE=config.settings.local` only on the Celery services, because `config/celery.py` defaults to production. It starts Celery only once `migrate --check` finds nothing unapplied, so no task runs on an old schema; until then it logs `waiting for migrations`. It never migrates itself, because two `migrate` runs at once would race: the django service applies them on start, and in the Dev Container `postStartCommand` does. After you add a migration, run `migrate` before restarting the worker.
+
+Periodic tasks need `celery_beat`, which starts only with its profile, as in production ([../tasks.md](../tasks.md#periodic-tasks-beat)). Run one: two beats send every periodic task twice.
+
+```bash
+docker compose -f docker/dev/compose.yaml --profile beat up -d celery_beat
+```
 
 ## Valkey
 
@@ -41,7 +47,7 @@ The development Valkey is throwaway: no persistence and no password, with the sa
 
 ## Dev Container
 
-Open the folder in the Dev Container to work inside the same Compose stack. Before it starts, `initializeCommand` copies `.env.example` to `.env` and `docker/dev/.env.example` to `docker/dev/.env` on the host, each only if it is missing, so a fresh clone opens without manual steps and an existing file is never overwritten. The container stays idle until you start the VS Code launch configuration or run `python manage.py runserver 0.0.0.0:8000`. `.devcontainer/devcontainer.json` keeps the image's command (`overrideCommand: false`), runs `python manage.py migrate --noinput` each time the container starts (`postStartCommand`), and connects as `django` (`remoteUser`; [Running as root](#running-as-root)).
+Open the folder in the Dev Container to work inside the same Compose stack. Before it starts, `initializeCommand` copies `.env.example` to `.env` and `docker/dev/.env.example` to `docker/dev/.env` on the host, each only if it is missing, so a fresh clone opens without manual steps and an existing file is never overwritten. `.devcontainer/compose.yaml` replaces the django command with `sleep infinity`, so the container stays idle until you start the VS Code launch configuration or run `python manage.py runserver 0.0.0.0:8000`. `.devcontainer/devcontainer.json` keeps that Compose command (`overrideCommand: false`), runs `python manage.py migrate --noinput` each time the container starts (`postStartCommand`), and connects as `django` (`remoteUser`; [Running as root](#running-as-root)).
 
 ## Running as root
 

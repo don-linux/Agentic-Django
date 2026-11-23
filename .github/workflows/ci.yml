@@ -61,7 +61,10 @@ jobs:
 
       - uses: ./.github/actions/setup-python-env
 
+      # gitleaks scans staged changes only; the secrets job scans the history.
       - name: Run pre-commit hooks
+        env:
+          SKIP: gitleaks
         run: uvx pre-commit@4.7.0 run --all-files --show-diff-on-failure
 
       - name: Lint

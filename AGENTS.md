@@ -8,8 +8,8 @@ Mandatory rules and links only. The "why" is in `docs/`, and the reasons for eac
 
 ## Init
 
-- Fresh folder copy: `git init` first.
-- If `pyproject.toml` still says `name = "project"`, run [.agents/skills/personalize-django-template](.agents/skills/personalize-django-template/SKILL.md) before anything else.
+- Fresh folder copy: `git init -b main` first (CI runs on `main`).
+- If `pyproject.toml` still says `name = "project"`, run [.agents/skills/personalize-django-template](.agents/skills/personalize-django-template/SKILL.md) before anything else, unless the task is to change the template itself.
 - At kickoff, fill **Domain invariants** below with the product's rules, before adding domain apps. Do not create a glossary file.
 
 ## Language
@@ -18,7 +18,7 @@ All shipped repository text is English. Surface list: [.agents/rules/only-englis
 
 This rule is proactive. When the user names a domain concept in Spanish or another language, translate it yourself into an English identifier before writing code, without asking for the English form and without a glossary. Follow existing models: short PascalCase types, snake_case fields, no filler such as `Model` or `Data` on the type. Example: "documentos casa" becomes `HouseDocument` (not `DocumentosCasa`, `HouseDocumentsModel`, or `Documentos_casa`). If several translations fit, pick one, use it consistently, and mention the choice when reporting the change. Do not add `docs/glossary.md`.
 
-Do not translate or rename the Spanish-by-design exceptions: the whole `bruno/` collection (names and console messages; URLs, JSON keys, and headers stay English), and [.agents/skills/personalize-django-template/SKILL.md](.agents/skills/personalize-django-template/SKILL.md). The conversation with the user, and planning write-ups, may be in another language.
+Do not translate or rename the Spanish-by-design exceptions: the `bruno/` collection's request and folder names and console messages (URLs, JSON keys, and headers stay English; the personalize skill sets the collection name and the environment URLs), and [.agents/skills/personalize-django-template/SKILL.md](.agents/skills/personalize-django-template/SKILL.md). The conversation with the user, and planning write-ups, may be in another language.
 
 ## Layout
 
@@ -30,6 +30,8 @@ Do not translate or rename the Spanish-by-design exceptions: the whole `bruno/` 
 - `.agents/skills/add-model-endpoint` — model, cached selector, invalidation, schemas, Ninja operations, router, error tests, Bruno request.
 - `.agents/skills/maintain-django-template` — read-only audit of outdated dependencies, images, hooks, actions, tool pins and end-of-life dates, then a tiered upgrade plan; upgrades only after approval.
 - Optional `.agents/skills/graphify`: local use only; see **Graphify**.
+
+`.claude/skills` links to `.agents/skills`, so Claude Code finds the same skills.
 
 ## Commands
 
@@ -121,4 +123,4 @@ Commits follow Conventional Commits in English (`feat:`, `fix:`, `test:`, `docs:
 
 ## Graphify
 
-Optional local tool; it complements [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and does not replace it. Run with `--code-only` or `GRAPHIFY_BACKEND=none`. No Graphify Cloud, no `--strict`. Output: `graphify-out/` (gitignored). [docs/development.md](docs/development.md#graphify)
+Optional local tool; it complements [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and does not replace it. Run with `--code-only` and `GRAPHIFY_BACKEND=none`. No Graphify Cloud, no `--strict`. Output: `graphify-out/` (gitignored). [docs/development.md](docs/development.md#graphify)

@@ -33,7 +33,7 @@ From `docker/prod/.env.example`, the only production env file. Compose reads it 
 | `DJANGO_ADMIN_URL` | Yes | | Path of the admin, hard to guess, with a trailing slash, not under `api/`, `_allauth/`, `static/`, `media/` or `health/`. |
 | `DJANGO_ALLOWED_HOSTS` | Yes | | The API host. |
 | `DJANGO_TIME_ZONE` | No | `UTC` | Display and date-boundary zone; data is stored in UTC. |
-| `DJANGO_CSRF_TRUSTED_ORIGINS` | No | Empty | The frontend's origin (`https://host`), not the API host; required for a browser frontend, empty suits token-only or same-origin clients. |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | No | Empty | The origin (`https://host`) of a frontend that writes with the session cookie, not the API host. API clients send `X-Session-Token`, which CSRF does not apply to, and the admin is same-origin, so it usually stays empty. |
 | `DJANGO_MEDIA_URL` | No | `/media/` | URL prefix of public uploads. |
 
 ### Security
@@ -54,7 +54,7 @@ From `docker/prod/.env.example`, the only production env file. Compose reads it 
 | `POSTGRES_DB` | Yes | | Database name; Compose stops when it is unset or empty. |
 | `POSTGRES_USER` | Yes | | Database role. |
 | `POSTGRES_PASSWORD` | Yes | | The role's password; never empty. |
-| `DATABASE_URL` | No | | A full database URL instead of the `POSTGRES_*` values, for a database outside this compose file. |
+| `DATABASE_URL` | No | | A full database URL instead of the `POSTGRES_*` values, for a database outside this compose file ([deploy.md#managed-postgresql-or-valkey](../deploy.md#managed-postgresql-or-valkey)). |
 | `CONN_MAX_AGE` | No | `60` | Seconds a connection is reused; `0` opens one per request. |
 | `CONN_HEALTH_CHECKS` | No | `True` | Check a reused connection first, so a Postgres restart does not fail requests. |
 | `POSTGRES_CONNECT_TIMEOUT` | No | `5` | Seconds to wait for a connection (`/health/` then answers 503). |
@@ -72,7 +72,7 @@ From `docker/prod/.env.example`, the only production env file. Compose reads it 
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
 | `VALKEY_PASSWORD` | Yes | | Password of the Valkey service, 32 characters or more; never inside `VALKEY_URL`. |
-| `VALKEY_URL` | No | `redis://valkey:6379` | Only for a managed Valkey: its URL without credentials or a database number; `rediss://` must end with `?ssl_cert_reqs=required`. Compose passes the default when it is unset; the production settings themselves require a value. |
+| `VALKEY_URL` | No | `redis://valkey:6379` | Only for a managed Valkey ([deploy.md#managed-postgresql-or-valkey](../deploy.md#managed-postgresql-or-valkey)): its URL without credentials or a database number; `rediss://` must end with `?ssl_cert_reqs=required`. Compose passes the default when it is unset; the production settings themselves require a value. |
 | `VALKEY_MAXMEMORY` | No | `256mb` | Memory Valkey uses before it evicts cache entries. |
 | `DOCKER_PROD_VALKEY_MEM_LIMIT` | No | `512m` | Memory limit of the Valkey container, about twice `VALKEY_MAXMEMORY`. |
 | `VALKEY_CONNECT_TIMEOUT` | No | `1` | Seconds to wait for a connection. |

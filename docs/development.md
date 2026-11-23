@@ -8,7 +8,7 @@ Run the stack in Docker ([development/with-docker.md](development/with-docker.md
 
 ## Personalize
 
-The template uses generic placeholders. Ask your AI agent to run the `personalize-django-template` skill: it asks for the project name, Python slug, Docker name, domain, database and admin, then renames every placeholder.
+The template uses generic placeholders. Ask your AI agent to run the `personalize-django-template` skill: it asks for the project name, Python slug, Docker name, domain, database, admin, time zone and package author, then renames every placeholder.
 
 | Placeholder | What it is |
 | --- | --- |
@@ -23,8 +23,8 @@ It also runs `uv lock`, because the lock file stores the project name. Secrets, 
 
 Without an agent, follow the same order by hand ([the skill](../.agents/skills/personalize-django-template/SKILL.md) lists every file):
 
-1. `project`: the Python slug in `pyproject.toml` (`name`), `bruno/opencollection.yml` (`info.name`) and the `DJANGO_CACHE_KEY_PREFIX` default in `config/settings/base.py`.
-2. `Project`: `NINJA_TITLE` and `NINJA_DESCRIPTION` in `config/settings/base.py`, and the email variables of `.env.example` and `docker/prod/.env.example`. Leave the code defaults in `config/settings/base.py` and `config/settings/test.py` as they are.
+1. `project`: the Python slug in `pyproject.toml` (`name`), `bruno/opencollection.yml` (`info.name`), the `DJANGO_CACHE_KEY_PREFIX` default in `config/settings/base.py` and its row in `docs/environment/production.md`, and the example key `project:1:health:ping` in `docs/ARCHITECTURE.md`.
+2. `Project`: `NINJA_TITLE` and `NINJA_DESCRIPTION` in `config/settings/base.py`, and the email variables of `.env.example` and `docker/prod/.env.example`. Leave the code defaults in `config/settings/env.py` and `config/settings/test.py` as they are.
 3. `project-name`, `project_db` and `example.com`: `PROJECT_NAME` in `docker/dev/.env.example` and `docker/prod/.env.example`, `.devcontainer/devcontainer.json`, the `/srv/project-name` paths, `POSTGRES_DB`, and the hosts and origins in `docker/prod/.env.example` and `docs/NEXT-STEPS.md`.
 4. Run `uv lock`, then regenerate `docs/openapi.json` ([without-docker.md](development/without-docker.md#checks) has the command).
 5. Run the placeholder sweep and the checks from the skill's closing section ([Cierre](../.agents/skills/personalize-django-template/SKILL.md#cierre)).
@@ -54,6 +54,8 @@ It has two environments:
 - `seed`: the `seed_dev` user (`user@example.com`, `dev-password-123`). The requests tagged `smoke` run headless with it, locally and in CI.
 - `local`: for trying things by hand, including signing up a new account.
 
+The CLI runs on the host and needs Node.js with `npx` (the dev image has no Node):
+
 ```bash
 python manage.py seed_dev
 cd bruno && npx --yes @usebruno/cli@4.3.0 run --env seed --tags=smoke
@@ -71,7 +73,7 @@ Signup, verification and password reset stay manual, because their codes arrive 
 
 ## Type checking
 
-`scripts/check.sh lint` runs pyright (`standard`, the primary checker) and mypy with the django-stubs plugin on the whole repository. Run them on the host with `uv run scripts/check.sh lint`, or one at a time with `uv run pyright` and `uv run mypy .`. Model fields carry their django-stubs generic type, and each checker has its own rule-scoped suppression comment. What each checker catches, how to suppress, and the upstream workarounds still in the code: [typing.md](typing.md).
+`scripts/check.sh lint` runs pyright (`standard`, the primary checker) and mypy with the django-stubs plugin on the whole repository. Run them on the host with `uv run --env-file .env scripts/check.sh lint`, or one at a time with `uv run pyright` and `uv run --env-file .env mypy .`: the django-stubs plugin imports the settings, which need the `.env` values. Model fields carry their django-stubs generic type, and each checker has its own rule-scoped suppression comment. What each checker catches, how to suppress, and the upstream workarounds still in the code: [typing.md](typing.md).
 
 ## Pre-commit
 

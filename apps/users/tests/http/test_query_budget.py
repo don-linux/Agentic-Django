@@ -16,6 +16,9 @@ from django.test import Client
 
 from apps.users.models import User
 from apps.users.tests.factories import UserFactory
+from core.tests.accounts import LOGIN_URL
+from core.tests.accounts import log_in
+from core.tests.accounts import verified_user
 from core.tests.credentials import PASSWORD
 
 if TYPE_CHECKING:
@@ -23,26 +26,16 @@ if TYPE_CHECKING:
 
 pytestmark = pytest.mark.django_db
 
-LOGIN_URL = "/_allauth/app/v1/auth/login"
-
 
 @pytest.fixture
 def budget_user() -> User:
-    user = UserFactory(email="budget@example.com", password=PASSWORD)
-    EmailAddress.objects.create(
-        user=user, email=user.email, primary=True, verified=True
-    )
-    return user
+    return verified_user("budget@example.com")
 
 
 @pytest.fixture
 def session_client(budget_user: User) -> Client:
-    login = Client().post(
-        LOGIN_URL,
-        {"email": budget_user.email, "password": PASSWORD},
-        content_type="application/json",
-    )
-    return Client(headers={"x-session-token": login.json()["meta"]["session_token"]})
+    # Logged in as an app client is: allauth's login, then X-Session-Token.
+    return Client(headers={"x-session-token": log_in(budget_user)})
 
 
 def test_me_budget(session_client: Client, django_assert_num_queries) -> None:

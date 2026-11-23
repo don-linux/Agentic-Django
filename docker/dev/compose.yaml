@@ -79,6 +79,39 @@ services:
         done
         exec celery --app config worker --loglevel INFO --concurrency 1
 
+  # Sends the periodic tasks of CELERY_BEAT_SCHEDULE, as in production, only
+  # with the beat profile:
+  #   docker compose -f docker/dev/compose.yaml --profile beat up -d
+  # Run one: two beats send every periodic task twice. See
+  # docs/tasks.md#periodic-tasks-beat.
+  celery_beat:
+    <<: *django-image
+    profiles: ["beat"]
+    env_file:
+      - ../../.env
+    environment:
+      POSTGRES_HOST: postgres_db
+      POSTGRES_PORT: 5432
+      VALKEY_URL: redis://valkey:6379
+      DJANGO_SETTINGS_MODULE: config.settings.local
+    volumes:
+      - ../../:/app:z
+    depends_on:
+      valkey:
+        condition: service_healthy
+    init: true
+    # The file that remembers the last run of each entry stays out of the checkout.
+    command:
+      - celery
+      - --app
+      - config
+      - --quiet
+      - beat
+      - --loglevel
+      - INFO
+      - --schedule
+      - /tmp/celerybeat-schedule
+
   mailpit:
     # Pinned by tag and digest; Dependabot updates both.
     image: axllent/mailpit:v1.34.0@sha256:23a2ef85bc50853ab3093645d1d64679afd8887e89da5e48a88940c172591a4e

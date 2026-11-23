@@ -128,7 +128,7 @@ When the new model has a `FileField` or `ImageField`, also follow [docs/files.md
 - The create/upload operation is the only one that accepts `multipart/form-data`: `file: File[UploadedFile]` and `Form[...]` parameters, both imported from `ninja` ([docs/files.md#endpoint](../../../docs/files.md#endpoint)). Every operation with a JSON body still answers a multipart body with 415.
 
 - Services that replace or delete a file call `core.files.delete_file_on_commit` before saving or deleting the row.
-- If the story does not name allowed extensions or a size cap, pick a tight allow-list (never unsanitized HTML/SVG) and a cap at or below the proxy `client_max_body_size`, and state the choice. Do not invent a `TextChoices` enum for an unspecified "tipo".
+- If the story does not name allowed extensions or a size cap, pick a tight allow-list (never unsanitized HTML/SVG) and a cap at or below the proxy `client_max_body_size`, and state the choice. Do not invent a `TextChoices` enum for a kind or type the story does not list.
 - After regenerating `docs/openapi.json`, `apps/users/tests/ninja/test_openapi.py` must allow `multipart/form-data` only on those upload operations (not `== {"application/json"}` for the whole schema).
 
 ## 7. Throttle scope
@@ -170,7 +170,7 @@ Every new endpoint needs:
 - `403` only when a permission other than "must be logged in" applies. Another user's object is `404`, not `403`, when the queryset is scoped.
 - `404` for another user's object, for an unknown `public_id`, and for an integer pk if the detail route uses `public_id`.
 - `400` validation: unknown field, and each field's type and limits. A domain `ApplicationError` is a 409 (or the 403 or 404 it declares), tested like any other status.
-- An exact query budget (`django_assert_num_queries`). Measure it once with a **session-authenticated** client (LocMem cache + `cached_db` sessions, as in `apps/users/tests/http/test_query_budget.py`), pin the number, and comment what each query is — `full_clean()` often adds existence checks, and a `CheckConstraint` can add a savepoint plus a check query. If the assertion does not print the SQL, dump it with `CaptureQueriesContext`. Do not use a framework test client helper that bypasses the real authentication path for the budget; use a session-authenticated `user_client`.
+- An exact query budget (`django_assert_num_queries`). Measure it once with a client that logs in through allauth and sends `X-Session-Token`, the path app clients take (`session_client` in `apps/users/tests/http/test_query_budget.py`, with the LocMem cache and `cached_db` sessions), pin the number, and comment what each query is — `full_clean()` often adds existence checks, and a `CheckConstraint` can add a savepoint plus a check query. If the assertion does not print the SQL, dump it with `CaptureQueriesContext`. Do not measure the budget with `force_login()` (`user_client`) or a helper that bypasses that authentication path.
 - Every list endpoint also gets `assert_constant_queries` that grows related data.
 - A service test for the `full_clean()` failure.
 
@@ -251,6 +251,6 @@ Keep this skill for the HTTP surface. For the task itself follow [tasks.md#writi
 - Enqueue a task or send email / invalidate cache inside `atomic` without `on_commit`.
 - Pass `throttle=` without `AnonThrottle()` and `UserThrottle()`.
 - Add `gettext_lazy`, HTML API pages, or a `docs/glossary.md`.
-- Translate or rename anything under `bruno/`.
+- Translate or rename the Spanish request names, folder names or console messages under `bruno/`.
 - Change coverage `fail_under` (it stays at 98).
 - Copy decisions from some other product's domain; this recipe is generic.

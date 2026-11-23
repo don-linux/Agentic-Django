@@ -69,6 +69,12 @@ updates:
         update-types:
           - 'minor'
           - 'patch'
+        # Their pre-commit hooks come in the pre-commit pull request, and
+        # core/tests/test_compose.py fails while the two pins differ: each gets
+        # its own pull request, to merge with its hook (docs/ci.md#tool-pins).
+        exclude-patterns:
+          - 'ruff'
+          - 'django-upgrade'
 
   # Hook revisions; the uv and gitleaks hooks are bumped by hand with their other
   # pins. See docs/ci.md#tool-pins.
