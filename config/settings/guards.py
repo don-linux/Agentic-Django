@@ -29,8 +29,6 @@ SMTP_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 # never resolve on the public internet.
 EXAMPLE_DOMAINS = ("example.com", "example.org", "example.net")
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
-# A local SMTP relay is accepted on purpose (documented in the prod example).
-LOCAL_RELAY_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 INSECURE_KEY_PREFIX = "django-insecure-"
 # Same thresholds as Django's security.W009 check.
 MIN_SECRET_KEY_LENGTH = 50
@@ -217,7 +215,9 @@ def assert_production_email(
     Raise ImproperlyConfigured if production email would not reach real users.
 
     Verification is mandatory, so without working email nobody can finish signup.
-    A local relay (DJANGO_MAILER_HOST=localhost) is accepted on purpose.
+    A loopback DJANGO_MAILER_HOST is refused too: inside the container it is
+    the container itself, where nothing answers SMTP. A relay on the host is
+    host.docker.internal (docs/email.md).
     """
     problems = []
     default = mailers.get("default", {})
@@ -230,10 +230,11 @@ def assert_production_email(
         )
     if backend == SMTP_BACKEND:
         host = str(options.get("host") or "").strip()
-        if not host or (
-            normalize_host(host) not in LOCAL_RELAY_HOSTS and is_placeholder_host(host)
-        ):
-            problems.append("DJANGO_MAILER_HOST must be your provider's SMTP host.")
+        if not host or is_placeholder_host(host):
+            problems.append(
+                "DJANGO_MAILER_HOST must be your provider's SMTP host, or a relay "
+                "the container can reach (not localhost: that is the container)."
+            )
         if options.get("use_tls") and options.get("use_ssl"):
             problems.append(
                 "DJANGO_MAILER_USE_TLS and DJANGO_MAILER_USE_SSL cannot both be True.",
@@ -376,9 +377,10 @@ def silenced_hsts_system_checks(
     return silenced
 
 
-# Loopback plus the service names used in docker/dev/compose.yaml and
-# docker/prod/compose.yaml. A hosted dev database needs DJANGO_ALLOW_REMOTE_LOCAL.
-LOCAL_DATABASE_HOSTS = frozenset({"postgres_db", "postgres", "db"})
+# Loopback plus the database service name of docker/dev/compose.yaml and
+# docker/prod/compose.yaml. A generic name such as "db" could be another
+# project's database. A hosted dev database needs DJANGO_ALLOW_REMOTE_LOCAL.
+LOCAL_DATABASE_HOSTS = frozenset({"postgres_db"})
 LOCAL_VALKEY_HOSTS = frozenset({"valkey"})
 
 

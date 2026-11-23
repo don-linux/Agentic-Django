@@ -16,7 +16,7 @@ Verification is mandatory, so without working email nobody can finish signing up
 - Every account email shares `DJANGO_DEFAULT_FROM_EMAIL` and the subject prefix `DJANGO_EMAIL_SUBJECT_PREFIX`. allauth's prefix must be set, because without `django.contrib.sites` it has no site name to fall back to.
 - The context keys `email_signature_name` and `frontend_url` are defaults for `base_message.txt`; a value allauth already put in the context wins.
 
-- Production refuses to start until `DJANGO_MAILER_HOST`, `DJANGO_DEFAULT_FROM_EMAIL` and `FRONTEND_URL` are real: no `example.com` or `localhost` in From and `FRONTEND_URL`, and not TLS and SSL at once. The SMTP variables are `DJANGO_MAILER_HOST`, `DJANGO_MAILER_PORT`, `DJANGO_MAILER_USERNAME`, `DJANGO_MAILER_PASSWORD`, `DJANGO_MAILER_USE_TLS` and `DJANGO_MAILER_USE_SSL`, one per option of Django's `MAILERS` setting. Gmail only suits a prototype.
+- Production refuses to start until `DJANGO_MAILER_HOST`, `DJANGO_DEFAULT_FROM_EMAIL` and `FRONTEND_URL` are real. `DJANGO_MAILER_HOST` cannot be loopback, which inside the container is the container itself: a relay on the host is `host.docker.internal`, with `extra_hosts: ["host.docker.internal:host-gateway"]` on the services that send email. Also refused: no `example.com` or `localhost` in From and `FRONTEND_URL`, and not TLS and SSL at once. The SMTP variables are `DJANGO_MAILER_HOST`, `DJANGO_MAILER_PORT`, `DJANGO_MAILER_USERNAME`, `DJANGO_MAILER_PASSWORD`, `DJANGO_MAILER_USE_TLS` and `DJANGO_MAILER_USE_SSL`, one per option of Django's `MAILERS` setting. Gmail only suits a prototype.
 
 ## Templates
 
