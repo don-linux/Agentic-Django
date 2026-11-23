@@ -52,7 +52,7 @@ def _set_rollback() -> None:
             connection.set_rollback(True)
 
 
-def _field_item(message: str, code: str = "invalid") -> dict[str, str]:
+def _field_item(message: str, code: str) -> dict[str, str]:
     return {"code": code, "detail": message}
 
 
@@ -60,26 +60,11 @@ def _field_item(message: str, code: str = "invalid") -> dict[str, str]:
 # body parameter's name (ninja/params/models.py BodyModel, __read_from_single_attr__).
 _SOURCES = frozenset({"query", "path", "header", "cookie", "form", "file"})
 
-# Pydantic error type -> (code, detail) in DRF's wording. Clients branch on
-# `code` (docs/api.md#error-body); `detail` stays readable and close to the old text.
-_MESSAGES: dict[str, tuple[str, str]] = {
-    "missing": ("required", "This field is required."),
-    "string_type": ("invalid", "Not a valid string."),
-    "int_type": ("invalid", "A valid integer is required."),
-    "int_parsing": ("invalid", "A valid integer is required."),
-    "int_from_float": ("invalid", "A valid integer is required."),
-    "bool_type": ("invalid", "Must be a valid boolean."),
-    "bool_parsing": ("invalid", "Must be a valid boolean."),
-    "uuid_type": ("invalid", "Must be a valid UUID."),
-    "uuid_parsing": ("invalid", "Must be a valid UUID."),
-    "decimal_type": ("invalid", "A valid number is required."),
-    "decimal_parsing": ("invalid", "A valid number is required."),
-    "float_type": ("invalid", "A valid number is required."),
-    "float_parsing": ("invalid", "A valid number is required."),
-    "list_type": ("not_a_list", "Expected a list of items."),
-}
-_NOT_AN_OBJECT = frozenset({"model_type", "model_attributes_type", "dict_type"})
-_UNKNOWN_FIELD = frozenset({"extra_forbidden", "unexpected_keyword_argument"})
+# A key that is not a field (extra="forbid") is the registered code unknown_field
+# (ADR 0006, docs/api.md#error-codes). Every other field error keeps Pydantic's
+# own type and message: https://docs.pydantic.dev/latest/errors/validation_errors/
+_EXTRA_FORBIDDEN = "extra_forbidden"
+_UNKNOWN_FIELD = "unknown_field"
 
 
 def _error_path(loc: Sequence[object]) -> list[str]:
@@ -91,44 +76,10 @@ def _error_path(loc: Sequence[object]) -> list[str]:
     return parts
 
 
-_LENGTH = frozenset({"string_too_long", "too_long", "string_too_short", "too_short"})
-
-
-def _length(typ: str, msg: str, ctx: Mapping[str, Any]) -> tuple[str, str]:
-    if typ == "string_too_long" and ctx.get("max_length") is not None:
-        msg = f"Ensure this field has no more than {ctx['max_length']} characters."
-    elif typ == "string_too_short" and ctx.get("min_length") is not None:
-        msg = f"Ensure this field has at least {ctx['min_length']} characters."
-    return ("max_length" if "long" in typ else "min_length"), msg
-
-
 def _code_and_detail(err: Mapping[str, Any]) -> tuple[str, str]:
-    typ = str(err.get("type") or "invalid")
-    msg = str(err.get("msg") or "Invalid input.")
-    # extra="forbid" -> unknown_field, same wording as the previous serializer.
-    if typ in _UNKNOWN_FIELD:
-        return "unknown_field", "Unknown field."
-    # input_type comes from ContractAPI.validation_error_from_error_contexts
-    # (Ninja drops the raw input): a None sent to a non-nullable field is "null".
-    input_type = err.get("input_type")
-    if typ == "value_error" and "null" in msg.lower():
-        return "null", msg
-    if input_type == "NoneType" and typ != "missing":
-        return "null", "This field may not be null."
-    return _code_and_detail_by_type(typ, msg, err.get("ctx") or {}, input_type)
-
-
-def _code_and_detail_by_type(
-    typ: str, msg: str, ctx: Mapping[str, Any], input_type: object
-) -> tuple[str, str]:
-    if typ == "null_characters_not_allowed":
-        return typ, msg
-    if typ in _LENGTH:
-        return _length(typ, msg, ctx)
-    if typ in _NOT_AN_OBJECT:
-        got = input_type or "another type"
-        return "invalid", f"Invalid data. Expected a dictionary, but got {got}."
-    return _MESSAGES.get(typ, ("invalid", msg))
+    typ = str(err["type"])
+    code = _UNKNOWN_FIELD if typ == _EXTRA_FORBIDDEN else typ
+    return code, str(err["msg"])
 
 
 def _ninja_validation_fields(errors: list[dict[str, Any]]) -> dict[str, Any]:
@@ -137,9 +88,10 @@ def _ninja_validation_fields(errors: list[dict[str, Any]]) -> dict[str, Any]:
     for err in errors:
         if "loc" not in err and len(err) == 1:
             # ninja.pagination: ValidationError([{"cursor": "Invalid Cursor"}]).
-            ((name, _message),) = err.items()
+            # Ninja gives a message and no type: the generic code is invalid.
+            ((name, message),) = err.items()
             fields.setdefault(str(name), []).append(
-                _field_item(f"Invalid {name}.", "invalid")
+                _field_item(str(message), "invalid")
             )
             continue
         loc = _error_path(err.get("loc", ())) or ["non_field_errors"]
@@ -166,7 +118,7 @@ def _django_validation_fields(exc: DjangoValidationError) -> dict[str, Any]:
                 items.append(_field_item(message, err.code or "invalid"))
             fields[key] = items
         return fields
-    # One item per error, each with its own code (DRF's as_serializer_error).
+    # One item per error, each with its own code (invalid when Django gives none).
     return {
         "non_field_errors": [
             _field_item(

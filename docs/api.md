@@ -97,12 +97,14 @@ Validation errors (`400`) add `fields`, with one list of `{code, detail}` items 
   "code": "validation_error",
   "detail": "Invalid input.",
   "fields": {
-    "name": [{"code": "max_length", "detail": "Ensure this field has no more than 255 characters."}],
-    "address": {"city": [{"code": "required", "detail": "This field is required."}]},
-    "non_field_errors": [{"code": "invalid", "detail": "Cross-field rule failed."}]
+    "name": [{"code": "string_too_long", "detail": "String should have at most 255 characters"}],
+    "address": {"city": [{"code": "missing", "detail": "Field required"}]},
+    "non_field_errors": [{"code": "value_error", "detail": "Value error, Cross-field rule failed."}]
   }
 }
 ```
+
+An item from request validation carries Pydantic's error type as `code` and its message as `detail`, unchanged ([Pydantic: validation errors](https://docs.pydantic.dev/latest/errors/validation_errors/)). The one exception is a key that is not a field: Pydantic's `extra_forbidden` is the registered code `unknown_field`. A Django `ValidationError`, such as one from `full_clean()` in a service, keeps Django's own code and message, and `invalid` when it has no code.
 
 ### Examples by status
 

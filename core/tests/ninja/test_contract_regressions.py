@@ -155,23 +155,17 @@ def test_an_explicit_rate_is_not_replaced_by_the_settings_rate(rf) -> None:
     ("err", "expected"),
     [
         (
-            {"type": "string_too_short", "msg": "x", "ctx": {"min_length": 3}},
-            ("min_length", "Ensure this field has at least 3 characters."),
-        ),
-        ({"type": "too_long", "msg": "List too long"}, ("max_length", "List too long")),
-        (
-            {"type": "model_attributes_type", "msg": "x", "input_type": "list"},
-            ("invalid", "Invalid data. Expected a dictionary, but got list."),
+            {"type": "extra_forbidden", "msg": "Extra inputs are not permitted"},
+            ("unknown_field", "Extra inputs are not permitted"),
         ),
         (
-            {"type": "value_error", "msg": "May not be null"},
-            ("null", "May not be null"),
+            {"type": "string_too_short", "msg": "String should have at least 3"},
+            ("string_too_short", "String should have at least 3"),
         ),
-        ({"type": "custom_rule", "msg": "Custom."}, ("invalid", "Custom.")),
-        ({}, ("invalid", "Invalid input.")),
+        ({"type": "custom_rule", "msg": "Custom."}, ("custom_rule", "Custom.")),
     ],
 )
-def test_code_and_detail_branches(
+def test_a_field_error_keeps_pydantic_s_type_except_unknown_field(
     err: dict[str, Any], expected: tuple[str, str]
 ) -> None:
     assert _code_and_detail(err) == expected
@@ -184,9 +178,7 @@ def test_a_leaf_and_a_nested_error_on_the_same_key_keep_the_nested_one() -> None
             {"loc": ("body", "body", "address", "city"), "type": "missing", "msg": "m"},
         ]
     )
-    assert fields == {
-        "address": {"city": [{"code": "required", "detail": "This field is required."}]}
-    }
+    assert fields == {"address": {"city": [{"code": "missing", "detail": "m"}]}}
 
 
 # --- lookup before body: a public AfterValidator on the path argument -------
@@ -249,7 +241,7 @@ def test_a_missing_object_is_404_before_the_body_is_parsed() -> None:
 def test_a_bad_query_parameter_is_400() -> None:
     response = _patch(_lookup_api(), f"/things/{UUID(int=1)}/?q=abc", {"title": "t"})
     assert response.status_code == HTTPStatus.BAD_REQUEST
-    assert response.json()["fields"]["q"][0]["code"] == "invalid"
+    assert response.json()["fields"]["q"][0]["code"] == "int_parsing"
 
 
 def test_the_response_argument_reaches_the_view() -> None:

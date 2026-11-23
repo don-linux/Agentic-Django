@@ -192,7 +192,12 @@ class TestUsersAPI:
             "code": "validation_error",
             "detail": "Invalid input.",
             "fields": {
-                "is_staff": [{"code": "unknown_field", "detail": "Unknown field."}],
+                "is_staff": [
+                    {
+                        "code": "unknown_field",
+                        "detail": "Extra inputs are not permitted",
+                    }
+                ],
             },
         }
         user.refresh_from_db()

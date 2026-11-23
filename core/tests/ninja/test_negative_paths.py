@@ -38,7 +38,7 @@ def test_an_invalid_cursor_is_400_on_the_cursor_field() -> None:
     assert response.status_code == HTTPStatus.BAD_REQUEST
     assert response.json()["code"] == "validation_error"
     assert response.json()["fields"] == {
-        "cursor": [{"code": "invalid", "detail": "Invalid cursor."}]
+        "cursor": [{"code": "invalid", "detail": "Invalid Cursor"}]
     }
 
 

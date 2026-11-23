@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-from typing import Any
 from typing import override
 
 from django.conf import settings
@@ -17,11 +15,6 @@ from core.api.exceptions import register_exception_handlers
 from core.api.parsers import JSONParser
 from core.api.throttling import AnonThrottle
 from core.api.throttling import UserThrottle
-
-if TYPE_CHECKING:
-    from ninja.errors import ValidationError
-    from ninja.errors import ValidationErrorContext
-
 
 # Registered once per process, here, before a router path uses {public_id:...}.
 # Django 6.0 no longer lets register_converter() override a converter, and tests
@@ -43,25 +36,6 @@ class ContractAPI(NinjaAPI):
     @override
     def get_content_type(self) -> str:
         return self.renderer.media_type or "application/json"
-
-    @override
-    def validation_error_from_error_contexts(
-        self, error_contexts: list[ValidationErrorContext[Any]]
-    ) -> ValidationError:
-        """Keep the Python type of each rejected input (Ninja deletes the input).
-
-        core.api.exceptions uses it for DRF's codes: None is "null", and a body
-        that is not an object says what it got. The value itself never leaves.
-        """
-        error = super().validation_error_from_error_contexts(error_contexts)
-        raw = [
-            item
-            for context in error_contexts
-            for item in context.pydantic_validation_error.errors(include_url=False)
-        ]
-        for item, original in zip(error.errors, raw, strict=True):
-            item["input_type"] = type(original.get("input")).__name__
-        return error
 
 
 api = ContractAPI(

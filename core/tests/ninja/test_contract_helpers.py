@@ -75,7 +75,7 @@ def test_json_parser_reraises_request_data_too_big(
         JSONParser().parse_body(RequestFactory().post("/"))
 
 
-def test_ninja_validation_fields_nests_and_maps_min_length() -> None:
+def test_ninja_validation_fields_nests_and_keeps_the_pydantic_type() -> None:
 
     fields = _ninja_validation_fields(
         [
@@ -86,7 +86,10 @@ def test_ninja_validation_fields_nests_and_maps_min_length() -> None:
             }
         ]
     )
-    assert fields["address"]["street"][0]["code"] == "min_length"
+    assert fields["address"]["street"][0] == {
+        "code": "string_too_short",
+        "detail": "too short",
+    }
 
 
 def test_http_error_codes_for_media_auth_and_generic() -> None:

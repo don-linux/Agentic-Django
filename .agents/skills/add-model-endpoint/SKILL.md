@@ -92,7 +92,7 @@ Why: [ARCHITECTURE.md#caching](../../../docs/ARCHITECTURE.md#caching). Outages: 
 
 In `apps/<app>/api/views.py`, above the operations (pattern: `UserOut` and `UserUpdateIn` in `apps/users/api/views.py`). pyright checks `apps/<app>/api/` in strict mode, so a validator gives its raw `Any` input a real type before using it ([typing.md#strict-api](../../../docs/typing.md#strict-api)):
 
-- Output schemas subclass `core.api.schemas.BaseSchema`; input schemas subclass `core.api.schemas.InputSchema`, so an unknown body key is a 400 with code `unknown_field`, not a silent ignore ([Ninja: schemas](https://django-ninja.dev/guide/schemas/)).
+- Output schemas subclass `core.api.schemas.BaseSchema`; input schemas subclass `core.api.schemas.InputSchema`, so an unknown body key is a 400 with code `unknown_field`, not a silent ignore ([Ninja: schemas](https://django-ninja.dev/guide/schemas/)). Every other field error keeps Pydantic's own type and message (`missing`, `string_type`, `string_too_long`…): do not translate them ([api.md#error-body](../../../docs/api.md#error-body)).
 - Expose `public_id` as `id`, a string, read-only: `id: UUID = Field(json_schema_extra={"readOnly": True})` with a `resolve_id(obj) -> UUID` static method that returns `obj.public_id` ([Ninja: resolvers](https://django-ninja.dev/guide/schemas/#resolvers)). Mark every other server-set field `readOnly` the same way.
 - Datetime fields use `core.api.schemas.UTCDateTime`. `TIME_ZONE` must not change the JSON (`Z` suffix, UTC).
 - Every field the output always renders is required in the schema (no default), so oasdiff sees its removal ([api.md#breaking-changes](../../../docs/api.md#breaking-changes)).

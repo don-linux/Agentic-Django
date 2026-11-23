@@ -43,9 +43,11 @@ if TYPE_CHECKING:
 router = Router(tags=["users"])
 
 
-# DRF CharField's codes and messages for the same input (ADR 0006).
-NULL_CODE = "null"
-NULL_DETAIL = "This field may not be null."
+# Pydantic's own error for a None sent to a str field
+# (https://docs.pydantic.dev/latest/errors/validation_errors/#string_type).
+STRING_TYPE_CODE = "string_type"
+STRING_TYPE_DETAIL = "Input should be a valid string"
+# PostgreSQL text cannot store NUL (\x00), and Pydantic has no check for it.
 NUL_CHAR_CODE = "null_characters_not_allowed"
 NUL_CHAR_DETAIL = "Null characters are not allowed."
 # Keys UserOut returns that a client may send back in a PATCH; they are ignored.
@@ -73,10 +75,13 @@ class UserOut(BaseSchema):
 
 
 class UserUpdateIn(InputSchema):
-    # Optional but not nullable: null is a 400 "null" (coerce_and_reject_null),
-    # so the published request schema must not offer it. WithJsonSchema only
+    # Optional but not nullable: an omitted name stays unset, and null gets the
+    # string_type error Pydantic gives a str field (coerce_and_reject_null), so
+    # the published request schema must not offer it. WithJsonSchema only
     # changes the schema; SkipJsonSchema[None] would turn the Optional into a
-    # union and nest its errors under name.str / name.none.
+    # union and nest its errors under name.str / name.none. Pydantic's MISSING
+    # default would say this natively, but Ninja 1.8.0 cannot publish it
+    # (NinjaGenerateJsonSchema.default_schema encodes every non-None default).
     name: Annotated[
         str | None, WithJsonSchema({"type": "string", "maxLength": 255})
     ] = Field(default=None, max_length=255)
@@ -96,7 +101,7 @@ class UserUpdateIn(InputSchema):
     def coerce_and_reject_null(cls, value: Any) -> Any:
         # DRF CharField coerced numbers to strings; booleans stay invalid.
         if value is None:
-            raise PydanticCustomError(NULL_CODE, NULL_DETAIL)
+            raise PydanticCustomError(STRING_TYPE_CODE, STRING_TYPE_DETAIL)
         if isinstance(value, bool):
             return value
         if isinstance(value, int | float):
@@ -106,7 +111,7 @@ class UserUpdateIn(InputSchema):
     @field_validator("name", mode="after")
     @classmethod
     def reject_null_characters(cls, value: str | None) -> str | None:
-        # DRF CharField's ProhibitNullCharactersValidator; Postgres refuses NUL.
+        # PostgreSQL text cannot store NUL (\x00).
         if value is not None and "\x00" in value:
             raise PydanticCustomError(NUL_CHAR_CODE, NUL_CHAR_DETAIL)
         return value

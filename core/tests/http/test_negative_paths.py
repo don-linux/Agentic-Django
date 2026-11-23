@@ -315,20 +315,14 @@ def test_inactive_user_cannot_log_in_and_reactivate_restores_it() -> None:
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
-    ("payload", "field_code"),
-    [
-        ({"name": ["Ada"]}, "invalid"),
-        ({"name": None}, "null"),
-        ({"name": True}, "invalid"),
-        ({"name": {"obj": 1}}, "invalid"),
-    ],
+    "payload",
+    [{"name": ["Ada"]}, {"name": None}, {"name": True}, {"name": {"obj": 1}}],
 )
 @pytest.mark.parametrize("target", ["me", "detail"])
 def test_patch_rejects_an_invalid_name(
     user: User,
     user_client: Client,
     payload: dict[str, Any],
-    field_code: str,
     target: str,
 ) -> None:
     original = user.name
@@ -337,7 +331,10 @@ def test_patch_rejects_an_invalid_name(
 
     assert response.status_code == HTTPStatus.BAD_REQUEST
     assert response.json()["code"] == "validation_error"
-    assert response.json()["fields"]["name"][0]["code"] == field_code
+    assert response.json()["fields"]["name"][0] == {
+        "code": "string_type",
+        "detail": "Input should be a valid string",
+    }
     user.refresh_from_db()
     assert user.name == original
 

@@ -82,7 +82,10 @@ class TestErrorCodesThroughTheApi:
         assert response.status_code == HTTPStatus.BAD_REQUEST
         body = response.json()
         assert body["code"] == "validation_error"
-        assert body["fields"]["name"][0]["code"] == "max_length"
+        assert body["fields"]["name"][0] == {
+            "code": "string_too_long",
+            "detail": "String should have at most 255 characters",
+        }
 
 
 @pytest.mark.parametrize("code", ["Bad Code", "already-exists", "1st", "", "Upper"])
