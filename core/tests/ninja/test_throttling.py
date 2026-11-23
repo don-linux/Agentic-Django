@@ -48,27 +48,31 @@ def _open_api() -> Any:
 
 
 def _scoped_api(scope: str) -> Any:
-    class Scoped(SimpleRateThrottle):
-        def __init__(self) -> None:
-            self.scope = scope
-            super().__init__()
-
-        @override
-        def get_cache_key(self, request):
-            return self.cache_format % {
-                "scope": self.scope,
-                "ident": self.get_ident(request),
-            }
-
-    api = make_api(throttle=[Scoped()], auth=None)
+    # The recipe of docs/api.md#throttling: the API-level throttles plus the
+    # operation's scope (throttle= replaces them, it does not add to them).
+    api = make_api(throttle=[AnonThrottle(), UserThrottle()], auth=None)
     router = Router()
 
-    @router.get("/throttled/", auth=None)
+    @router.get(
+        "/throttled/",
+        auth=None,
+        throttle=[AnonThrottle(), UserThrottle(), ScopedThrottle(scope=scope)],
+    )
     def ok(request):
         return {"ok": True}
 
     api.add_router("/", router)
     return api
+
+
+def test_an_unregistered_scope_fails_when_the_throttle_is_built(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A scope without a rate in NINJA_DEFAULT_THROTTLE_RATES is a startup
+    # error, not an endpoint left unthrottled.
+    _rates(monkeypatch, anon="100/min", user="100/min")
+    with pytest.raises(ImproperlyConfigured):
+        ScopedThrottle(scope="core.unregistered_scope")
 
 
 def test_anonymous_limit_returns_429_with_retry_after(

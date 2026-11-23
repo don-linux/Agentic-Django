@@ -72,7 +72,7 @@ In `apps/<app>/services.py` (naming and signature rules: [ARCHITECTURE.md#servic
 In `apps/<app>/selectors.py`:
 
 - Every read that is more than a plain lookup lives here. The selector owns the query shape: `select_related()` / `prefetch_related()` (or `Prefetch(...)`) for everything the output schema reads. Operations call the selector and return its queryset or object. Counts and sums come from `annotate()` in the selector.
-- Order list querysets deterministically, on an indexed column, and add the selector to `core/tests/ninja/test_list_indexes.py`, which checks the ordering of each selector it lists (it does not find new ones). Why: [ARCHITECTURE.md#performance](../../../docs/ARCHITECTURE.md#performance), [#indexes](../../../docs/ARCHITECTURE.md#indexes).
+- Order list querysets deterministically, on an indexed column, and add the list operation's selector to `LIST_SELECTORS` in `core/tests/ninja/test_list_indexes.py`: that test fails for a `*_list` operation missing there, and checks the ordering of each selector (once per ordering a client may choose). Why: [ARCHITECTURE.md#performance](../../../docs/ARCHITECTURE.md#performance), [#indexes](../../../docs/ARCHITECTURE.md#indexes).
 - Look objects up by `public_id`, never by integer pk.
 - Scope the queryset to the requesting user or tenant.
 - Do not query `request.user` again; authentication already loaded it.
@@ -176,7 +176,7 @@ Every new endpoint needs:
 
 If the selector is cached, also test: a second read makes zero queries (`cache_writes` + `django_assert_num_queries(0)`), a write through the service returns fresh data, and a rolled-back write leaves the cache untouched. Behaviour that only a real Valkey can show belongs in `core/tests/test_valkey_integration.py` (marker `valkey`).
 
-`core/tests/test_openapi_conformance.py` already sends the new operations requests generated from the schema (schemathesis), and fails on any response the schema does not describe. Fix the server or the schema: the test has no exceptions ([api.md#contract-conformance](../../../docs/api.md#contract-conformance)).
+`core/tests/test_openapi_conformance.py` already sends the new operations requests generated from the schema (schemathesis), and fails on any response the schema does not describe. Fix the server or the schema: the test has no exceptions ([api.md#contract-conformance](../../../docs/api.md#contract-conformance)). For a detail route, add a factory to its `OWNED_IDS` that returns the `public_id` of an object the caller owns; without it every generated request to the route is a 404.
 
 If the operation has a scoped throttle, test that the N+1th call returns `429` `throttled`. Set the rate with the `throttle_rates` fixture (`core/tests/ninja/adapters.py`); a test under `tests/http/` never patches Ninja itself.
 

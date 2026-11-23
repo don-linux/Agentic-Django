@@ -147,7 +147,7 @@ def things_list(
 - The view passes the selector a Django `Q` from `get_filter_expression()`, never the `FilterSchema`: only `api/` imports Ninja (the `api-framework-in-api-layer` import contract). The selector scopes the queryset to the caller first, so a filter can only narrow it, then applies `where` and `order_by(ordering, "-id")`. The primary key breaks ties, so pages stay stable.
 - Never pass a client's string to `order_by()`. The `Literal` lets through only the listed fields, and anything else is a 400 `literal_error` under `fields.ordering`.
 - The field types are those of a query parameter ([Field types](#field-types)), and the `storable_text` validator keeps a NUL out of the SQL, as `InputSchema` does for a body.
-- Every filter and every ordering a client may choose needs an index ([ARCHITECTURE.md#indexes](ARCHITECTURE.md#indexes)). Add the selector to `core/tests/ninja/test_list_indexes.py` once per ordering; that test checks the ordering, and the review checks the filters.
+- Every filter and every ordering a client may choose needs an index ([ARCHITECTURE.md#indexes](ARCHITECTURE.md#indexes)). Add the list operation's selector to `LIST_SELECTORS` in `core/tests/ninja/test_list_indexes.py`, once per ordering: that test checks the ordering, and the review checks the filters.
 - An unknown query parameter is still ignored ([ADR 0021](decisions/0021-contract-details-the-template-keeps.md)): a misspelled filter filters nothing.
 
 ## Idempotent retries
@@ -330,7 +330,7 @@ The same comparison checks a change of API framework: generate the new schema, t
 It runs in `scripts/check.sh test` and in the `test` job, in about ten seconds.
 
 - Every run sends the same requests, until Hypothesis or schemathesis is upgraded.
-- A new endpoint is covered as soon as it is in the schema.
+- A new endpoint is covered as soon as it is in the schema. A new detail route also adds a factory to `OWNED_IDS` in that test, which returns the id of an object the caller can see: otherwise every generated request to it is a 404, and its 2xx answers go unchecked.
 - Half of the valid requests to a detail route use the caller's own user; the rest use unknown ids.
 
 A failure prints the request as a `curl` command. Fix the server or the schema, whichever is wrong, and regenerate `docs/openapi.json` after a schema change ([Breaking changes](#breaking-changes)).

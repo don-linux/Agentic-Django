@@ -12,7 +12,8 @@ Each response must match the contract:
 - authentication enforced.
 
 Every check runs and no failure is filtered out: the API accepts exactly what
-the schema declares. A new endpoint is covered as soon as it is in the schema.
+the schema declares. A new endpoint is covered as soon as it is in the schema;
+a new detail route also adds its factory to OWNED_IDS.
 A failure prints the curl command that reproduces it. See
 docs/api.md#contract-conformance and ADR 0018.
 """
@@ -31,11 +32,21 @@ from apps.users.models import User
 from core.tests.session_tokens import session_token
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from pytest_django.fixtures import Settings
     from schemathesis import Case
     from schemathesis.schemas import BaseSchema
 
 CALLER = "conformance@example.com"
+# One factory per resource with a detail route: given the caller, it returns
+# the public id of an object the caller can see, creating it if needed. Half of
+# the requests to a detail route draw from these ids (a 2xx when the id fits
+# the route), the rest are unknown ids (a 404). Add a project's resource here,
+# or every request to its detail route is a 404 and its 2xx goes unchecked.
+OWNED_IDS: list[Callable[[User], str]] = [
+    lambda caller: str(caller.public_id),
+]
 # Generated requests per operation, on top of the edge cases schemathesis always
 # sends. They are the same on every run until Hypothesis or schemathesis changes.
 EXAMPLES_PER_OPERATION = 50
@@ -52,7 +63,8 @@ def caller_token(transactional_db: None) -> str:
 @pytest.fixture
 def api_schema(caller_token: str, settings: Settings) -> BaseSchema:
     staff_token = session_token("conformance-staff@example.com", is_staff=True)
-    own_id = str(User.objects.get(email=CALLER).public_id)
+    caller = User.objects.get(email=CALLER)
+    owned_ids = [factory(caller) for factory in OWNED_IDS]
     # schemathesis sends its requests with the Host header "localhost".
     settings.ALLOWED_HOSTS = [*settings.ALLOWED_HOSTS, "localhost"]
     config = schemathesis.Config.from_dict(
@@ -68,9 +80,9 @@ def api_schema(caller_token: str, settings: Settings) -> BaseSchema:
                 # (request-property-pattern-added). See ADR 0018.
                 "allow-x00": False,
             },
-            # Half of the positive requests to a detail route use the caller's own
-            # user; the rest are unknown ids, which must be 404.
-            "dictionaries": {"caller": {"values": [own_id]}},
+            # Half of the positive requests to a detail route use an id the caller
+            # can see (OWNED_IDS); the rest are unknown ids, which must be 404.
+            "dictionaries": {"caller": {"values": owned_ids}},
             "parameters": {"path.id": {"dictionary": "caller", "probability": 0.5}},
         }
     )

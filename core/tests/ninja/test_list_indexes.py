@@ -1,9 +1,14 @@
 # DJ008: test-only models.
 # ruff: noqa: DJ008
-"""Every list endpoint orders by an indexed column (docs/ARCHITECTURE.md#indexes)."""
+"""Every list operation orders by an indexed column (docs/ARCHITECTURE.md#indexes).
+
+LIST_SELECTORS maps each list operation of the API to its selector; a list
+operation missing from it fails, so a new app cannot skip the check.
+"""
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from typing import Any
 
 import pytest
@@ -12,6 +17,12 @@ from django.test.utils import isolate_apps
 
 from apps.users.selectors import user_list
 from apps.users.tests.factories import UserFactory
+from core.api.api import api
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from apps.users.models import User
 
 DOCS = "docs/ARCHITECTURE.md#indexes"
 
@@ -57,11 +68,33 @@ def ordering_problems(
     ]
 
 
+# The selector behind each list operation of the API, by operationId. A new
+# list operation fails test_every_list_operation_has_its_selector_here until
+# its selector is added, once per ordering a client may choose.
+LIST_SELECTORS: dict[str, Callable[[User], models.QuerySet[Any]]] = {
+    "users_list": lambda user: user_list(user=user),
+}
+
+
+def test_every_list_operation_has_its_selector_here() -> None:
+    paths = api.get_openapi_schema()["paths"]
+    lists = {
+        op["operationId"]
+        for item in paths.values()
+        for op in item.values()
+        if op["operationId"].endswith("_list")
+    }
+    assert lists <= set(LIST_SELECTORS), sorted(lists - set(LIST_SELECTORS))
+
+
 @pytest.mark.django_db
 def test_list_endpoints_order_by_indexed_columns() -> None:
     user = UserFactory()
-    queryset = user_list(user=user)
-    problems = ordering_problems(queryset, label="users_list")
+    problems = [
+        problem
+        for label, selector in LIST_SELECTORS.items()
+        for problem in ordering_problems(selector(user), label=label)
+    ]
     assert problems == [], f"Unindexed list ordering {problems}; see {DOCS}"
 
 
