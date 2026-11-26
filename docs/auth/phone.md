@@ -11,5 +11,6 @@ To sign up or log in with a phone number and an SMS code:
 3. Send the codes. Implement `send_verification_code_sms(user, phone, code, **kwargs)` with an SMS provider such as Twilio, and `send_unknown_account_sms(phone, **kwargs)` if enumeration prevention stays on. Keep the provider's credentials in environment variables read in settings, and never log the code.
 4. Turn the flows on in `config/settings/base.py`: `ACCOUNT_LOGIN_METHODS = {"email", "phone"}` and, to ask for a number at signup, add `"phone*"` to `ACCOUNT_SIGNUP_FIELDS`.
 5. Update the phone tests in `apps/users/tests/http/test_phone.py`: they now expect a refused number and must expect a verification flow instead.
+6. Erase the number when a user is anonymized: clear it in `user_anonymize`, with a test ([../user-deletion/anonymize.md](../user-deletion/anonymize.md)).
 
 Every SMS costs money: keep allauth's rate limits for phone verification, and count the provider's spend.

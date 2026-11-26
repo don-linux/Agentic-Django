@@ -9,18 +9,20 @@ import pytest
 from django.http import HttpResponse
 from django.test import RequestFactory
 
+from core.middleware import NO_REQUEST_ID
 from core.middleware import RequestIdMiddleware
 from core.middleware import request_id_var
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
+    from django.http import HttpResponseBase
 
 GENERATED = re.compile(r"[0-9a-f]{32}")
 
 
 def _run(
     headers: dict[str, str] | None = None,
-) -> tuple[HttpRequest, HttpResponse, str]:
+) -> tuple[HttpRequest, HttpResponseBase, str]:
     seen: dict[str, str] = {}
 
     def view(request: HttpRequest) -> HttpResponse:
@@ -83,3 +85,15 @@ def test_skips_sentry_when_not_initialized(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setitem(sys.modules, "sentry_sdk", fake_sentry)
 
     _run()
+
+
+def test_resets_the_context_when_the_view_raises() -> None:
+    def view(_request: HttpRequest) -> HttpResponse:
+        msg = "view boom"
+        raise RuntimeError(msg)
+
+    request = RequestFactory().get("/")
+    with pytest.raises(RuntimeError, match="view boom"):
+        RequestIdMiddleware(view)(request)
+
+    assert request_id_var.get() == NO_REQUEST_ID

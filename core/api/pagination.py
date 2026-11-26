@@ -1,15 +1,14 @@
 """
-List pagination on Ninja's PageNumberPagination, with the
-count/next/previous/results envelope.
+List pagination on Ninja's PageNumberPagination and CursorPagination.
 
-Native Ninja 1.8.0 returns {items, count}, defaults to 100 per page, and does
-not 404 past the last page. This class keeps count/next/previous/results,
-page_size 20 (max 100), 404 past the last page or DJANGO_API_MAX_PAGE_NUMBER,
-so tests/http/ stay unchanged. See docs/api.md#pagination.
-
-Sources: django-ninja 1.8.0 ninja/pagination.py (PageNumberPagination.Output,
-items_attribute, paginate_queryset) and Context7 /websites/django-ninja_dev
-"Creating a custom pagination class".
+Ninja's PageNumberPagination answers {items, count}, serves 100 per page by
+default, and does not 404 past the last page. LimitPageNumberPagination
+answers count/next/previous/results with absolute links, 20 per page (at most
+100), and a 404 past the last page or deeper than DJANGO_API_MAX_PAGE_NUMBER.
+page and page_size are validated like Ninja's own Input: a value that is not
+a whole number of at least 1 is a 400. See docs/api.md#pagination,
+https://django-ninja.dev/guide/pagination/ ("Custom pagination classes") and
+django-ninja 1.8.0 ninja/pagination.py.
 """
 
 from __future__ import annotations
@@ -27,19 +26,15 @@ from django.core.exceptions import EmptyResultSet
 from django.db.models import QuerySet
 from django.http import Http404
 from django.http import HttpRequest
-from django.utils.functional import cached_property
 from ninja import Field
 from ninja import Schema
+from ninja.errors import ValidationError
 from ninja.pagination import CursorPagination as NinjaCursorPagination
 from ninja.pagination import PageNumberPagination
-from pydantic import ValidationError as PydanticValidationError
-from pydantic import ValidatorFunctionWrapHandler
-from pydantic import field_validator
 
 from core.cache import read_through
 
 COUNT_TTL = 60
-INVALID_PAGE = "Invalid page."
 
 
 class PageNumberOut(Schema):
@@ -50,37 +45,35 @@ class PageNumberOut(Schema):
 
 
 class PageNumberIn(Schema):
-    # Documented as integer (the previous contract). Invalid values such as
-    # "abc", 0 or -1 become 404 "Invalid page.": the ValidationError handler
-    # maps query page/page_size failures, and paginate_queryset rejects
-    # out-of-range numbers (tests/http/).
+    # ge=1 as in Ninja's PageNumberPagination.Input: "abc", 0 or -1 is a 400
+    # validation_error under fields.page or fields.page_size. Both stay
+    # nullable: removing null from a published query parameter is an oasdiff
+    # ERR (request-parameter-became-not-nullable).
     page: int | None = Field(
-        default=None, description="A page number within the paginated result set."
+        default=None,
+        ge=1,
+        description="A page number within the paginated result set.",
     )
     page_size: int | None = Field(
-        default=None, description="Number of results to return per page."
+        default=None, ge=1, description="Number of results to return per page."
     )
 
-    @field_validator("page", "page_size", mode="wrap")
-    @classmethod
-    def _lenient(cls, value: Any, handler: ValidatorFunctionWrapHandler) -> Any:
-        # paginate_queryset reads the raw query string with DRF's rules.
-        try:
-            return handler(value)
-        except PydanticValidationError:
-            return None
 
-
-def _positive_int(raw: str, cutoff: int) -> int:
-    """DRF's _positive_int(strict=True): int(), > 0, capped at cutoff."""
-    value = int(raw)
-    if value <= 0:
-        raise ValueError(raw)
-    return min(value, cutoff)
+class CursorIn(Schema):
+    # Ninja's CursorPagination.Input publishes as "Input" and clamps a page_size
+    # below 1 to 1; ge=1 makes it a 400 under fields.page_size, as on a
+    # page-number list.
+    cursor: str | None = Field(
+        default=None,
+        description="The page to read, from a next or previous link.",
+    )
+    page_size: int | None = Field(
+        default=None, ge=1, description="Number of results to return per page."
+    )
 
 
 def _set_query_param(url: str, key: str, value: str | None) -> str:
-    """DRF's replace_query_param / remove_query_param (sorted keys, lists kept)."""
+    """Set or remove one query parameter of url; keys sorted, repeated ones kept."""
     scheme, netloc, path, query, fragment = urlsplit(url)
     params = parse_qs(query, keep_blank_values=True)
     if value is None:
@@ -92,7 +85,7 @@ def _set_query_param(url: str, key: str, value: str | None) -> str:
 
 
 class LimitPageNumberPagination(PageNumberPagination):
-    """Page-number pagination that matches the current HTTP contract."""
+    """Page numbers with the count/next/previous/results envelope."""
 
     items_attribute = "results"
 
@@ -146,26 +139,18 @@ class LimitPageNumberPagination(PageNumberPagination):
         if not isinstance(pagination, PageNumberIn):
             msg = f"expected PageNumberIn, got {type(pagination).__name__}"
             raise TypeError(msg)
-        # DRF PageNumberPagination: a bad page_size falls back to the default;
-        # an empty page is 1; "last" is the last page; anything else is 404.
-        page_size = self.page_size
-        if "page_size" in request.GET:
-            try:
-                page_size = _positive_int(request.GET["page_size"], self.max_page_size)
-            except ValueError:
-                page_size = self.page_size
-        raw_page = request.GET.get("page") or "1"
-
+        # A page_size above max_page_size is cut to it, as Ninja's
+        # PageNumberPagination._get_page_size does.
+        page_size = min(pagination.page_size or self.page_size, self.max_page_size)
+        page = pagination.page or 1
+        # Deeper than DJANGO_API_MAX_PAGE_NUMBER is a 404 before any query:
+        # every page runs COUNT(*) and OFFSET (docs/api.md#pagination).
+        if page > self.max_page_number:
+            raise Http404
         count = self.count_items(queryset)
         total_pages = max(1, ceil(count / page_size))
-        if raw_page == "last":
-            raw_page = str(total_pages)
-        try:
-            page = int(raw_page)
-        except ValueError:
-            raise Http404(INVALID_PAGE) from None
-        if page > self.max_page_number or page < 1 or page > total_pages:
-            raise Http404(INVALID_PAGE)
+        if page > total_pages:
+            raise Http404
 
         offset = (page - 1) * page_size
         results = queryset[offset : offset + page_size]
@@ -176,7 +161,7 @@ class LimitPageNumberPagination(PageNumberPagination):
         previous_url = None
         if page > 1:
             previous = page - 1
-            # The link to the first page has no page parameter, as DRF's.
+            # The link to the first page has no page parameter.
             previous_url = _set_query_param(
                 url, "page", None if previous == 1 else str(previous)
             )
@@ -188,26 +173,20 @@ class LimitPageNumberPagination(PageNumberPagination):
         }
 
 
-class CachedCountPaginatorCount:
-    """COUNT(*) cached per query for COUNT_TTL seconds (opt-in)."""
-
-    def __init__(self, queryset: QuerySet) -> None:
-        self.queryset = queryset
-
-    @cached_property
-    def count(self) -> int:
-        queryset = self.queryset
-        try:
-            sql = str(queryset.query)
-        except EmptyResultSet:
-            return 0
-        return read_through(
-            queryset.model._meta.label_lower,
-            "count",
-            sql,
-            ttl=COUNT_TTL,
-            loader=queryset.count,
-        )
+def _cached_count(queryset: QuerySet) -> int:
+    """COUNT(*) of queryset, cached per query for COUNT_TTL seconds."""
+    try:
+        sql = str(queryset.query)
+    except EmptyResultSet:
+        # The query can match nothing (none(), an empty __in): no SQL to run.
+        return 0
+    return read_through(
+        queryset.model._meta.label_lower,
+        "count",
+        sql,
+        ttl=COUNT_TTL,
+        loader=queryset.count,
+    )
 
 
 class CachedCountPageNumberPagination(LimitPageNumberPagination):
@@ -217,7 +196,7 @@ class CachedCountPageNumberPagination(LimitPageNumberPagination):
     def count_items(self, queryset: QuerySet) -> int:
         if not isinstance(queryset, QuerySet):
             return len(queryset)
-        return CachedCountPaginatorCount(queryset).count
+        return _cached_count(queryset)
 
 
 class LimitCursorPagination(NinjaCursorPagination):
@@ -227,7 +206,8 @@ class LimitCursorPagination(NinjaCursorPagination):
     Opt-in. A model without public_id needs its own unique, indexed ordering.
     """
 
-    items_attribute = "results"
+    # As LimitPageNumberPagination.Input: the alias publishes the name CursorIn.
+    Input = CursorIn  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
 
     def __init__(
         self,
@@ -243,3 +223,36 @@ class LimitCursorPagination(NinjaCursorPagination):
             ordering=ordering,
             **kwargs,
         )
+
+    # Ninja raises ValidationError([{"cursor": "Invalid Cursor"}]) for a cursor
+    # that does not decode, and for one whose position the ordering field cannot
+    # take (django-ninja 1.8.0 ninja/pagination.py). The schema accepts any
+    # string as a cursor, so that is a 404, as a page past the last one on a
+    # page-number list (docs/api.md#pagination).
+    @override
+    def paginate_queryset(
+        self,
+        queryset: QuerySet,
+        pagination: NinjaCursorPagination.Input,
+        request: HttpRequest,
+        **params: Any,
+    ) -> Any:
+        try:
+            return super().paginate_queryset(queryset, pagination, request, **params)
+        except ValidationError:
+            raise Http404 from None
+
+    @override
+    async def apaginate_queryset(
+        self,
+        queryset: QuerySet,
+        pagination: NinjaCursorPagination.Input,
+        request: HttpRequest,
+        **params: Any,
+    ) -> Any:
+        try:
+            return await super().apaginate_queryset(
+                queryset, pagination, request, **params
+            )
+        except ValidationError:
+            raise Http404 from None

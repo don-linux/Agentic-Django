@@ -27,11 +27,11 @@ def _check_openapi(tmpdir: Path, **env: str) -> subprocess.CompletedProcess[str]
     )
 
 
-def test_a_file_at_the_old_fixed_path_is_neither_read_nor_replaced(
+def test_a_file_named_like_the_export_in_tmpdir_is_left_alone(
     tmp_path: Path,
 ) -> None:
-    # The previous fixed path, $TMPDIR/openapi-check.json: something else
-    # (here a directory) at that path made every run fail.
+    # The check exports to a new temporary file, never to a fixed name, so
+    # whatever sits at $TMPDIR/openapi-check.json (here a directory) is left alone.
     (tmp_path / "openapi-check.json").mkdir()
 
     result = _check_openapi(tmp_path)

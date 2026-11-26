@@ -1,6 +1,6 @@
 # 0011. The API contract is versioned as native OpenAPI 3.1.0 JSON
 
-- Status: Accepted
+- Status: Superseded by 0024
 - Date: 2026-11-18
 - Supersedes: [0010](0010-versioned-api-and-breaking-changes.md)
 

@@ -24,6 +24,7 @@ from core.middleware import ApiDebugErrorMiddleware
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
+    from pytest_django.fixtures import Settings
 
 INTERNAL_DETAIL = "internal state: replica db-2 unreachable"
 
@@ -122,6 +123,7 @@ def test_debug_html_errors_on_the_api_become_json(
 
     response = middleware(rf.get("/api/v1/users/"))
 
+    assert isinstance(response, HttpResponse)
     assert response.status_code == status
     assert response.headers["Content-Type"] == "application/json"
     assert json.loads(response.content)["code"] == code
@@ -155,5 +157,25 @@ def test_debug_middleware_passes_non_standard_status_codes_through(
 
     response = middleware(rf.get("/api/v1/users/"))
 
+    assert isinstance(response, HttpResponse)
     assert response.status_code == status
     assert response.content == b"custom"
+
+
+@pytest.mark.parametrize("path", ["/api/v1/no-such-route/", "/_allauth/no-such-route"])
+def test_debug_json_errors_keep_the_cors_and_frame_headers(
+    client: Client, settings: Settings, path: str
+) -> None:
+    # With DEBUG the JSON body replaces Django's HTML page; the headers that
+    # CORS and X-Frame-Options set on the page must survive, or a browser
+    # client on another origin sees a CORS failure instead of the error.
+    settings.DEBUG = True
+    settings.CORS_ALLOWED_ORIGINS = ["https://frontend.example.com"]
+    response = client.get(path, headers={"Origin": "https://frontend.example.com"})
+    assert response.status_code == HTTPStatus.NOT_FOUND
+    assert response.headers["Content-Type"] == "application/json"
+    assert (
+        response.headers["Access-Control-Allow-Origin"]
+        == "https://frontend.example.com"
+    )
+    assert response.headers["X-Frame-Options"] == "DENY"

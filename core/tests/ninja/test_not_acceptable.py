@@ -1,8 +1,9 @@
-"""406 only answers a route that exists.
+"""406 only answers a route that exists, after the 405 and OPTIONS.
 
-DRF negotiated the Accept header inside the view (APIView.initial), so a path
-that matches no route never got that far: it was Django's 404 whatever the
-Accept said.
+Each operation produces the media types its 2xx responses declare (JSON, or
+HTML for the docs page), and the Accept header is read whole by RFC 9110's
+rules (ADR 0020). A path that matches
+no route is Django's 404 whatever the Accept says.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ import pytest
 if TYPE_CHECKING:
     from django.test import Client
 
-NOT_FOUND = {"code": "not_found", "detail": "Not found."}
+NOT_FOUND = {"code": "not_found", "detail": "Not Found"}
 NOT_ACCEPTABLE = {
     "code": "not_acceptable",
     "detail": "Could not satisfy the request Accept header.",
@@ -68,7 +69,7 @@ def test_a_route_that_exists_still_refuses_an_accept_it_cannot_produce(
     client: Client, user_client: Client, path: str, accept: str
 ) -> None:
     # The negative case: the 404 is for paths without a route, not a way around
-    # the 406 (which comes before authentication, as in DRF).
+    # the 406, which comes before authentication.
     for caller in (client, user_client):
         response = caller.get(path, headers={"Accept": accept})
         assert response.status_code == HTTPStatus.NOT_ACCEPTABLE, path
@@ -77,17 +78,25 @@ def test_a_route_that_exists_still_refuses_an_accept_it_cannot_produce(
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("path", ["/api/v1/users/me/", "/api/v1/users/"])
-@pytest.mark.parametrize("method", ["PUT", "DELETE", "OPTIONS"])
-def test_the_406_comes_before_the_405_and_options(
-    client: Client, user_client: Client, path: str, method: str
+@pytest.mark.parametrize(
+    ("method", "status"),
+    [
+        ("PUT", HTTPStatus.METHOD_NOT_ALLOWED),
+        ("DELETE", HTTPStatus.METHOD_NOT_ALLOWED),
+        ("OPTIONS", HTTPStatus.OK),
+        ("GET", HTTPStatus.NOT_ACCEPTABLE),
+        ("HEAD", HTTPStatus.NOT_ACCEPTABLE),
+    ],
+)
+def test_the_405_and_options_come_before_the_406(
+    client: Client, user_client: Client, path: str, method: str, status: int
 ) -> None:
-    # DRF negotiated in APIView.initial, before the handler lookup that answers
-    # 405 and before the OPTIONS metadata: an Accept the route cannot produce is
-    # 406 for every method, also when anonymous.
+    # As Django and Ninja dispatch: an unknown method is 405 before anything
+    # else, and OPTIONS has no body to negotiate. Only a method that renders
+    # the route's media type can be 406, also when anonymous.
     for caller in (client, user_client):
         response = caller.generic(method, path, headers={"Accept": "text/html"})
-        assert response.status_code == HTTPStatus.NOT_ACCEPTABLE, (method, path)
-        assert response.json() == NOT_ACCEPTABLE, (method, path)
+        assert response.status_code == status, (method, path)
 
 
 @pytest.mark.django_db
@@ -155,8 +164,6 @@ def test_an_empty_or_invalid_accept_on_no_route_is_still_404(
 
 
 JSON = "application/json"
-# DRF 3.18.3 DefaultContentNegotiation.max_media_type_length.
-LONGEST_MEMBER = 256
 SCHEMA_TYPES = (
     "application/vnd.oai.openapi",
     "application/yaml",
@@ -169,74 +176,23 @@ def _members(count: int) -> list[str]:
     return [f"text/x-{i}" for i in range(count)]
 
 
-def _header_of_length(length: int) -> str:
-    """An Accept of exactly `length` characters that ends in application/json,
-    with fewer than 64 members of at most 256 characters: only the header
-    length limit applies to it."""
-    tail = ", " + JSON
-    members: list[str] = []
-    remaining = length - len(tail)
-    while remaining > LONGEST_MEMBER:
-        members.append("text/x-a;p=" + "b" * 239)
-        remaining -= 252
-    members.append("text/x-a;p=" + "b" * (remaining - 11))
-    header = ", ".join(members) + tail
-    assert len(header) == length
-    return header
-
-
 @pytest.mark.django_db
 @pytest.mark.parametrize("path", ["/api/v1/users/me/", "/api/v1/schema/"])
 @pytest.mark.parametrize(
     "accept",
     [
-        # DRF 3.18.3 DefaultContentNegotiation.get_accept_list
-        # (rest_framework/negotiation.py:104-125) reads the first 64 members,
-        # skips a member over 256 characters and cuts a header over 8192
-        # characters at its last comma before that length.
         ", ".join([*_members(64), JSON]),
-        JSON + ";p=" + "a" * (LONGEST_MEMBER + 1 - len(JSON) - 3),
-        _header_of_length(8193),
+        ", , , " + ", ".join([*_members(80), JSON]),
+        JSON + ";p=" + "a" * 300,
+        "text/x-a;p=" + "b" * 9000 + ", " + JSON,
     ],
-    ids=["65th-member", "257-characters", "8193-characters"],
+    ids=["65th-member", "after-empty-members", "long-member", "long-header"],
 )
-def test_drf_s_accept_limits_leave_nothing_acceptable(
-    client: Client, admin_client: Client, path: str, accept: str
-) -> None:
-    for caller in (client, admin_client):
-        response = caller.get(path, headers={"Accept": accept})
-        assert response.status_code == HTTPStatus.NOT_ACCEPTABLE, path
-        assert response.json() == NOT_ACCEPTABLE, path
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize("path", ["/api/v1/users/me/", "/api/v1/schema/"])
-@pytest.mark.parametrize(
-    "accept",
-    [
-        ", ".join([*_members(63), JSON]),
-        ", , , " + ", ".join([*_members(63), JSON]),
-        ", ".join([JSON, *_members(70)]),
-        JSON + ";p=" + "a" * (LONGEST_MEMBER - len(JSON) - 3),
-        "   " + JSON + ";p=" + "a" * (LONGEST_MEMBER - len(JSON) - 3) + "   ",
-        JSON + ";p=" + "a" * 300 + ", " + JSON,
-        _header_of_length(8192),
-    ],
-    ids=[
-        "64th-member",
-        "empty-members-do-not-count",
-        "first-of-71",
-        "256-characters",
-        "256-characters-once-stripped",
-        "a-long-member-is-skipped-not-the-end",
-        "8192-characters",
-    ],
-)
-def test_an_accept_within_drf_s_limits_is_not_406(
+def test_every_member_of_a_long_accept_counts(
     admin_client: Client, path: str, accept: str
 ) -> None:
-    # The negative case: up to the limits, and past a skipped member, the
-    # acceptable media type still counts.
+    # No member is skipped and nothing is cut: the server's own header limit
+    # (gunicorn limit_request_field_size in production) bounds the work.
     response = admin_client.get(path, headers={"Accept": accept})
     assert response.status_code == HTTPStatus.OK, (path, accept[:40])
 
@@ -270,17 +226,13 @@ def test_a_range_with_q_0_is_not_acceptable(
 @pytest.mark.parametrize(
     ("path", "accept", "content_type"),
     [
-        # The negative case: any weight above 0 is still ignored, as in DRF,
+        # The negative case: any weight above 0 makes no difference here,
         # and a q=0 range leaves the other ranges of the header as they were.
         ("/api/v1/users/me/", "application/json;q=0.001", JSON),
         ("/api/v1/users/me/", "application/json;q=1", JSON),
         ("/api/v1/users/me/", "text/html;q=0, application/json", JSON),
         ("/api/v1/users/me/", "*/*;q=0, application/json", JSON),
-        (
-            "/api/v1/schema/",
-            "application/vnd.oai.openapi;q=0, application/yaml",
-            "application/yaml; charset=utf-8",
-        ),
+        ("/api/v1/schema/", "application/yaml;q=0, application/json", JSON),
     ],
 )
 def test_a_weight_above_0_is_still_acceptable(
@@ -292,10 +244,11 @@ def test_a_weight_above_0_is_still_acceptable(
 
 
 @pytest.mark.django_db
-def test_the_contract_holds_under_a_script_prefix(client: Client) -> None:
+def test_the_route_is_request_path_info_not_request_path(client: Client) -> None:
     # Served under a prefix (SCRIPT_NAME, or FORCE_SCRIPT_NAME behind a proxy),
     # request.path starts with it; the route is request.path_info, which URL
-    # resolution uses too.
+    # resolution uses too. The test Client sets no script prefix; the prefix a
+    # server sets is test_script_prefix_negotiation.py.
     refused = client.get(
         "/api/v1/users/me/", headers={"Accept": "text/html"}, SCRIPT_NAME="/app"
     )
@@ -305,7 +258,7 @@ def test_the_contract_holds_under_a_script_prefix(client: Client) -> None:
     assert not_allowed.status_code == HTTPStatus.METHOD_NOT_ALLOWED
     assert not_allowed.json() == {
         "code": "method_not_allowed",
-        "detail": 'Method "PUT" not allowed.',
+        "detail": "Method not allowed",
     }
     assert not_allowed["Allow"] == "GET, PATCH, HEAD, OPTIONS"
 
@@ -357,36 +310,17 @@ def test_the_most_specific_range_gives_the_weight(
     ("path", "accept", "content_type"),
     [
         # The negative case: a more specific range above 0 still accepts under
-        # a q=0 on */* or on another type; an invalid range (*/json) and a
-        # member past DRF's 64 give no weight; at one precedence a range
-        # above 0 accepts.
+        # a q=0 on */* or on another type; an invalid range (*/json) gives no
+        # weight; at one precedence a range above 0 accepts.
         ("/api/v1/users/me/", "*/*;q=0, application/json", JSON),
         ("/api/v1/users/me/", "text/*;q=0, */*", JSON),
         ("/api/v1/users/me/", "application/xml;q=0, */*", JSON),
         ("/api/v1/users/me/", "*/json;q=0, application/json", JSON),
         ("/api/v1/users/me/", "*/*, */json;q=0", JSON),
-        (
-            "/api/v1/users/me/",
-            ", ".join(["*/*", *_members(63), "application/json;q=0"]),
-            JSON,
-        ),
         ("/api/v1/users/me/", "application/json, application/json;q=0", JSON),
         ("/api/v1/docs/", "*/*;q=0, text/html", "text/html; charset=utf-8"),
-        (
-            "/api/v1/schema/",
-            "*/*, application/vnd.oai.openapi;q=0",
-            "application/yaml; charset=utf-8",
-        ),
-        (
-            "/api/v1/schema/",
-            "application/*, application/vnd.oai.openapi;q=0, application/yaml;q=0",
-            "application/vnd.oai.openapi+json",
-        ),
-        (
-            "/api/v1/schema/",
-            "*/*;q=0, application/yaml",
-            "application/yaml; charset=utf-8",
-        ),
+        ("/api/v1/schema/", "*/*, application/yaml;q=0", JSON),
+        ("/api/v1/schema/", "*/*;q=0, application/json", JSON),
     ],
 )
 def test_a_more_specific_range_above_0_still_accepts(
@@ -395,19 +329,6 @@ def test_a_more_specific_range_above_0_still_accepts(
     response = admin_client.get(path, headers={"Accept": accept})
     assert response.status_code == HTTPStatus.OK, (path, accept)
     assert response["Content-Type"] == content_type, (path, accept)
-
-
-@pytest.mark.django_db
-def test_a_range_with_q_0_does_not_choose_the_parameters(admin_client: Client) -> None:
-    # Both ranges are application/json with a parameter: one above 0 makes it
-    # acceptable, and only a range above 0 gives the parameters it renders with.
-    response = admin_client.get(
-        "/api/v1/schema/",
-        headers={"Accept": "application/json;indent=2;q=0, application/json;indent=6"},
-    )
-    assert response.status_code == HTTPStatus.OK
-    assert response["Content-Type"] == JSON
-    assert response.content.startswith(b"{\n" + b" " * 6 + b'"openapi"')
 
 
 @pytest.mark.django_db
@@ -429,8 +350,8 @@ def test_a_range_with_q_0_does_not_choose_the_parameters(admin_client: Client) -
         ),
         (
             "/api/v1/schema/",
-            "application/yaml;charset=utf-8;q=0, application/yaml",
-            "application/yaml; charset=utf-8",
+            "application/json;charset=utf-8;q=0, application/json",
+            JSON,
         ),
     ],
 )
@@ -443,25 +364,12 @@ def test_a_q_0_with_parameters_refuses_only_that_variant(
 
 
 @pytest.mark.django_db
-def test_the_schema_without_the_refused_parameters_keeps_its_indent(
-    admin_client: Client,
-) -> None:
-    response = admin_client.get(
-        "/api/v1/schema/",
-        headers={"Accept": "application/json, application/json;indent=2;q=0"},
-    )
-    assert response.status_code == HTTPStatus.OK
-    assert response["Content-Type"] == JSON
-    assert response.content.startswith(b"{\n" + b" " * 4 + b'"openapi"')
-
-
-@pytest.mark.django_db
 @pytest.mark.parametrize(
     ("path", "accept"),
     [
         # The negative case: a q=0 range without parameters still refuses, a
         # q=0 range with parameters alone leaves nothing acceptable, and an
-        # invalid range or a member past DRF's 64 still gives no weight.
+        # invalid range still gives no weight.
         ("/api/v1/users/me/", "application/json;indent=2;q=0"),
         ("/api/v1/users/me/", "application/json;indent=2;q=0, application/json;q=0"),
         (
@@ -469,10 +377,6 @@ def test_the_schema_without_the_refused_parameters_keeps_its_indent(
             "*/*, application/json;q=0, application/json;charset=utf-8;q=0",
         ),
         ("/api/v1/users/me/", "*/json, application/json;indent=2;q=0"),
-        (
-            "/api/v1/users/me/",
-            ", ".join(["application/json;indent=2;q=0", *_members(63), JSON]),
-        ),
         ("/api/v1/docs/", "text/html;level=1;q=0"),
         (
             "/api/v1/schema/",
@@ -499,9 +403,9 @@ def test_a_q_0_without_parameters_still_refuses(
     ("path", "accept", "content_type", "start"),
     [
         # The negative case: above 0 a range with parameters still covers the
-        # media type and gives its parameters, as in DRF.
+        # media type.
         ("/api/v1/users/me/", "*/*;q=0, application/json;charset=utf-8", JSON, b"{"),
-        ("/api/v1/schema/", "*/*;q=0, application/json;indent=2", JSON, b'{\n  "'),
+        ("/api/v1/schema/", "*/*;q=0, application/json;indent=2", JSON, b'{"openapi"'),
     ],
 )
 def test_a_range_with_parameters_above_0_still_chooses(

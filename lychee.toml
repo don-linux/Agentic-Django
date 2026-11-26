@@ -1,5 +1,6 @@
-# lychee 0.24.2. CI passes --offline on pull requests; the scheduled workflow
-# runs without that flag to check external URLs.
+# The lychee version is lycheeVersion in .github/workflows/ci.yml. CI passes
+# --offline on pull requests; the scheduled workflow runs without that flag to
+# check external URLs.
 verbose = "info"
 no_progress = true
 hidden = true
@@ -19,7 +20,10 @@ exclude = [
 
 # Local, untracked trees: './**/*.md' is expanded without .gitignore, and
 # hidden = true would reach uv's .venv (core/tests/test_lychee_config.py).
+# .claude/skills links to .agents/skills, which is scanned once already; through
+# the link, a skill's relative links would resolve from the wrong folder.
 exclude_path = [
   '(^|/)graphify-out/',
   '(^|/)\.venv/',
+  '(^|/)\.claude/',
 ]

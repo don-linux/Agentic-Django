@@ -13,8 +13,6 @@ django-environ also reads values in ways that hide mistakes:
 - A value that starts with `$` is replaced by the variable it names. A generated secret that starts with `$` was lost. When the named variable was missing, the error message printed part of the secret.
 - `env.list` keeps the spaces around items.
 
-The Ninja migration left pydantic-settings for a later pull request, pinned to 2.16.3.
-
 ## Decision
 
 Each settings module reads its variables through one pydantic-settings class in `config/settings/env.py`. `BaseEnv` is for `base.py`, and `LocalEnv`, `TestEnv` and `ProductionEnv` are for the modules of the same name.

@@ -33,34 +33,37 @@ class AccountAdapter(DefaultAccountAdapter):
 
     @override
     def clean_email(self, email: str) -> str:
-        # Signup, login and add-email look up the same normalized key.
+        # The key User.save() stores, for signup, adding an email and a password
+        # reset. A password login does not call this: allauth's backend only
+        # lowercases the address it looks up.
         return UserManager.normalize_email(super().clean_email(email))
 
     # Phone support is off: the template stores no phone numbers. Refusing the
     # number in the form makes POST /account/phone a 400; every other phone
-    # route then finds no phone and no pending flow (200 with [] or 409). The
-    # three methods below are unreachable once clean_phone refuses.
-    @typing.override
+    # route then finds no phone and no pending flow (200 with [] or 409).
+    # set_phone, set_phone_verified and send_verification_code_sms are
+    # unreachable once clean_phone refuses.
+    @override
     def clean_phone(self, phone: str) -> str:
         raise ValidationError(_PHONE_DISABLED, code="phone_not_supported")
 
-    @typing.override
+    @override
     def get_phone(self, user: AbstractBaseUser) -> tuple[str, bool] | None:
         return None
 
-    @typing.override
+    @override
     def get_user_by_phone(self, phone: str) -> AbstractBaseUser | None:
         return None
 
-    @typing.override
+    @override
     def set_phone(self, user: AbstractBaseUser, phone: str, verified: bool) -> None:
         raise NotImplementedError(_PHONE_DISABLED)
 
-    @typing.override
+    @override
     def set_phone_verified(self, user: AbstractBaseUser, phone: str) -> None:
         raise NotImplementedError(_PHONE_DISABLED)
 
-    @typing.override
+    @override
     def send_verification_code_sms(
         self, user: AbstractBaseUser, phone: str, code: str, **kwargs: typing.Any
     ) -> None:

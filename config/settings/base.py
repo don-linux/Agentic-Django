@@ -22,7 +22,9 @@ from .guards import assert_throttle_rates
 django_stubs_ext.monkeypatch()
 
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
-# Every variable this module reads, typed (config/settings/_env.py).
+# Every environment variable a settings module reads is a typed field of its
+# class in config/settings/env.py: BaseEnv here, and LocalEnv, TestEnv and
+# ProductionEnv in local.py, test.py and production.py.
 _env = read_env(BaseEnv)
 
 DEBUG = _env.DJANGO_DEBUG
@@ -340,7 +342,8 @@ MIDDLEWARE = [
     "core.middleware.RequestIdMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.csp.ContentSecurityPolicyMiddleware",
-    # Right after SecurityMiddleware, so CORS and 404 responses under /api/ get it too.
+    # Outside CorsMiddleware and ApiDebugErrorMiddleware, so the responses they
+    # build under /api/ (a CORS preflight, a DEBUG error as JSON) get it too.
     "core.middleware.ApiNoStoreMiddleware",
     # After the response exists: rewrite HTML technical errors on the API when DEBUG.
     "core.middleware.ApiDebugErrorMiddleware",
@@ -357,7 +360,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",
     # Inside every header middleware (CSP, no-store, CORS, X-Frame-Options), so its
-    # 405/406/415 responses get the same headers as Ninja's.
+    # 405, 406 and OPTIONS responses get the same headers as Ninja's.
     "core.api.negotiation.ApiContractMiddleware",
     # Last: turns an admin lockout into a 429 response.
     "axes.middleware.AxesMiddleware",
@@ -425,8 +428,9 @@ CSRF_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
 X_FRAME_OPTIONS = "DENY"
-# Django's filter plus BROKER: the debug page and the error emails must not print
-# a URL that embeds the Valkey password (core/debug.py).
+# Django's filter plus BROKER and DSN: the debug page and the error emails must
+# not print the broker URL, which embeds the Valkey password, or SENTRY_DSN,
+# which holds the project's key (core/debug.py).
 DEFAULT_EXCEPTION_REPORTER_FILTER = "core.debug.SafeExceptionReporterFilter"
 
 ADMIN_URL = "admin/"
@@ -505,6 +509,10 @@ ACCOUNT_EMAIL_VERIFICATION_SUPPORTS_RESEND = True
 # /_allauth/app/v1/auth/reauthenticate), even right after login: a stolen session
 # token alone cannot take over the account. See docs/security.md#reauthentication.
 ACCOUNT_REAUTHENTICATION_REQUIRED = True
+# Reauthenticate by password, or by MFA once a user has an authenticator. Not
+# by an emailed code (allauth's default includes it): the template ships no
+# login-code email, and allauth's own text addresses a browser window.
+ACCOUNT_REAUTHENTICATION_METHODS = ("password", "mfa")
 # Hourly caps per address on top of allauth's defaults (merged per action). Every
 # email costs money and an unwanted one hurts the domain's reputation; without
 # them one IP could send 300 reset emails an hour to the same address.
@@ -539,17 +547,17 @@ HEADLESS_CLIENTS = ("app",)
 FRONTEND_URL = _env.FRONTEND_URL.rstrip("/")
 HEADLESS_FRONTEND_URLS = build_headless_frontend_urls(FRONTEND_URL)
 
-# Proxies that append to X-Forwarded-For: the one count core.net.get_client_ip,
-# Ninja throttles and allauth read. 0 trusts no proxy (REMOTE_ADDR only), as
-# local and test need; production.py sets it from DJANGO_TRUSTED_PROXY_COUNT.
+# Proxies that append to X-Forwarded-For. core.net.get_client_ip reads it for
+# django-axes and the API throttles. 0 trusts no proxy (REMOTE_ADDR only), as
+# local and test need; production.py sets it, allauth's
+# ALLAUTH_TRUSTED_PROXY_COUNT and NINJA_NUM_PROXIES from DJANGO_TRUSTED_PROXY_COUNT.
 TRUSTED_PROXY_COUNT = 0
 
-# NINJA_TITLE, NINJA_DESCRIPTION, NINJA_VERSION and NINJA_SERVERS are this
-# project's settings: core/api/api.py passes them to NinjaAPI. Ninja itself reads
-# the pagination, NUM_PROXIES and throttle-rate aliases (ninja/conf.py in 1.8.0).
-# The throttles take the client IP from core.net (TRUSTED_PROXY_COUNT, above);
-# NINJA_NUM_PROXIES keeps Ninja's own get_ident in step with it, and
-# production.py sets both from DJANGO_TRUSTED_PROXY_COUNT.
+# The API's title, description, version and servers: core/api/api.py passes
+# them to NinjaAPI. Ninja reads the other NINJA_* settings itself (ninja/conf.py
+# in 1.8.0): the paginator of a @paginate without a class, the proxy count of
+# its own get_ident (the template's throttles use core.net), and the throttle
+# rates.
 NINJA_TITLE = "Project API"
 NINJA_DESCRIPTION = (
     "The Project JSON API. Account endpoints under /_allauth/ belong to "
@@ -557,8 +565,6 @@ NINJA_DESCRIPTION = (
 )
 NINJA_VERSION = "1.0.0"
 NINJA_SERVERS = [{"url": "/", "description": "Current host"}]
-NINJA_PAGINATION_PER_PAGE = 20
-NINJA_MAX_PER_PAGE_SIZE = 100
 NINJA_PAGINATION_CLASS = "core.api.pagination.LimitPageNumberPagination"
 NINJA_NUM_PROXIES = TRUSTED_PROXY_COUNT
 NINJA_DEFAULT_THROTTLE_RATES = {
@@ -570,7 +576,6 @@ NINJA_DEFAULT_THROTTLE_RATES = {
 assert_throttle_rates(NINJA_DEFAULT_THROTTLE_RATES)
 
 # Deepest page LimitPageNumberPagination serves; deeper pages are a 404.
-# Env var stays DJANGO_API_MAX_PAGE_NUMBER; the setting is framework-neutral.
 API_MAX_PAGE_NUMBER = _env.DJANGO_API_MAX_PAGE_NUMBER
 
 CORS_URLS_REGEX = r"^/(api|_allauth)/.*$"
@@ -580,6 +585,22 @@ CORS_ALLOW_HEADERS = (
     "x-session-token",
     "x-email-verification-key",
     "x-password-reset-key",
+    # A write that checks a precondition (core.api.schemas.IfMatch).
+    "if-match",
+)
+# Response headers of the contract that a browser client must read: Location on
+# a 201, Retry-After on a 429, the ETag to send back in If-Match
+# (core.concurrency), and Deprecation, Sunset and Link on a deprecated
+# operation (core.api.deprecation). Cross-origin, a browser shows JavaScript
+# only the CORS-safelisted response headers and the ones listed here (Fetch
+# standard).
+CORS_EXPOSE_HEADERS = (
+    "Location",
+    "Retry-After",
+    "ETag",
+    "Deprecation",
+    "Sunset",
+    "Link",
 )
 
 # For the admin and Swagger UI, which run with staff sessions; styles allow

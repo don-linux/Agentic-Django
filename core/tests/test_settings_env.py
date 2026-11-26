@@ -112,8 +112,8 @@ def test_any_other_boolean_is_refused_by_name_without_its_value(
 def test_a_value_starting_with_a_dollar_sign_is_read_as_written(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # django-environ replaced "$NAME" with the variable NAME, so a secret that
-    # starts with "$" was lost.
+    # A reader that expands "$NAME" to the variable NAME would lose a secret
+    # that starts with "$".
     monkeypatch.setenv("HOME", "/home/somebody")
     monkeypatch.setenv("DJANGO_EMAIL_SIGNATURE_NAME", "$HOME")
     monkeypatch.setenv("VALKEY_PASSWORD", "$ecret-value")

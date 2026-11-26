@@ -13,6 +13,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.management import CommandError
 from django.core.management import call_command
 from django.db.models import ProtectedError
+from django.db.models import RestrictedError
 from django.test import Client
 
 from apps.users.models import User
@@ -123,13 +124,16 @@ def test_the_user_is_signed_out_before_the_row_goes() -> None:
     assert me.status_code == HTTPStatus.UNAUTHORIZED
 
 
-def test_protected_rows_stop_the_delete() -> None:
+@pytest.mark.parametrize("error", [ProtectedError, RestrictedError])
+def test_protected_rows_stop_the_delete(error: type[Exception]) -> None:
+    # PROTECT raises ProtectedError, RESTRICT raises RestrictedError (which
+    # is not a subclass of it); both keep the user.
     user = _user_with_history()
 
     with (
         mock.patch(
             "apps.users.management.commands.hard_delete_user.Collector.collect",
-            side_effect=ProtectedError("Invoice.customer", set()),
+            side_effect=error("Invoice.customer", set()),
         ),
         pytest.raises(CommandError, match="must go first"),
     ):

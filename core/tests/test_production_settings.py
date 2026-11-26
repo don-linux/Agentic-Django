@@ -9,6 +9,8 @@ from typing import Any
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 
+from config.settings.guards import MIN_SECRET_KEY_LENGTH
+from config.settings.guards import MIN_SECRET_KEY_UNIQUE_CHARACTERS
 from config.settings.guards import assert_production_hosts
 from config.settings.guards import assert_production_secrets
 from core.tests.guard_values import STRONG_KEY
@@ -55,13 +57,19 @@ def test_valid_fallback_passes() -> None:
 
 
 def test_a_weak_secret_key_is_rejected_even_with_a_valid_fallback() -> None:
-    # A later good fallback must not drop problems from a weak primary key
-    # (the `problems +=` / `problems =` mutant).
+    # A good fallback must not hide the problem of a weak primary key.
     _assert_rejected(
         "DJANGO_SECRET_KEY",
         secret_key="change-me",  # noqa: S106
         secret_key_fallbacks=[STRONG_KEY[::-1]],
     )
+
+
+def test_a_secret_key_of_exactly_the_minimum_length_passes() -> None:
+    key = ("Ab1-c" * MIN_SECRET_KEY_LENGTH)[:MIN_SECRET_KEY_LENGTH]
+    assert len(set(key)) >= MIN_SECRET_KEY_UNIQUE_CHARACTERS
+
+    assert_production_secrets(**{**VALID, "secret_key": key})
 
 
 @pytest.mark.parametrize(

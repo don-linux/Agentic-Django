@@ -52,7 +52,7 @@ python manage.py makemigrations <app> --name <verb_noun>
 
 Example name: `create_house_document`. Never edit a migration that may already have been applied; add a new one. Every `RunPython` has a `reverse_code` (`migrations.RunPython.noop` when reversing is meaningless) and uses `apps.get_model`, never a direct model import. A non-nullable or unique column on a populated table takes three migrations: add it nullable (and not unique), backfill in batches, then set `null=False` (and the unique constraint). A callable default such as `uuid.uuid7` may stamp every existing row with one value; do not rely on it to backfill unique ids. Indexes on large tables use `AddIndexConcurrently` in a migration with `atomic = False`. Why: [ARCHITECTURE.md#indexes](../../../docs/ARCHITECTURE.md#indexes), [ci.md#reversible-migrations](../../../docs/ci.md#reversible-migrations). CI proves reversibility with `scripts/local_apps_with_migrations.py`. Reversing an app also unapplies dependent apps (for example `migrate users zero` unapplies a later app that FKs to `User`).
 
-`core/tests/test_migrations_script.py` asserts the script's output equals `local_apps_with_migrations()`. Do not hardcode a new app label in that test.
+`core/tests/test_migrations_script.py` checks that the script lists every app of `LOCAL_APPS` that has migration files, found from the app registry. Do not hardcode a new app label in that test.
 
 ## 3. Services (writes)
 
@@ -63,7 +63,8 @@ In `apps/<app>/services.py` (naming and signature rules: [ARCHITECTURE.md#servic
 - Business logic lives here. Operations stay thin: the schema validates, the operation calls one service or selector and returns its result.
 - Side effects (cache invalidation, Celery, email, webhooks, files) run in `transaction.on_commit(...)`. Use `core.cache.invalidate("<app>.<resource>")` and `core.tasks.enqueue_on_commit(task, **kwargs)` — they already defer to commit. Never call `task.delay()`, `apply_async()`, or `delay_on_commit()`.
 - Read-modify-write on the same row uses `select_for_update()` inside the service transaction (counters, balances, single-use codes).
-- Business rejections raise `core.exceptions.ApplicationError` (or `ConflictError` for 409) with a stable `snake_case` code. Register a new code in [api.md#error-codes](../../../docs/api.md#error-codes) when it is first used. Never raise a Ninja or Django HTTP exception for a domain rule. Do not catch `ValidationError` in the view; the API exception handlers already map it.
+- Business rejections raise `core.exceptions.ApplicationError` (409 unless `status_code` says 403 or 404) or `ConflictError`, with a stable `snake_case` code. Never 400: the request already matched the schema, `ApplicationError` refuses it, and the conformance test would fail with ST202 ([api.md#domain-errors](../../../docs/api.md#domain-errors)). Register a new code in [api.md#error-codes](../../../docs/api.md#error-codes) when it is first used. Never raise a Ninja or Django HTTP exception for a domain rule. Do not catch `ValidationError` in the view; the API exception handlers already map it.
+- A unique field is checked in the service, before `full_clean()`: a duplicate raises `ConflictError(..., code="already_exists", extra={"field": "<field>"})`, a 409. `full_clean()` would answer 400 to a request the schema allows, and the conformance test fails with ST202 ([api.md#duplicates](../../../docs/api.md#duplicates)).
 - `objects.filter(...).update(...)` already bumps `updated_at`. `bulk_update()` does not: include `updated_at` in its fields. After `queryset.update()`, `bulk_create()`, `bulk_update()`, or `RunPython`, call `invalidate()` yourself (no signals fire). If the selector is cached, also add `post_save` / `post_delete` receivers in `apps/<app>/signals.py` for admin and other non-service writes.
 
 ## 4. Selectors (reads)
@@ -71,7 +72,7 @@ In `apps/<app>/services.py` (naming and signature rules: [ARCHITECTURE.md#servic
 In `apps/<app>/selectors.py`:
 
 - Every read that is more than a plain lookup lives here. The selector owns the query shape: `select_related()` / `prefetch_related()` (or `Prefetch(...)`) for everything the output schema reads. Operations call the selector and return its queryset or object. Counts and sums come from `annotate()` in the selector.
-- Order list querysets deterministically, on an indexed column (`core/tests/ninja/test_list_indexes.py` enforces this). Why: [ARCHITECTURE.md#performance](../../../docs/ARCHITECTURE.md#performance), [#indexes](../../../docs/ARCHITECTURE.md#indexes).
+- Order list querysets deterministically, on an indexed column, and add the list operation's selector to `LIST_SELECTORS` in `core/tests/ninja/test_list_indexes.py`: that test fails for a `*_list` operation missing there, and checks the ordering of each selector (once per ordering a client may choose). Why: [ARCHITECTURE.md#performance](../../../docs/ARCHITECTURE.md#performance), [#indexes](../../../docs/ARCHITECTURE.md#indexes).
 - Look objects up by `public_id`, never by integer pk.
 - Scope the queryset to the requesting user or tenant.
 - Do not query `request.user` again; authentication already loaded it.
@@ -92,9 +93,11 @@ Why: [ARCHITECTURE.md#caching](../../../docs/ARCHITECTURE.md#caching). Outages: 
 
 In `apps/<app>/api/views.py`, above the operations (pattern: `UserOut` and `UserUpdateIn` in `apps/users/api/views.py`). pyright checks `apps/<app>/api/` in strict mode, so a validator gives its raw `Any` input a real type before using it ([typing.md#strict-api](../../../docs/typing.md#strict-api)):
 
-- Output schemas subclass `core.api.schemas.BaseSchema`; input schemas subclass `core.api.schemas.InputSchema`, so an unknown body key is a 400 with code `unknown_field`, not a silent ignore ([Ninja: schemas](https://django-ninja.dev/guide/schemas/)).
+- Output schemas subclass `core.api.schemas.BaseSchema`; input schemas subclass `core.api.schemas.InputSchema`, so an unknown body key is a 400 with code `unknown_field`, not a silent ignore ([Ninja: schemas](https://django-ninja.dev/guide/schemas/)). Every other field error keeps Pydantic's own type and message (`missing`, `string_type`, `string_too_long`…): do not translate them ([api.md#error-body](../../../docs/api.md#error-body)).
 - Expose `public_id` as `id`, a string, read-only: `id: UUID = Field(json_schema_extra={"readOnly": True})` with a `resolve_id(obj) -> UUID` static method that returns `obj.public_id` ([Ninja: resolvers](https://django-ninja.dev/guide/schemas/#resolvers)). Mark every other server-set field `readOnly` the same way.
-- Datetime fields use `core.api.schemas.UTCDateTime`. `TIME_ZONE` must not change the JSON (`Z` suffix, UTC).
+- Datetime fields use `core.api.schemas.UTCDateTime` and date fields `core.api.schemas.ISODate`: a request sends RFC 3339 (a datetime with its time zone), and `TIME_ZONE` must not change the JSON (`Z` suffix, UTC). A UUID a request sends, such as a related object's id, is `core.api.schemas.PublicId`.
+- An input schema states every rule of the model that a schema can express: `max_length=` from the model field, and `min_length=1` for a `CharField` without `blank=True`. Otherwise `full_clean()` answers 400 to a request the schema allows, and the conformance test fails with ST202. `InputSchema` already refuses NUL and lone surrogates in every string ([api.md#field-types](../../../docs/api.md#field-types)).
+- Integer, number and boolean fields of an input schema are `JsonInt` (`core.api.schemas`, with the model field's range as `ge` and `le`), and Pydantic's `StrictFloat` and `StrictBool`; a query parameter keeps `int`, `FiniteFloat` and `bool`, which parse text. A plain `int` in a body takes `"1"` and `true`, which the schema forbids and the conformance test sends, and `StrictInt` refuses `1.0`, which the schema allows. A decimal is `Annotated[Decimal, DecimalString(...)]` with the model's precision, and an integer choice carries `JsonInteger`. Do not set `ConfigDict(strict=True)`: Ninja validates in Python mode, where strict refuses the strings a datetime or a UUID arrives as ([api.md#field-types](../../../docs/api.md#field-types)).
 - Every field the output always renders is required in the schema (no default), so oasdiff sees its removal ([api.md#breaking-changes](../../../docs/api.md#breaking-changes)).
 - A `PATCH` input schema has every field optional; read only the keys the client sent with `body.model_dump(exclude_unset=True)`.
 - Why: [api.md#representation](../../../docs/api.md#representation).
@@ -104,16 +107,16 @@ In `apps/<app>/api/views.py`, above the operations (pattern: `UserOut` and `User
 In `apps/<app>/api/views.py`:
 
 - `router = Router(tags=["<app>"])`. Each operation validates through its schema, calls one service or selector, and returns the model, queryset or `Status(...)`. Do not wrap those calls in `try/except ValidationError`.
-- Every operation declares `response={<2xx>: Schema, **<ERRORS>}`, `openapi_extra=response_docs(<ERRORS>)` with the same map, an explicit `operation_id="<app>_<resource>_<action>"` and a `summary`. Pick the map from `core.api.responses`: `LIST_ERRORS` for a list, `LOOKUP_ERRORS` for a detail, `WRITE_ERRORS` for a body (combine `{**LOOKUP_ERRORS, **WRITE_ERRORS}` on `PATCH`). Why: [api.md#error-responses-in-openapi](../../../docs/api.md#error-responses-in-openapi); `core/tests/ninja/test_openapi_responses.py` fails when one is missing.
-- Detail paths are `"/{public_id:id}/"` with a `<model>_id: PathEx[UUID, P(alias="id")]` argument: the alias keeps the contract's `id` without shadowing the builtin, and the `public_id` converter accepts only a UUID (either case), so an integer pk is a plain 404 before the body is parsed. Why: [api.md#paths](../../../docs/api.md#paths).
+- Every operation declares `response={<2xx>: Schema, **<ERRORS>}`, `openapi_extra=response_docs(<ERRORS>)` with the same map, an explicit `operation_id` (`<app>_<action>` for the app's own resource, `<app>_<resource>_<action>` for another one) and a `summary`. Pick the map from `core.api.responses`: `LIST_ERRORS` for a list, `LOOKUP_ERRORS` for a detail, `WRITE_ERRORS` for a body (combine `{**LOOKUP_ERRORS, **WRITE_ERRORS}` on `PATCH`), plus `CONFLICT_ERRORS` on an operation that can break a business rule or create a duplicate, and on the delete of a model that `PROTECT` foreign keys point to. A public operation uses `PUBLIC_ERRORS`; a conditional write adds `PRECONDITION_ERRORS` ([api.md#optimistic-concurrency](../../../docs/api.md#optimistic-concurrency)). Why: [api.md#error-responses-in-openapi](../../../docs/api.md#error-responses-in-openapi); `core/tests/ninja/test_openapi_responses.py` fails when one is missing.
+- Detail paths are `"/{public_id:id}/"` with a `<model>_id: PublicIdPath` argument (`core.api.schemas`): its alias keeps the contract's `id` without shadowing the builtin, and the `public_id` converter accepts only a UUID (either case), so an integer pk is a plain 404 before the body is parsed. Why: [api.md#paths](../../../docs/api.md#paths).
 - Lists use `@paginate(LimitPageNumberPagination)` (or `LimitCursorPagination`) under the route decorator and return the selector's ordered queryset ([api.md#pagination](../../../docs/api.md#pagination)).
-- Create: take `response: HttpResponse` as an argument, set `response["Location"] = request.build_absolute_uri(f"/api/v1/<resource>/{obj.public_id}/")`, and `return Status(201, obj)` ([Ninja: setting headers](https://django-ninja.dev/guide/temporal-response/#setting-headers)). Delete: `response={204: None, **LOOKUP_ERRORS}` and `return Status(204, None)`. Annotate an operation that returns `Status` as `-> Any`.
-- Scope every read and write to the caller. `API_AUTH` already rejects anonymous requests with 401, but `request.user` is still typed `User | AnonymousUser`: narrow it once with a helper (`if not isinstance(request.user, User): raise Http404`) and pass the result to the selector or service. Do not `cast()`.
+- Create: take `response: HttpResponse` as an argument, set `response["Location"]` to the new object's `url`, built as the output schema's `resolve_url` builds it (`request.build_absolute_uri(reverse("api:<resource>-detail", kwargs={"id": obj.public_id}))`, which keeps the script prefix), and `return Status(201, obj)` ([Ninja: setting headers](https://django-ninja.dev/guide/temporal-response/#setting-headers)). Delete: `response={204: None, **LOOKUP_ERRORS}` (plus `**CONFLICT_ERRORS` when `PROTECT` foreign keys point to the model) and `return Status(204, None)`. Annotate an operation that returns `Status` as `-> Any`.
+- Scope every read and write to the caller. `API_AUTH` already rejects anonymous requests with 401, but `request.user` is still typed `User | AnonymousUser`: narrow it once with `core.api.auth.request_user(request, User)` and pass the result to the selector or service. Do not `cast()`. A detail lookup is a selector scoped to the caller that raises `DoesNotExist` for an object they cannot see, which the API answers with 404 (pattern: `apps.users.selectors.user_visible`).
 - Declare only the methods the resource supports. `HEAD`, `OPTIONS`, `Allow` and 405 come from `ApiContractMiddleware` for every route; nothing to register ([api.md#head-options-and-405](../../../docs/api.md#head-options-and-405)). An undeclared `PUT` is 405.
 - The body parameter may have any name (`body` is the convention); errors are keyed by field name without it.
 - Mount the router in `config/api.py`, next to the users one, as `api.add_router("/<resource>/", <app>_router)`. Not in `config/urls.py`: a test that reloads the URLconf would mount it again, and Ninja refuses that. Do not add a second API instance, an API root, or a route under another prefix.
 - Static path segments are kebab-case and end with `/` (`"/{public_id:id}/change-password/"`, never `change_password`). At most one level of nesting. A path without the trailing slash must 404 (not redirect). Enforced by `core/tests/http/test_rest_conventions.py`. Why: [api.md#paths](../../../docs/api.md#paths).
-- Compatible additions stay on `/api/v1/`. Open `/api/v2/` only for an incompatible change. Deprecate before removing ([api.md#deprecating-endpoints-and-fields](../../../docs/api.md#deprecating-endpoints-and-fields)).
+- Everything stays on `/api/v1/`, the template's only API: make every change compatible, and deprecate before removing ([api.md#deprecating-endpoints-and-fields](../../../docs/api.md#deprecating-endpoints-and-fields)).
 - Create endpoints that clients may retry (mobile, lost response) follow [api.md#idempotent-retries](../../../docs/api.md#idempotent-retries). A first internal POST does not have to implement `Idempotency-Key`; say so in the plan if you skip it.
 - Responses are `no-store` by default (`ApiNoStoreMiddleware`). Never `cache_page` or the per-site cache middleware. Why: [api.md#caching](../../../docs/api.md#caching).
 
@@ -125,7 +128,7 @@ When the new model has a `FileField` or `ImageField`, also follow [docs/files.md
 - The create/upload operation is the only one that accepts `multipart/form-data`: `file: File[UploadedFile]` and `Form[...]` parameters, both imported from `ninja` ([docs/files.md#endpoint](../../../docs/files.md#endpoint)). Every operation with a JSON body still answers a multipart body with 415.
 
 - Services that replace or delete a file call `core.files.delete_file_on_commit` before saving or deleting the row.
-- If the story does not name allowed extensions or a size cap, pick a tight allow-list (never unsanitized HTML/SVG) and a cap at or below the proxy `client_max_body_size`, and state the choice. Do not invent a `TextChoices` enum for an unspecified "tipo".
+- If the story does not name allowed extensions or a size cap, pick a tight allow-list (never unsanitized HTML/SVG) and a cap at or below the proxy `client_max_body_size`, and state the choice. Do not invent a `TextChoices` enum for a kind or type the story does not list.
 - After regenerating `docs/openapi.json`, `apps/users/tests/ninja/test_openapi.py` must allow `multipart/form-data` only on those upload operations (not `== {"application/json"}` for the whole schema).
 
 ## 7. Throttle scope
@@ -154,7 +157,7 @@ If you are already inside the container, or on a host with the toolchain (`uv ru
 python manage.py export_openapi_schema --settings config.settings.test --api config.api.api --indent 2 > docs/openapi.json
 ```
 
-`scripts/check.sh lint` and `core/tests/ninja/test_openapi_contract.py` fail when the file drifts. A diff that removes or renames a path, field, or enum value is a breaking change and needs `/api/v2/`. Check it with oasdiff as CI does, including `--flatten-allof` ([api.md#breaking-changes](../../../docs/api.md#breaking-changes)).
+`scripts/check.sh lint` and `core/tests/ninja/test_openapi_contract.py` fail when the file drifts. A diff that removes or renames a path, field, or enum value is a breaking change, and the `api-contract` job refuses it: add the new one next to the old one and deprecate the old one. Check it with oasdiff as CI does, including `--flatten-allof` ([api.md#breaking-changes](../../../docs/api.md#breaking-changes)).
 
 ## 9. Tests (including negative paths)
 
@@ -166,14 +169,14 @@ Every new endpoint needs:
 - `401` unauthenticated (`WWW-Authenticate: X-Session-Token`).
 - `403` only when a permission other than "must be logged in" applies. Another user's object is `404`, not `403`, when the queryset is scoped.
 - `404` for another user's object, for an unknown `public_id`, and for an integer pk if the detail route uses `public_id`.
-- `400` validation: unknown field, `full_clean()` failure surfaced as JSON, and any domain `ApplicationError`.
-- An exact query budget (`django_assert_num_queries`). Measure it once with a **session-authenticated** client (LocMem cache + `cached_db` sessions, as in `apps/users/tests/http/test_query_budget.py`), pin the number, and comment what each query is — `full_clean()` often adds existence checks, and a `CheckConstraint` can add a savepoint plus a check query. If the assertion does not print the SQL, dump it with `CaptureQueriesContext`. Do not use a framework test client helper that bypasses the real authentication path for the budget; use a session-authenticated `user_client`.
+- `400` validation: unknown field, and each field's type and limits. A domain `ApplicationError` is a 409 (or the 403 or 404 it declares), tested like any other status.
+- An exact query budget (`django_assert_num_queries`). Measure it once with a client that logs in through allauth and sends `X-Session-Token`, the path app clients take (`session_client` in `apps/users/tests/http/test_query_budget.py`, with the LocMem cache and `cached_db` sessions), pin the number, and comment what each query is — `full_clean()` often adds existence checks, and a `CheckConstraint` can add a savepoint plus a check query. If the assertion does not print the SQL, dump it with `CaptureQueriesContext`. Do not measure the budget with `force_login()` (`user_client`) or a helper that bypasses that authentication path.
 - Every list endpoint also gets `assert_constant_queries` that grows related data.
 - A service test for the `full_clean()` failure.
 
 If the selector is cached, also test: a second read makes zero queries (`cache_writes` + `django_assert_num_queries(0)`), a write through the service returns fresh data, and a rolled-back write leaves the cache untouched. Behaviour that only a real Valkey can show belongs in `core/tests/test_valkey_integration.py` (marker `valkey`).
 
-`core/tests/test_openapi_conformance.py` already sends the new operations requests generated from the schema (schemathesis), and fails on any response the schema does not describe. Fix the server or the schema; never widen its `filter_failure` to make it pass ([api.md#contract-conformance](../../../docs/api.md#contract-conformance)).
+`core/tests/test_openapi_conformance.py` already sends the new operations requests generated from the schema (schemathesis), and fails on any response the schema does not describe. Fix the server or the schema: the test has no exceptions ([api.md#contract-conformance](../../../docs/api.md#contract-conformance)). For a detail route, add a factory to its `OWNED_IDS` that returns the `public_id` of an object the caller owns; without it every generated request to the route is a 404.
 
 If the operation has a scoped throttle, test that the N+1th call returns `429` `throttled`. Set the rate with the `throttle_rates` fixture (`core/tests/ninja/adapters.py`); a test under `tests/http/` never patches Ninja itself.
 
@@ -248,6 +251,6 @@ Keep this skill for the HTTP surface. For the task itself follow [tasks.md#writi
 - Enqueue a task or send email / invalidate cache inside `atomic` without `on_commit`.
 - Pass `throttle=` without `AnonThrottle()` and `UserThrottle()`.
 - Add `gettext_lazy`, HTML API pages, or a `docs/glossary.md`.
-- Translate or rename anything under `bruno/`.
+- Translate or rename the Spanish request names, folder names or console messages under `bruno/`.
 - Change coverage `fail_under` (it stays at 98).
 - Copy decisions from some other product's domain; this recipe is generic.

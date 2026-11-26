@@ -17,7 +17,7 @@ USER_NAMESPACE = "users.user"
 USER_TTL = 300
 # Part of the key. A cached model instance is a pickle of its field values: raise
 # this when the User model's fields change, so copies with the old shape are never
-# read. A change of base class alone keeps the pickle (docs/decisions/0014).
+# read.
 USER_CACHE_VERSION = 1
 
 
@@ -25,8 +25,10 @@ def user_get(*, public_id: uuid.UUID) -> User:
     """
     Return the user with this public id, from the cache when it is there.
 
-    Not for request.user, which authentication already loaded. The template's worked
-    example of a cached selector: see docs/ARCHITECTURE.md#caching.
+    Not for request.user, which authentication already loaded. No operation of the
+    template reads a user by id from the cache: this is the worked example of a
+    cached selector for a project's hot reads, and its tests show the rules
+    (docs/ARCHITECTURE.md#caching).
     """
     return read_through(
         USER_NAMESPACE,
@@ -44,3 +46,13 @@ def user_list(*, user: User) -> QuerySet[User]:
     The query shape lives here, not in the view. See docs/ARCHITECTURE.md#layers.
     """
     return User.objects.filter(pk=user.pk).order_by("public_id")
+
+
+def user_visible(*, user: User, public_id: uuid.UUID) -> User:
+    """
+    The user with this public id, if the requester may see it.
+
+    Raises User.DoesNotExist otherwise, which the API answers with 404: another
+    user's object reads as no object. See docs/api.md#representation.
+    """
+    return user_list(user=user).get(public_id=public_id)

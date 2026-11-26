@@ -15,7 +15,10 @@ repos:
         # JSONC (comments allowed)
         exclude: ^(\.devcontainer/devcontainer\.json|\.vscode/.*\.json)$
       - id: check-merge-conflict
+      # --enforce-all: also the files already committed, so CI's --all-files
+      # run checks something.
       - id: check-added-large-files
+        args: [--enforce-all]
       - id: detect-private-key
       - id: mixed-line-ending
         args: [--fix=lf]
@@ -48,12 +51,13 @@ repos:
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:
-      # Reads .gitleaks.toml from the repository root.
+      # Reads .gitleaks.toml from the repository root. It scans the staged
+      # changes of a commit, so CI skips it (SKIP=gitleaks) and its secrets job
+      # scans the whole history instead.
       - id: gitleaks
 
-  # Markdown style. Dependabot updates this hook (unlike uv and gitleaks).
-  # CI runs it through the existing pre-commit step; there is no second
-  # markdownlint action, so the pin cannot drift.
+  # Markdown style. Dependabot updates this hook (unlike uv and gitleaks), and
+  # CI runs it through the pre-commit step: this rev is the only pin.
   - repo: https://github.com/DavidAnson/markdownlint-cli2
     rev: v0.24.2
     hooks:

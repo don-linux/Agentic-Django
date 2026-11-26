@@ -113,3 +113,18 @@ def test_a_queryset_update_needs_an_explicit_invalidate(
     with cache_writes():
         invalidate(USER_NAMESPACE)
     assert user_get(public_id=user.public_id).name == "Set in bulk"
+
+
+@pytest.mark.django_db
+def test_saving_last_login_with_another_field_still_invalidates(
+    user: User,
+    cache_writes: CacheWrites,
+) -> None:
+    before = build_key(USER_NAMESPACE, "probe")
+
+    with cache_writes():
+        user.last_login = timezone.now()
+        user.name = "Also changed"
+        user.save(update_fields=["last_login", "name"])
+
+    assert build_key(USER_NAMESPACE, "probe") != before

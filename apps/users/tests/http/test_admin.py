@@ -10,6 +10,7 @@ from apps.users.models import User
 from apps.users.selectors import user_get
 from apps.users.services import user_reactivate
 from apps.users.tests.factories import UserFactory
+from core.tests.accounts import log_in
 from core.tests.credentials import PASSWORD
 
 pytestmark = pytest.mark.django_db
@@ -22,11 +23,11 @@ class TestUserAdmin:
         assert response.status_code == HTTPStatus.OK
 
     def test_search_by_name_and_email(self, admin_client) -> None:
-        alice = UserFactory(email="alice-search@example.com", name="Alice Lovelace")
+        alice = UserFactory(email="alice-search@example.com", name="Ada Lovelace")
         bob = UserFactory(email="bob-search@example.com", name="Bob Babbage")
         url = reverse("admin:users_user_changelist")
 
-        by_name = admin_client.get(url, data={"q": "Lovelace"})
+        by_name = admin_client.get(url, data={"q": "Ada"})
         assert by_name.status_code == HTTPStatus.OK
         assert alice.email.encode() in by_name.content
         assert bob.email.encode() not in by_name.content
@@ -35,6 +36,20 @@ class TestUserAdmin:
         assert by_email.status_code == HTTPStatus.OK
         assert bob.email.encode() in by_email.content
         assert alice.email.encode() not in by_email.content
+
+    def test_search_matches_the_start_of_a_name_or_an_email(self, admin_client) -> None:
+        # Prefix lookups: text in the middle of a value would need every row
+        # read (docs/ARCHITECTURE.md#performance).
+        alice = UserFactory(email="alice-middle@example.com", name="Alice Lovelace")
+        url = reverse("admin:users_user_changelist")
+
+        by_start = admin_client.get(url, data={"q": "alice-mid"})
+        in_the_middle = admin_client.get(url, data={"q": "Lovelace"})
+        domain = admin_client.get(url, data={"q": "middle@example.com"})
+
+        assert alice.email.encode() in by_start.content
+        assert alice.email.encode() not in in_the_middle.content
+        assert alice.email.encode() not in domain.content
 
     def test_add_creates_normalized_user_and_syncs_email_address(
         self,
@@ -63,6 +78,28 @@ class TestUserAdmin:
             primary=True,
             verified=True,
         ).exists()
+
+    def test_add_refuses_another_users_verified_address(self, admin_client) -> None:
+        # allauth allows one verified EmailAddress per address
+        # (unique_verified_email): the form refuses it instead of a 500.
+        owner = UserFactory(email="owner@example.com")
+        EmailAddress.objects.create(
+            user=owner, email="taken@example.com", primary=False, verified=True
+        )
+        response = admin_client.post(
+            reverse("admin:users_user_add"),
+            data={
+                "email": "Taken@Example.com",
+                "usable_password": "true",
+                "password1": PASSWORD,
+                "password2": PASSWORD,
+            },
+        )
+        assert response.status_code == HTTPStatus.OK
+        assert response.context["adminform"].form.errors["email"] == [
+            "A user with this email already exists."
+        ]
+        assert not User.objects.filter(email="taken@example.com").exists()
 
     def test_add_supports_unusable_password(self, admin_client) -> None:
         url = reverse("admin:users_user_add")
@@ -234,6 +271,40 @@ class TestUserDeactivationInAdmin:
         assert user.is_active is True
 
 
+def _staff_with_view_user(email: str) -> User:
+    staff = UserFactory(email=email, is_staff=True, is_superuser=False)
+    staff.user_permissions.add(
+        Permission.objects.get(content_type__app_label="users", codename="view_user")
+    )
+    return staff
+
+
+class TestStaffWhoMayOnlyView:
+    """The deactivate and reactivate actions need change_user, not view_user."""
+
+    def test_the_actions_are_not_offered(self, client) -> None:
+        client.force_login(_staff_with_view_user("staff-view@example.com"))
+        response = client.get(reverse("admin:users_user_changelist"))
+        assert response.status_code == HTTPStatus.OK
+        action_form = response.context["action_form"]
+        actions = (
+            {name for name, _ in action_form.fields["action"].choices}
+            if action_form
+            else set()
+        )
+        assert not {"deactivate_users", "reactivate_users"} & actions
+
+    def test_posting_an_action_changes_nothing(self, client) -> None:
+        client.force_login(_staff_with_view_user("staff-view-post@example.com"))
+        regular = UserFactory(email="regular-stays@example.com")
+        client.post(
+            reverse("admin:users_user_changelist"),
+            {"action": "deactivate_users", "_selected_action": [regular.pk]},
+        )
+        regular.refresh_from_db()
+        assert regular.is_active is True
+
+
 def _staff_with_change_user(email: str) -> User:
     staff = UserFactory(email=email, is_staff=True, is_superuser=False)
     staff.user_permissions.add(
@@ -305,7 +376,7 @@ class TestStaffWithoutSuperuser:
         target.refresh_from_db()
         assert target.email == "privileged@example.com"
         assert target.is_superuser is (role == "superuser")
-        assert response.status_code in {HTTPStatus.OK, HTTPStatus.FORBIDDEN}
+        assert response.status_code == HTTPStatus.FORBIDDEN
 
     def test_cannot_promote_itself(self, client) -> None:
         staff = _staff_with_change_user("staff-self@example.com")
@@ -393,16 +464,6 @@ class TestAdminActiveFlag:
     """Unticking is_active in the change form goes through the services."""
 
     @staticmethod
-    def _login(user: User, password: str) -> str:
-        response = Client().post(
-            "/_allauth/app/v1/auth/login",
-            {"email": user.email, "password": password},
-            content_type="application/json",
-        )
-        assert response.status_code == HTTPStatus.OK, response.content
-        return response.json()["meta"]["session_token"]
-
-    @staticmethod
     def _me(token: str) -> int:
         return Client().get("/api/v1/users/me/", HTTP_X_SESSION_TOKEN=token).status_code
 
@@ -414,7 +475,7 @@ class TestAdminActiveFlag:
         EmailAddress.objects.create(
             user=target, email=target.email, primary=True, verified=True
         )
-        token = self._login(target, password)
+        token = log_in(target, password)
         data = _change_data(target)
         del data["is_active"]
 

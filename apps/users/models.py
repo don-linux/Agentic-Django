@@ -36,11 +36,11 @@ class User(AbstractBaseUser, PermissionsMixin):
     Email-login user. Signup goes through allauth headless.
 
     Built on AbstractBaseUser and PermissionsMixin, as Django's guide builds a user
-    model without `username` (docs/decisions/0014). Not AbstractUser.
+    model without `username`, not on AbstractUser (docs/decisions/0014).
     """
 
-    # AbstractUser's status fields with its exact options, so migration 0001 still
-    # matches. Declared before `name` to keep their place in _meta.fields.
+    # The status fields of Django's AbstractUser, with its exact options, in the
+    # order of migration 0001.
     is_staff: BooleanField[bool | Combinable, bool] = BooleanField(
         "staff status",
         default=False,
@@ -66,8 +66,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     )
     email: EmailField[str | Combinable, str] = EmailField("email address", unique=True)
     # The API identifier (docs/decisions/0003); the integer pk stays internal.
-    # Declared here, not inherited from core.models.PublicIdModel, so the field
-    # keeps its place and Meta keeps two parents (docs/decisions/0014).
+    # Declared here rather than inherited from core.models.PublicIdModel, which
+    # would add a third Meta parent for one field (docs/decisions/0014).
     public_id: UUIDField[str | uuid.UUID, uuid.UUID] = UUIDField(
         default=uuid.uuid7, unique=True, editable=False
     )

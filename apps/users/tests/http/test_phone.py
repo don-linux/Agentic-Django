@@ -6,12 +6,9 @@ from http import HTTPStatus
 from typing import Any
 
 import pytest
-from allauth.account.models import EmailAddress
 from django.test import Client
 
-from apps.users.adapters import AccountAdapter
-from apps.users.tests.factories import UserFactory
-from core.tests.credentials import PASSWORD
+from core.tests.accounts import session_token
 
 pytestmark = pytest.mark.django_db
 
@@ -20,17 +17,7 @@ PHONE = "+525512345678"
 
 
 def _token() -> str:
-    user = UserFactory(email="phone@example.com", password=PASSWORD)
-    EmailAddress.objects.create(
-        user=user, email=user.email, primary=True, verified=True
-    )
-    response = Client().post(
-        f"{BASE}/auth/login",
-        {"email": user.email, "password": PASSWORD},
-        content_type="application/json",
-    )
-    assert response.status_code == HTTPStatus.OK, response.content
-    return response.json()["meta"]["session_token"]
+    return session_token("phone@example.com")
 
 
 def _call(method: str, route: str, token: str | None = None) -> Any:
@@ -77,21 +64,6 @@ def test_anonymous_phone_management(method: str, expected: HTTPStatus) -> None:
     response = _call(method, "/account/phone")
 
     assert response.status_code == expected
-
-
-def test_the_adapter_stores_and_finds_no_phone() -> None:
-    adapter = AccountAdapter()
-    user = UserFactory()
-
-    assert adapter.get_phone(user) is None
-    assert adapter.get_user_by_phone(PHONE) is None
-    for call in (
-        lambda: adapter.set_phone(user, PHONE, verified=True),
-        lambda: adapter.set_phone_verified(user, PHONE),
-        lambda: adapter.send_verification_code_sms(user, PHONE, "123456"),
-    ):
-        with pytest.raises(NotImplementedError, match=r"docs/auth/phone\.md"):
-            call()
 
 
 UNHANDLED_METHODS = ["put", "patch", "delete", "options", "head", "trace"]

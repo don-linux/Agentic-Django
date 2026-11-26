@@ -12,7 +12,6 @@ from .base import build_headless_frontend_urls
 from .env import TestEnv
 from .env import read_env
 
-# Every variable this module reads, typed (config/settings/_env.py).
 _env = read_env(TestEnv)
 DEBUG = False
 

@@ -16,14 +16,22 @@ def test_real_values_pass() -> None:
     assert_production_email(**VALID)
 
 
-def test_local_relay_and_anymail_pass() -> None:
-    assert_production_email(**{**VALID, "mailers": _smtp(host="localhost")})
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "::1"])
+def test_a_loopback_mail_host_is_refused(host: str) -> None:
+    # In the container, loopback is the container itself: nothing answers SMTP.
+    with pytest.raises(ImproperlyConfigured, match="DJANGO_MAILER_HOST"):
+        assert_production_email(**{**VALID, "mailers": _smtp(host=host)})
+
+
+def test_a_relay_on_the_host_and_anymail_pass() -> None:
+    assert_production_email(**{**VALID, "mailers": _smtp(host="host.docker.internal")})
     anymail = {"default": {"BACKEND": "anymail.backends.postmark.EmailBackend"}}
     assert_production_email(**{**VALID, "mailers": anymail})
 
 
 def test_notexample_com_is_not_treated_as_a_placeholder() -> None:
-    # endswith("example.com") used to reject this real-looking host.
+    # Only example.com and its subdomains are placeholders, not a name that
+    # merely ends with the same letters.
     assert_production_email(
         **{
             **VALID,
@@ -43,6 +51,7 @@ def test_notexample_com_is_not_treated_as_a_placeholder() -> None:
         ({"mailers": _smtp(host="smtp.example.org")}, "DJANGO_MAILER_HOST"),
         ({"mailers": _smtp(host="smtp.example.net")}, "DJANGO_MAILER_HOST"),
         ({"mailers": _smtp(use_ssl=True)}, "DJANGO_MAILER_USE_TLS"),
+        ({"mailers": {}}, "MAILERS"),
         (
             {
                 "mailers": {

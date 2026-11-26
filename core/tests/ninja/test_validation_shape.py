@@ -2,8 +2,8 @@
 
 Ninja's error loc is (source, parameter name, field...) for a body and
 (source, name) for query/path. Only the first one or two parts are framework
-plumbing; a schema field may itself be called body, path or query.
-docs/api.md#error-body documents `required` for a missing field.
+plumbing; a schema field may itself be called body, path or query. Each item
+keeps Pydantic's own error type and message (docs/api.md#error-body).
 """
 
 from __future__ import annotations
@@ -20,7 +20,8 @@ from core.api.exceptions import _ninja_validation_fields
 from core.api.exceptions import register_exception_handlers
 from core.api.parsers import JSONParser
 from core.api.schemas import InputSchema
-from core.tests.ninja.pagination_views import cursor_api
+from core.api.schemas import PublicId
+from core.tests.ninja.support import make_api
 
 if TYPE_CHECKING:
     from django.test import Client
@@ -70,6 +71,18 @@ def _post(path: str, data: object):
 
 
 BAD = {"body": 1, "path": 2, "page": "x", "address": {}, "tags": [1, "y"]}
+# Pydantic's error types and messages:
+# https://docs.pydantic.dev/latest/errors/validation_errors/
+MISSING = [{"code": "missing", "detail": "Field required"}]
+NOT_A_STRING = [{"code": "string_type", "detail": "Input should be a valid string"}]
+NOT_AN_INTEGER = [
+    {
+        "code": "int_parsing",
+        "detail": (
+            "Input should be a valid integer, unable to parse string as an integer"
+        ),
+    }
+]
 
 
 def _fields(response) -> dict:
@@ -81,50 +94,30 @@ def _fields(response) -> dict:
 
 def test_field_errors_are_keyed_by_field_whatever_the_parameter_name() -> None:
     expected = {
-        "title": [{"code": "required", "detail": "This field is required."}],
-        "body": [{"code": "invalid", "detail": "Not a valid string."}],
-        "path": [{"code": "invalid", "detail": "Not a valid string."}],
-        "page": [{"code": "invalid", "detail": "A valid integer is required."}],
-        "address": {
-            "city": [{"code": "required", "detail": "This field is required."}]
-        },
-        "tags": {"1": [{"code": "invalid", "detail": "A valid integer is required."}]},
+        "title": MISSING,
+        "body": NOT_A_STRING,
+        "path": NOT_A_STRING,
+        "page": NOT_AN_INTEGER,
+        "address": {"city": MISSING},
+        "tags": {"1": NOT_AN_INTEGER},
     }
     assert _fields(_post("/named-payload/", BAD)) == expected
     assert _fields(_post("/named-body/", BAD)) == expected
 
 
-def test_a_body_field_named_page_is_a_400_not_an_invalid_page_404() -> None:
-    response = _post(
-        "/named-body/",
-        {
-            "title": "t",
-            "body": "b",
-            "path": "p",
-            "page": "x",
-            "address": {"city": "c"},
-            "tags": [],
-        },
-    )
-    assert _fields(response) == {
-        "page": [{"code": "invalid", "detail": "A valid integer is required."}]
-    }
-
-
-@pytest.mark.parametrize("query", ["?page=x", "?page=1&page_size=x"])
-def test_an_invalid_page_or_page_size_query_parameter_is_the_invalid_page_404(
-    query: str,
+@pytest.mark.parametrize(
+    ("query", "field"), [("?page=x", "page"), ("?page=1&page_size=x", "page_size")]
+)
+def test_a_page_or_page_size_query_error_is_a_field_error_like_any_other(
+    query: str, field: str
 ) -> None:
     response = _client().get(f"/query-page/{query}")
-    assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"code": "not_found", "detail": "Invalid page."}
+    assert _fields(response) == {field: NOT_AN_INTEGER}
 
 
 def test_another_invalid_query_parameter_is_a_400_field_error() -> None:
     response = _client().get("/query-page/?page=1&other=x")
-    assert _fields(response) == {
-        "other": [{"code": "invalid", "detail": "A valid integer is required."}]
-    }
+    assert _fields(response) == {"other": NOT_AN_INTEGER}
 
 
 def test_an_error_loc_without_a_parameter_source_is_kept_whole() -> None:
@@ -134,71 +127,93 @@ def test_an_error_loc_without_a_parameter_source_is_kept_whole() -> None:
             {"loc": (), "type": "missing", "msg": "m"},
         ]
     )
-    required = [{"code": "required", "detail": "This field is required."}]
-    assert fields == {"custom": {"x": required}, "non_field_errors": required}
+    missing = [{"code": "missing", "detail": "m"}]
+    assert fields == {"custom": {"x": missing}, "non_field_errors": missing}
 
 
-def test_an_unknown_field_sent_as_null_is_unknown_not_null() -> None:
-    # extra_forbidden carries the extra value as its input, None here: the
-    # unknown-field rule goes before the null rule.
+def test_an_unknown_field_is_unknown_field_whatever_its_value() -> None:
+    # Pydantic's extra_forbidden is the registered code unknown_field (ADR 0006),
+    # with Pydantic's message, at any depth and for any value, None included.
     valid = {"title": "t", "body": "b", "path": "p", "page": 1, "tags": []}
     response = _post(
         "/named-body/", {**valid, "address": {"city": "c", "zip": None}, "x": None}
     )
-    unknown = [{"code": "unknown_field", "detail": "Unknown field."}]
+    unknown = [{"code": "unknown_field", "detail": "Extra inputs are not permitted"}]
     assert _fields(response) == {"address": {"zip": unknown}, "x": unknown}
-
-
-def test_a_missing_field_is_required_whatever_its_parent_input() -> None:
-    # A missing error is raised on "the input value" that lacks the field
-    # (https://docs.pydantic.dev/latest/errors/validation_errors/#missing): its
-    # input is the parent, so input_type says nothing about the field itself.
-    fields = _ninja_validation_fields(
-        [
-            {
-                "loc": ("body", "payload", "title"),
-                "type": "missing",
-                "msg": "Field required",
-                "input_type": "NoneType",
-            }
-        ]
-    )
-    assert fields == {
-        "title": [{"code": "required", "detail": "This field is required."}]
-    }
 
 
 def test_a_body_that_is_not_an_object_is_a_non_field_error() -> None:
     assert _fields(_post("/named-body/", [1, 2])) == {
         "non_field_errors": [
             {
-                "code": "invalid",
-                "detail": "Invalid data. Expected a dictionary, but got list.",
+                "code": "model_attributes_type",
+                "detail": (
+                    "Input should be a valid dictionary or object to extract "
+                    "fields from"
+                ),
             }
         ]
     }
 
 
 @pytest.mark.django_db
-def test_malformed_json_keeps_the_parser_detail(user_client: Client) -> None:
+def test_malformed_json_is_ninja_s_parse_error(user_client: Client) -> None:
     response = user_client.patch(
         "/api/v1/users/me/", data='{"name": ', content_type="application/json"
     )
     assert response.status_code == HTTPStatus.BAD_REQUEST
     assert response.json()["code"] == "parse_error"
-    assert response.json()["detail"].startswith("JSON parse error - ")
+    # ninja/params/models.py: any parser failure is "Cannot parse request body".
+    assert response.json()["detail"] == "Cannot parse request body"
 
 
-@pytest.mark.django_db
-def test_an_invalid_cursor_is_a_cursor_field_error() -> None:
-    response = TestClient(cursor_api()).get("/?cursor=not-a-cursor")
-    assert _fields(response) == {
-        "cursor": [{"code": "invalid", "detail": "Invalid cursor."}]
+def test_null_for_a_non_nullable_field_is_pydantic_s_string_type() -> None:
+    fields = _fields(_post("/named-body/", {**BAD, "title": None}))
+    assert fields["title"] == NOT_A_STRING
+
+
+@pytest.mark.parametrize("key_first", [True, False])
+def test_an_error_on_a_key_and_one_under_it_both_survive(*, key_first: bool) -> None:
+    # Pydantic reports a dict key it rejects at (field, key, "[key]") and the
+    # value at (field, key), in either order: neither error may be lost, and
+    # neither may turn the 400 into a 500.
+    under = {
+        "loc": ("body", "body", "quantities", "x", "[key]"),
+        "type": "uuid_parsing",
+        "msg": "bad key",
+    }
+    on = {
+        "loc": ("body", "body", "quantities", "x"),
+        "type": "int_parsing",
+        "msg": "bad value",
+    }
+    errors = [under, on] if key_first else [on, under]
+    assert _ninja_validation_fields(errors) == {
+        "quantities": {
+            "x": {
+                "[key]": [{"code": "uuid_parsing", "detail": "bad key"}],
+                "non_field_errors": [{"code": "int_parsing", "detail": "bad value"}],
+            }
+        }
     }
 
 
-def test_null_for_a_non_nullable_field_is_code_null() -> None:
-    fields = _fields(_post("/named-body/", {**BAD, "title": None}))
-    assert fields["title"] == [
-        {"code": "null", "detail": "This field may not be null."}
-    ]
+class _Quantities(InputSchema):
+    quantities: dict[PublicId, int]
+
+
+def test_a_bad_dict_key_and_value_is_a_400_through_ninja() -> None:
+    api = make_api(throttle=[], auth=None)
+    router = Router()
+
+    @router.post("/q/", auth=None)
+    def quantities(request, body: _Quantities) -> dict[str, bool]:
+        return {"ok": True}
+
+    api.add_router("/", router)
+    response = TestClient(api).post(
+        "/q/", json={"quantities": {"not-a-uuid": "x"}}, content_type="application/json"
+    )
+    assert response.status_code == HTTPStatus.BAD_REQUEST, response.content
+    tree = response.json()["fields"]["quantities"]["not-a-uuid"]
+    assert set(tree) == {"[key]", "non_field_errors"}

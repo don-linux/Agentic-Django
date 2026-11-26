@@ -42,7 +42,7 @@ The API answers on <http://localhost:8000>; check it with `curl http://localhost
 uv run --env-file .env scripts/check.sh
 ```
 
-`check.sh` with no argument runs `lint` then `test`; pass `lint`, `test` or `reversible` for one part ([../development.md#checks](../development.md#checks)). The tests create and drop `test_<POSTGRES_DB>`, so the role needs `CREATEDB` (`ALTER ROLE <user> CREATEDB;` as a superuser). Regenerate the schema the same way:
+`check.sh` with no argument runs `lint` then `test`; pass `lint`, `test` or `reversible` for one part ([../development.md#checks](../development.md#checks)). The tests create `test_<POSTGRES_DB>` and keep it between runs (`--reuse-db` in `pyproject.toml`; `--create-db` builds it again), so the role needs `CREATEDB` (`ALTER ROLE <user> CREATEDB;` as a superuser). Regenerate the schema the same way:
 
 ```bash
 uv run --env-file .env python manage.py export_openapi_schema --settings config.settings.test --api config.api.api --indent 2 > docs/openapi.json

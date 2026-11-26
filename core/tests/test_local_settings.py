@@ -53,6 +53,16 @@ def test_loopback_and_compose_hosts_are_accepted() -> None:
         )
 
 
+@pytest.mark.parametrize("host", ["db", "postgres"])
+def test_a_generic_service_name_is_not_this_projects_database(host: str) -> None:
+    # Only docker/dev/compose.yaml's postgres_db is local: "db" or "postgres"
+    # may be another project's database on the same Docker network.
+    with pytest.raises(ImproperlyConfigured, match="POSTGRES_HOST"):
+        assert_local_targets(
+            database_host=host, valkey_url=LOCAL_VALKEY, allow_remote=False
+        )
+
+
 def test_a_remote_database_host_is_refused() -> None:
     with pytest.raises(ImproperlyConfigured, match="POSTGRES_HOST") as excinfo:
         assert_local_targets(

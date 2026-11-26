@@ -1,56 +1,52 @@
-"""Four auth/CSRF cases for vitalik/django-ninja#1464 (not merged in 1.8.0).
+"""Writes with CSRF enforced: an X-Session-Token is never turned into a CSRF 403.
 
-1. Token only, no session cookie and no CSRF token.
-2. Session cookie with a CSRF token.
-3. Token plus a session cookie (the open issue: CSRF must not 403).
-4. No credentials at all: 401, not a CSRF 403.
-
-Case 3 also has an older equivalent in test_api.py
-(test_x_session_token_takes_precedence_over_csrf_enforced_session_cookie).
-Cookie-only writes without CSRF stay covered by
-test_session_cookie_patch_without_csrf_is_json_403.
+The API tries the X-Session-Token before the session cookie
+(core.api.auth.API_AUTH), and the cookie's CSRF check runs only for an
+authenticated session. So a token write that also carries a session cookie
+passes, and a write without valid credentials is a 401, not a CSRF 403
+(vitalik/django-ninja#1464, docs/typing.md). django.test.Client skips CSRF
+unless enforce_csrf_checks=True, so every case sets it.
 """
 
 from __future__ import annotations
 
 from http import HTTPStatus
+from typing import Any
 
 import pytest
-from allauth.account.models import EmailAddress
 from django.test import Client
 
-from apps.users.tests.factories import UserFactory
-from core.tests.credentials import PASSWORD
+from core.tests.accounts import log_in
+from core.tests.accounts import verified_user
+
+pytestmark = pytest.mark.django_db
 
 ME_URL = "/api/v1/users/me/"
-LOGIN_URL = "/_allauth/app/v1/auth/login"
+SESSION_URL = "/_allauth/app/v1/auth/session"
+BAD_TOKEN = "bogus"  # noqa: S105
 
 
-def _verified(email: str):
-    user = UserFactory(email=email, password=PASSWORD)
-    EmailAddress.objects.create(
-        user=user, email=user.email, primary=True, verified=True
-    )
-    return user
+def _csrf_client() -> Client:
+    return Client(enforce_csrf_checks=True)
 
 
-def _token(user) -> str:
-    response = Client().post(
-        LOGIN_URL,
-        {"email": user.email, "password": PASSWORD},
-        content_type="application/json",
-    )
-    assert response.status_code == HTTPStatus.OK, response.content
-    return response.json()["meta"]["session_token"]
+def _csrf_token(client: Client) -> str:
+    # Ninja views are csrf_exempt at Django middleware, so the cookie is taken
+    # from a Django view that still runs CsrfViewMiddleware (the admin login).
+    client.get("/admin/login/")
+    return client.cookies["csrftoken"].value
 
 
-@pytest.mark.django_db
-def test_patch_me_with_token_only_succeeds() -> None:
-    user = _verified("token-only@example.com")
-    token = _token(user)
-    client = Client(enforce_csrf_checks=True)
+def _assert_401(response: Any) -> None:
+    assert response.status_code == HTTPStatus.UNAUTHORIZED, response.content
+    assert response["WWW-Authenticate"] == "X-Session-Token"
+    assert response.json() == {"code": "not_authenticated", "detail": "Unauthorized"}
 
-    response = client.patch(
+
+def test_a_token_alone_writes() -> None:
+    token = log_in(verified_user("token-only@example.com"))
+
+    response = _csrf_client().patch(
         ME_URL,
         {"name": "Token Only"},
         content_type="application/json",
@@ -61,52 +57,100 @@ def test_patch_me_with_token_only_succeeds() -> None:
     assert response.json()["name"] == "Token Only"
 
 
-@pytest.mark.django_db
-def test_patch_me_with_session_cookie_and_csrf_succeeds() -> None:
-    user = _verified("cookie-csrf@example.com")
-    client = Client(enforce_csrf_checks=True)
-    client.force_login(user)
-    # Ninja views are csrf_exempt at Django middleware, so the cookie is taken
-    # from a Django view that still runs CsrfViewMiddleware (the admin login).
-    client.get("/admin/login/")
-    csrf = client.cookies["csrftoken"].value
+def test_a_session_cookie_writes_with_the_csrf_token() -> None:
+    client = _csrf_client()
+    client.force_login(verified_user("cookie-csrf@example.com"))
 
     response = client.patch(
         ME_URL,
         {"name": "Cookie CSRF"},
         content_type="application/json",
-        HTTP_X_CSRFTOKEN=csrf,
+        HTTP_X_CSRFTOKEN=_csrf_token(client),
     )
 
     assert response.status_code == HTTPStatus.OK, response.content
     assert response.json()["name"] == "Cookie CSRF"
 
 
-@pytest.mark.django_db
-def test_patch_me_with_token_and_session_cookie_does_not_csrf_403() -> None:
-    """Issue #1464: a token-authenticated write that also carries a session cookie."""
-    user = _verified("token-and-cookie@example.com")
-    token = _token(user)
-    client = Client(enforce_csrf_checks=True)
+def test_a_session_cookie_without_the_csrf_token_is_a_json_403() -> None:
+    user = verified_user("cookie-only@example.com")
+    client = _csrf_client()
     client.force_login(user)
 
     response = client.patch(
+        ME_URL, {"name": "No CSRF"}, content_type="application/json"
+    )
+
+    assert response.status_code == HTTPStatus.FORBIDDEN
+    assert response.headers["Content-Type"].startswith("application/json")
+    assert response.json()["code"] == "permission_denied"
+    assert "CSRF" in response.json()["detail"]
+    user.refresh_from_db()
+    assert user.name != "No CSRF"
+
+
+def test_a_token_wins_over_another_users_session_cookie() -> None:
+    # The case of vitalik/django-ninja#1464: the cookie must neither turn the
+    # token write into a CSRF 403 nor make it write as the cookie's user.
+    token_user = verified_user("token-owner@example.com")
+    cookie_user = verified_user("cookie-owner@example.com")
+    token = log_in(token_user)
+    client = _csrf_client()
+    client.force_login(cookie_user)
+
+    response = client.patch(
         ME_URL,
-        {"name": "Token Plus Cookie"},
+        {"name": "Token Wins"},
         content_type="application/json",
         HTTP_X_SESSION_TOKEN=token,
     )
 
     assert response.status_code == HTTPStatus.OK, response.content
-    assert response.json()["name"] == "Token Plus Cookie"
+    assert response.json()["id"] == str(token_user.public_id)
+    token_user.refresh_from_db()
+    cookie_user.refresh_from_db()
+    assert token_user.name == "Token Wins"
+    assert cookie_user.name != "Token Wins"
 
 
-@pytest.mark.django_db
-def test_patch_me_without_credentials_is_401_not_a_csrf_403() -> None:
-    client = Client(enforce_csrf_checks=True)
+def test_a_bad_token_falls_back_to_the_session_cookie_and_its_csrf_token() -> None:
+    client = _csrf_client()
+    client.force_login(verified_user("fallback@example.com"))
 
-    response = client.patch(ME_URL, {"name": "Nobody"}, content_type="application/json")
+    response = client.patch(
+        ME_URL,
+        {"name": "Fallback"},
+        content_type="application/json",
+        HTTP_X_SESSION_TOKEN=BAD_TOKEN,
+        HTTP_X_CSRFTOKEN=_csrf_token(client),
+    )
 
-    assert response.status_code == HTTPStatus.UNAUTHORIZED
-    assert response["WWW-Authenticate"] == "X-Session-Token"
-    assert response.json()["code"] == "not_authenticated"
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["name"] == "Fallback"
+
+
+@pytest.mark.parametrize("token", [None, BAD_TOKEN])
+def test_a_write_without_valid_credentials_is_401_not_a_csrf_403(
+    token: str | None,
+) -> None:
+    headers = {"X-Session-Token": token} if token else {}
+
+    response = _csrf_client().patch(
+        ME_URL, {"name": "Nobody"}, content_type="application/json", headers=headers
+    )
+
+    _assert_401(response)
+
+
+def test_a_write_with_a_logged_out_token_is_401() -> None:
+    token = log_in(verified_user("logged-out@example.com"))
+    Client().delete(SESSION_URL, HTTP_X_SESSION_TOKEN=token)
+
+    response = _csrf_client().patch(
+        ME_URL,
+        {"name": "Nobody"},
+        content_type="application/json",
+        HTTP_X_SESSION_TOKEN=token,
+    )
+
+    _assert_401(response)

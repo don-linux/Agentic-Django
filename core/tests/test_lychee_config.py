@@ -27,9 +27,11 @@ def _excluded(path: str) -> bool:
         # One per branch of (^|/): at the start and after a slash.
         ".venv/lib/python3.14/site-packages/ninja/README.md",
         "./.venv/README.md",
+        # The link to .agents/skills, which is scanned under its own path.
+        "./.claude/skills/add-model-endpoint/SKILL.md",
     ],
 )
-def test_the_local_virtualenv_is_not_scanned(path: str) -> None:
+def test_the_local_virtualenv_and_the_skills_link_are_not_scanned(path: str) -> None:
     assert _excluded(path)
 
 

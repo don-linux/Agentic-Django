@@ -46,7 +46,7 @@ class TestUsersAPI:
             "name": user.name,
         }
 
-    def test_browsers_get_json_not_the_browsable_api(self, user_client: Client) -> None:
+    def test_a_text_html_accept_is_a_json_406(self, user_client: Client) -> None:
         response = user_client.get("/api/v1/users/me/", HTTP_ACCEPT="text/html")
 
         assert response.status_code == HTTPStatus.NOT_ACCEPTABLE
@@ -192,14 +192,21 @@ class TestUsersAPI:
             "code": "validation_error",
             "detail": "Invalid input.",
             "fields": {
-                "is_staff": [{"code": "unknown_field", "detail": "Unknown field."}],
+                "is_staff": [
+                    {
+                        "code": "unknown_field",
+                        "detail": "Extra inputs are not permitted",
+                    }
+                ],
             },
         }
         user.refresh_from_db()
         assert user.name != "Typo Fixer"
         assert user.is_staff is False
 
-    def test_patch_accepts_a_get_body_sent_back(self, user_client: Client) -> None:
+    def test_patch_rejects_the_read_only_fields_of_a_get_body_sent_back(
+        self, user: User, user_client: Client
+    ) -> None:
         body = user_client.get("/api/v1/users/me/").json()
 
         response = user_client.patch(
@@ -208,8 +215,39 @@ class TestUsersAPI:
             content_type="application/json",
         )
 
-        assert response.status_code == HTTPStatus.OK
-        assert response.json()["name"] == "Echoed Back"
+        # id and url are not fields of UserUpdateIn: unknown_field, like any key.
+        assert response.status_code == HTTPStatus.BAD_REQUEST
+        fields = response.json()["fields"]
+        assert set(fields) == {"id", "url"}
+        assert {item["code"] for key in fields for item in fields[key]} == {
+            "unknown_field"
+        }
+        user.refresh_from_db()
+        assert user.name != "Echoed Back"
+
+    def test_an_invalid_body_for_another_user_is_400_before_the_lookup(
+        self, user_client: Client
+    ) -> None:
+        other = UserFactory()
+
+        invalid = user_client.patch(
+            f"/api/v1/users/{other.public_id}/",
+            {"name": ["Ada"]},
+            content_type="application/json",
+        )
+        valid = user_client.patch(
+            f"/api/v1/users/{other.public_id}/",
+            {"name": "Ada"},
+            content_type="application/json",
+        )
+
+        # The whole request is validated first, so the answer does not depend
+        # on whether the user exists; a valid one for another user is 404.
+        assert invalid.status_code == HTTPStatus.BAD_REQUEST
+        assert invalid.json()["fields"]["name"][0]["code"] == "string_type"
+        assert valid.status_code == HTTPStatus.NOT_FOUND
+        other.refresh_from_db()
+        assert other.name != "Ada"
 
     def test_multipart_body_is_unsupported(
         self, user: User, user_client: Client
@@ -265,3 +303,35 @@ class TestUsersAPI:
                 "name": [{"code": "invalid", "detail": "Reserved display name."}],
             },
         }
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("target", ["me", "detail"])
+@pytest.mark.parametrize("body", ["", "{}"])
+def test_an_empty_patch_body_changes_nothing(
+    user: User, user_client: Client, target: str, body: str
+) -> None:
+    # The PATCH body is optional in the contract (requestBody required: false),
+    # and so is each of its fields.
+    path = "/api/v1/users/me/" if target == "me" else f"/api/v1/users/{user.public_id}/"
+    before = user.name
+    response = user_client.patch(path, body, content_type="application/json")
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["name"] == before
+    user.refresh_from_db()
+    assert user.name == before
+
+
+@pytest.mark.django_db
+def test_a_nul_character_in_name_is_a_field_error(user_client: Client) -> None:
+    # PostgreSQL text cannot store NUL (ADR 0018).
+    response = user_client.patch(
+        "/api/v1/users/me/", {"name": "a\x00b"}, content_type="application/json"
+    )
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()["fields"]["name"] == [
+        {
+            "code": "null_characters_not_allowed",
+            "detail": "Null characters are not allowed.",
+        }
+    ]

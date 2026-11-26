@@ -12,7 +12,6 @@ from ninja import Schema
 
 from apps.users.models import User
 from core.api.pagination import CachedCountPageNumberPagination
-from core.api.pagination import CachedCountPaginatorCount
 from core.api.pagination import LimitCursorPagination
 from core.api.pagination import LimitPageNumberPagination
 from core.api.pagination import PageNumberIn
@@ -54,14 +53,28 @@ def test_page_size_is_capped_at_100() -> None:
 
 
 @override_settings(API_MAX_PAGE_NUMBER=2)
-@pytest.mark.parametrize("page", ["3", "last"])
-def test_pages_beyond_the_cap_are_404(page: str) -> None:
+def test_pages_beyond_the_cap_are_404() -> None:
     _create_users(5)
 
-    response = _list(ordered_api(), f"?page_size=1&page={page}")
+    response = _list(ordered_api(), "?page_size=1&page=3")
 
     assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"code": "not_found", "detail": "Invalid page."}
+    assert response.json() == {"code": "not_found", "detail": "Not Found"}
+
+
+@override_settings(API_MAX_PAGE_NUMBER=2)
+def test_a_page_beyond_the_cap_is_404_before_counting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The cap guards against the COUNT(*) and OFFSET of a deep page, so it is
+    # checked first.
+    def never(*_args: object) -> int:
+        msg = "counted a page beyond the cap"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(LimitPageNumberPagination, "count_items", never)
+    response = _list(ordered_api(), "?page_size=1&page=3")
+    assert response.status_code == HTTPStatus.NOT_FOUND
 
 
 @override_settings(API_MAX_PAGE_NUMBER=2)
@@ -113,6 +126,17 @@ def test_cursor_pagination_orders_by_public_id_not_by_pk() -> None:
 def test_cursor_parameter_is_documented_in_the_schema() -> None:
     fields = set(LimitCursorPagination.Input.model_fields)
     assert {"cursor", "page_size"} <= fields
+    assert LimitCursorPagination.Input.__name__ == "CursorIn"
+
+
+@pytest.mark.parametrize("page_size", ["0", "-1", "abc"])
+def test_a_cursor_page_size_below_1_is_a_400(page_size: str) -> None:
+    # Ninja's own cursor input would clamp it to 1.
+    response = _list(cursor_api(), f"?page_size={page_size}")
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert response.json()["code"] == "validation_error"
+    assert list(response.json()["fields"]) == ["page_size"]
 
 
 def _counts(queries: list[dict[str, str]]) -> int:
@@ -190,12 +214,12 @@ def test_cached_count_of_an_empty_queryset_runs_no_query(
     assert response.json()["results"] == []
 
 
-def test_cached_count_paginator_counts_a_queryset() -> None:
+def test_cached_count_pagination_counts_a_queryset() -> None:
     total = 3
     _create_users(total)
-    paginator = CachedCountPaginatorCount(User.objects.all())
+    paginator = CachedCountPageNumberPagination()
 
-    assert paginator.count == total
+    assert paginator.count_items(User.objects.all()) == total
 
 
 def test_page_number_pagination_rejects_a_foreign_input_schema() -> None:
@@ -222,3 +246,24 @@ def test_page_number_pagination_refuses_async_views(paginator: type) -> None:
                 RequestFactory().get("/"),
             )
         )
+
+
+@pytest.mark.django_db
+def test_the_previous_link_to_the_first_page_has_no_page_parameter() -> None:
+    # ninja.testing's request URL has no query string, so only the page
+    # parameter shows here.
+    _create_users(3)
+    second = _list(ordered_api(), "?page=2&page_size=1").json()
+    third = _list(ordered_api(), "?page=3&page_size=1").json()
+    assert second["previous"] == "http://testlocation/"
+    assert third["previous"] == "http://testlocation/?page=2"
+
+
+@pytest.mark.django_db
+def test_cached_count_counts_a_plain_list() -> None:
+    users = 2
+    _create_users(users)
+    api = cached_count_api(lambda: list(User.objects.order_by("pk")))
+    response = _list(api)
+    assert response.status_code == HTTPStatus.OK
+    assert response.json()["count"] == users

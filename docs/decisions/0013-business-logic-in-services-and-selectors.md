@@ -6,7 +6,7 @@
 
 ## Context
 
-[0005](0005-business-logic-in-services-and-selectors.md) placed writes in services and reads in selectors, and confined the API framework to `api/`. Its wording named Django REST Framework, `config/api_router.py` and `tests/drf/`. The API layer is now Django Ninja.
+[0005](0005-business-logic-in-services-and-selectors.md) placed writes in services and reads in selectors, and confined the API framework to `api/`. Its wording named Django REST Framework, `config/api_router.py` and `tests/drf/`. The API framework is Django Ninja.
 
 ## Decision
 

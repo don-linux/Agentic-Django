@@ -6,12 +6,10 @@ from http import HTTPStatus
 from typing import Any
 
 import pytest
-from allauth.account.models import EmailAddress
 from django.conf import settings
 from django.test import Client
 
-from apps.users.tests.factories import UserFactory
-from core.tests.credentials import PASSWORD
+from core.tests.accounts import session_token
 
 pytestmark = pytest.mark.django_db
 
@@ -25,17 +23,7 @@ UNMOUNTED = [
 
 
 def _login() -> str:
-    user = UserFactory(email="mfa@example.com", password=PASSWORD)
-    EmailAddress.objects.create(
-        user=user, email=user.email, primary=True, verified=True
-    )
-    response = Client().post(
-        f"{BASE}/auth/login",
-        {"email": user.email, "password": PASSWORD},
-        content_type="application/json",
-    )
-    assert response.status_code == HTTPStatus.OK, response.content
-    return response.json()["meta"]["session_token"]
+    return session_token("mfa@example.com")
 
 
 def _call(method: str, route: str, token: str | None = None) -> Any:

@@ -15,7 +15,6 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
-from allauth.account.models import EmailAddress
 from django.conf import settings as django_settings
 from django.core.cache import caches
 from django.core.cache.backends.redis import RedisCache
@@ -26,11 +25,11 @@ from redis.exceptions import NoPermissionError
 
 from apps.users.selectors import user_get
 from apps.users.services import user_update
-from apps.users.tests.factories import UserFactory
 from config import celery_app
 from config.settings.base import build_broker_url
 from core.cache import NAMESPACE_TTL
 from core.cache_backend import ValkeyCache
+from core.tests.accounts import verified_user
 from core.tests.credentials import PASSWORD
 from core.tests.valkey_fixtures import CACHE_DB
 from core.tests.valkey_fixtures import HOW_TO_START
@@ -68,12 +67,6 @@ def _ttl(client: Redis, backend: ValkeyCache, key: str) -> int:
 
 def _close_to(ttl: int, seconds: int) -> bool:
     return seconds - TTL_SLACK <= ttl <= seconds
-
-
-def _verified_user(email: str) -> User:
-    user = UserFactory(email=email, password=PASSWORD)
-    EmailAddress.objects.create(user=user, email=email, primary=True, verified=True)
-    return user
 
 
 def _login(email: str, password: str) -> Any:
@@ -198,7 +191,7 @@ def test_every_key_the_application_writes_has_a_ttl(
     cache_writes: CacheWrites,
     user_client: Client,
 ) -> None:
-    owner = _verified_user("ttl@example.com")
+    owner = verified_user("ttl@example.com")
     # A throttled request, a failed and a successful login (rate limits and a
     # cached session), and a cached read with its namespace version.
     assert user_client.get(ME_URL).status_code == HTTPStatus.OK

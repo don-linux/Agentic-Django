@@ -1,14 +1,13 @@
-"""JSON parser for Ninja: RecursionError becomes a 400 parse_error."""
+"""JSON parser for Ninja: strict JSON, and 415 for another Content-Type."""
 
 from __future__ import annotations
 
 import json
+import math
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import override
 
-from django.core.exceptions import RequestDataTooBig
-from django.core.exceptions import TooManyFieldsSent
 from ninja.errors import HttpError
 from ninja.parser import Parser
 
@@ -21,12 +20,25 @@ def _reject_constant(name: str) -> object:
     raise ValueError(msg)
 
 
+def _finite_float(text: str) -> float:
+    # A number too large for a double, such as 1e400, would become infinity.
+    value = float(text)
+    if not math.isfinite(value):
+        msg = f"Out of range float values are not JSON compliant: {text!r}"
+        raise ValueError(msg)
+    return value
+
+
 class JSONParser(Parser):
     """
-    Ninja's default json.loads, plus a 400 when JSON is nested too deeply.
+    Ninja's json.loads, strict: UTF-8 only, and no NaN or Infinity, written as
+    such or as a number too large for a double.
 
-    Python's decoder raises RecursionError there, not JSONDecodeError. See
-    docs/api.md#error-codes. Source: django-ninja 1.8.0 ninja/parser.py.
+    Any failure (malformed JSON, another encoding, a non-finite number, nesting
+    too deep for the decoder) reaches Ninja's BodyModel, which answers
+    HttpError(400, "Cannot parse request body") raised from it, the 400
+    parse_error. Sources: django-ninja 1.8.0 ninja/parser.py and
+    ninja/params/models.py; docs/api.md#error-codes.
     """
 
     @override
@@ -36,14 +48,10 @@ class JSONParser(Parser):
         if request.body and (request.content_type or "").lower() != "application/json":
             raw = request.headers.get("content-type", "")
             raise HttpError(415, f'Unsupported media type "{raw}" in request.')
-        try:
-            # Strict UTF-8 (no BOM) and no NaN/Infinity, as DRF's JSONParser.
-            return json.loads(
-                request.body.decode("utf-8"), parse_constant=_reject_constant
-            )
-        except RecursionError as exc:
-            raise HttpError(400, "JSON parse error - nested too deeply.") from exc
-        except RequestDataTooBig, TooManyFieldsSent:
-            raise
-        except json.JSONDecodeError as exc:
-            raise HttpError(400, f"JSON parse error - {exc}") from exc
+        # RFC 8259: JSON text is UTF-8 (section 8.1, no BOM) and its numbers
+        # exclude NaN and Infinity (section 6).
+        return json.loads(
+            request.body.decode("utf-8"),
+            parse_constant=_reject_constant,
+            parse_float=_finite_float,
+        )

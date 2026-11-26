@@ -1,9 +1,9 @@
 """docs/openapi.json declares every status the runtime answers (docs/api.md).
 
-The DRF contract listed 401/403/406/429 on every operation, 400/415 on
-writes, 404 on lookups and paginated lists, and the WWW-Authenticate and
-Retry-After headers. oasdiff does not flag a removed error response, so this
-test is the only guard.
+Every operation lists 406/429, and 401/403 unless it is public; writes add
+400/415, lookups add 404, paginated lists (a page or cursor parameter) add 404
+and 400, and the WWW-Authenticate and Retry-After headers are documented.
+oasdiff does not flag a removed error response, so this test is the only guard.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
 COMMON = {"401", "403", "406", "429"}
 WRITE = {"400", "415"}
+PAGE_PARAMETERS = {"page", "cursor"}
 
 
 def _operations() -> dict[tuple[str, str], dict[str, Any]]:
@@ -29,17 +30,48 @@ def _operations() -> dict[tuple[str, str], dict[str, Any]]:
     return {(p, m.upper()): op for p, item in paths.items() for m, op in item.items()}
 
 
+def _expected_codes(path: str, method: str, op: dict[str, Any]) -> set[str]:
+    expected = set(COMMON)
+    if not op.get("security"):
+        # A public operation (auth=None) answers no 401 and no 403
+        # (docs/api.md#permissions-and-public-endpoints).
+        expected -= {"401", "403"}
+    if method in {"POST", "PUT", "PATCH"}:
+        expected |= WRITE
+    query = {p["name"] for p in op.get("parameters", []) if p["in"] == "query"}
+    paginated = bool(query & PAGE_PARAMETERS)
+    if "{" in path or paginated:
+        expected.add("404")
+    if paginated:
+        # A malformed page, page_size or cursor (docs/api.md#pagination).
+        expected.add("400")
+    return expected
+
+
 def test_every_operation_declares_the_shared_error_responses() -> None:
     for (path, method), op in _operations().items():
         codes = {str(code) for code in op["responses"]}
         # The success status depends on the operation: 200, 201 (create), 202, 204.
         assert any(code.startswith("2") for code in codes), (path, method)
-        expected = set(COMMON)
-        if method in {"POST", "PUT", "PATCH"}:
-            expected |= WRITE
-        if "{" in path or op["operationId"].endswith("_list"):
-            expected.add("404")
+        expected = _expected_codes(path, method, op)
         assert expected <= codes, (path, method, sorted(expected - codes))
+
+
+def test_only_a_public_operation_may_leave_out_401_and_403() -> None:
+    public: dict[str, Any] = {"operationId": "things_retrieve", "responses": {}}
+    private = {**public, "security": [{"XSessionTokenAuth": []}]}
+    assert _expected_codes("/api/v1/things/", "GET", public) == {"406", "429"}
+    assert {"401", "403"} <= _expected_codes("/api/v1/things/", "GET", private)
+
+
+@pytest.mark.parametrize("parameter", ["page", "cursor"])
+def test_a_paginated_list_is_recognized_by_its_parameters(parameter: str) -> None:
+    op: dict[str, Any] = {
+        "operationId": "things_feed",
+        "parameters": [{"name": parameter, "in": "query"}],
+        "security": [{"XSessionTokenAuth": []}],
+    }
+    assert {"400", "404"} <= _expected_codes("/api/v1/things/", "GET", op)
 
 
 def test_error_responses_document_their_headers() -> None:
@@ -52,12 +84,22 @@ def test_error_responses_document_their_headers() -> None:
         assert responses["406"]["description"] != "Not Acceptable"
 
 
+def test_a_400_mentions_a_body_only_on_an_operation_with_one() -> None:
+    # A list's 400 is a malformed query parameter: there is no body to parse.
+    for (path, method), op in _operations().items():
+        responses = {str(code): body for code, body in op["responses"].items()}
+        if "400" not in responses:
+            continue
+        mentions_body = "body" in responses["400"]["description"]
+        assert mentions_body == ("requestBody" in op), (path, method)
+
+
 def test_read_only_and_non_nullable_fields_match_the_runtime() -> None:
     schemas = api.get_openapi_schema()["components"]["schemas"]
     user = schemas["UserOut"]["properties"]
     assert user["id"]["readOnly"] is True
     assert user["url"]["readOnly"] is True
-    # null is a 400 "null" at runtime, so the request schema must not offer it.
+    # null is a 400 string_type at runtime, so the request schema must not offer it.
     assert schemas["UserUpdateIn"]["properties"]["name"] == {
         "maxLength": 255,
         "title": "Name",
@@ -74,6 +116,8 @@ def test_statuses_seen_at_runtime_are_declared(user: User) -> None:
     probes = [
         ("GET", "/api/v1/users/", {}, None),
         ("GET", "/api/v1/users/?page=99", {}, None),
+        ("GET", "/api/v1/users/?page=abc", {}, None),
+        ("GET", "/api/v1/users/?page_size=0", {}, None),
         ("GET", "/api/v1/users/me/", {"HTTP_ACCEPT": "text/html"}, None),
         ("PATCH", "/api/v1/users/me/", {}, "name=x"),
         ("PATCH", "/api/v1/users/me/", {}, '{"name": null}'),

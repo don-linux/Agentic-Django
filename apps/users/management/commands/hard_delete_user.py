@@ -18,6 +18,7 @@ from django.core.management.base import CommandError
 from django.db import router
 from django.db import transaction
 from django.db.models import ProtectedError
+from django.db.models import RestrictedError
 from django.db.models.deletion import Collector
 
 from apps.users.models import User
@@ -70,7 +71,9 @@ class Command(BaseCommand):
             # positional-only, so Pyright 1.1.414 does not treat list[User] or
             # tuple[User] as that protocol.
             collector.collect([user])  # pyright: ignore[reportArgumentType]
-        except ProtectedError as exc:
+        except (ProtectedError, RestrictedError) as exc:
+            # PROTECT and RESTRICT foreign keys both keep the user: delete
+            # those rows first (docs/user-deletion/hard-delete.md).
             msg = f"Rows that protect this user must go first: {exc.args[0]}"
             raise CommandError(msg) from exc
         self.stdout.write(f"Deleting {user.email} also deletes:")

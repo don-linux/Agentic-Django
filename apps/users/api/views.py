@@ -5,29 +5,25 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from typing import Annotated
 from typing import Any
-from typing import cast
+from typing import Final
 from uuid import UUID
-from weakref import WeakKeyDictionary
 
-from django.http import Http404
 from django.http import HttpRequest
 from django.urls import reverse
 from ninja import BodyEx
 from ninja import P
-from ninja import PathEx
 from ninja import Router
 from ninja.pagination import paginate
-from pydantic import AfterValidator
 from pydantic import Field
-from pydantic import ValidationInfo
 from pydantic import WithJsonSchema
 from pydantic import field_validator
-from pydantic import model_validator
-from pydantic_core import PydanticCustomError
+from pydantic_core import PydanticKnownError
 
 from apps.users.models import User
 from apps.users.selectors import user_list
+from apps.users.selectors import user_visible
 from apps.users.services import user_update
+from core.api.auth import request_user
 from core.api.pagination import LimitPageNumberPagination
 from core.api.responses import LIST_ERRORS
 from core.api.responses import LOOKUP_ERRORS
@@ -36,6 +32,7 @@ from core.api.responses import WRITE_ERRORS
 from core.api.responses import response_docs
 from core.api.schemas import BaseSchema
 from core.api.schemas import InputSchema
+from core.api.schemas import PublicIdPath
 
 if TYPE_CHECKING:
     from django.db.models import QuerySet
@@ -43,13 +40,10 @@ if TYPE_CHECKING:
 router = Router(tags=["users"])
 
 
-# DRF CharField's codes and messages for the same input (ADR 0006).
-NULL_CODE = "null"
-NULL_DETAIL = "This field may not be null."
-NUL_CHAR_CODE = "null_characters_not_allowed"
-NUL_CHAR_DETAIL = "Null characters are not allowed."
-# Keys UserOut returns that a client may send back in a PATCH; they are ignored.
-READ_ONLY = frozenset({"id", "url"})
+# Pydantic's own error for a None sent to a str field, raised as a known error
+# so Pydantic writes the message
+# (https://docs.pydantic.dev/latest/errors/validation_errors/#string_type).
+_STRING_TYPE: Final = "string_type"
 
 
 class UserOut(BaseSchema):
@@ -64,8 +58,8 @@ class UserOut(BaseSchema):
     @staticmethod
     def resolve_url(obj: User, context: dict[str, Any] | None = None) -> str:
         request = (context or {}).get("request")
-        # reverse() keeps the script prefix (SCRIPT_NAME, FORCE_SCRIPT_NAME), as
-        # the DRF hyperlinked field did; build_absolute_uri() only adds the host.
+        # reverse() keeps the script prefix (SCRIPT_NAME, FORCE_SCRIPT_NAME);
+        # build_absolute_uri() only adds the host.
         path = reverse("api:user-detail", kwargs={"id": obj.public_id})
         if request is not None:
             return request.build_absolute_uri(path)
@@ -73,110 +67,28 @@ class UserOut(BaseSchema):
 
 
 class UserUpdateIn(InputSchema):
-    # Optional but not nullable: null is a 400 "null" (coerce_and_reject_null),
-    # so the published request schema must not offer it. WithJsonSchema only
+    # Optional but not nullable: an omitted name stays unset, and null gets the
+    # string_type error Pydantic gives a str field (reject_null), so
+    # the published request schema must not offer it. WithJsonSchema only
     # changes the schema; SkipJsonSchema[None] would turn the Optional into a
-    # union and nest its errors under name.str / name.none.
+    # union and nest its errors under name.str / name.none. Pydantic's MISSING
+    # default would say this natively, but Ninja 1.8.0 cannot publish it
+    # (NinjaGenerateJsonSchema.default_schema encodes every non-None default):
+    # vitalik/django-ninja#1655, tracked in docs/typing.md#tracked-upstream.
     name: Annotated[
         str | None, WithJsonSchema({"type": "string", "maxLength": 255})
     ] = Field(default=None, max_length=255)
 
-    @model_validator(mode="before")
-    @classmethod
-    def drop_read_only(cls, data: Any) -> Any:
-        # A GET body sent back includes id and url; those stay out of the write.
-        if isinstance(data, dict):
-            # A JSON object: its keys are strings.
-            sent = cast("dict[str, object]", data)
-            return {key: value for key, value in sent.items() if key not in READ_ONLY}
-        return data
-
     @field_validator("name", mode="before")
     @classmethod
-    def coerce_and_reject_null(cls, value: Any) -> Any:
-        # DRF CharField coerced numbers to strings; booleans stay invalid.
+    def reject_null(cls, value: object) -> object:
         if value is None:
-            raise PydanticCustomError(NULL_CODE, NULL_DETAIL)
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, int | float):
-            return str(value)
-        return value
-
-    @field_validator("name", mode="after")
-    @classmethod
-    def reject_null_characters(cls, value: str | None) -> str | None:
-        # DRF CharField's ProhibitNullCharactersValidator; Postgres refuses NUL.
-        if value is not None and "\x00" in value:
-            raise PydanticCustomError(NUL_CHAR_CODE, NUL_CHAR_DETAIL)
+            raise PydanticKnownError(_STRING_TYPE)
         return value
 
 
-# The user a request already looked up: the path validator runs before the
-# view, so a detail PATCH looks the object up once. Weak keys: an entry lives
-# only as long as its request, and no other request can read it.
-_VISIBLE_USERS: WeakKeyDictionary[HttpRequest, User] = WeakKeyDictionary()
-
-
-def _visible_user(request: HttpRequest, public_id: UUID) -> User:
-    cached = _VISIBLE_USERS.get(request)
-    if cached is not None and cached.public_id == public_id:
-        return cached
-    current = request.user
-    if (
-        not current.is_authenticated
-        or current.pk is None
-        or not isinstance(current, User)
-    ):
-        msg = "Not found."
-        raise Http404(msg)
-    user = user_list(user=current).filter(public_id=public_id).first()
-    if user is None:
-        msg = "Not found."
-        raise Http404(msg)
-    _VISIBLE_USERS[request] = user
-    return user
-
-
-def _current_user(request: HttpRequest) -> User:
-    # API_AUTH only lets authenticated users through; narrow AnonymousUser away.
-    user = request.user
-    if not isinstance(user, User):
-        msg = "Not found."
-        raise Http404(msg)
-    return user
-
-
-def _validate_visible_id(value: UUID, info: ValidationInfo) -> UUID:
-    # Ninja passes {"request": request} to Pydantic validation. A public
-    # AfterValidator on a path argument runs before the body is parsed.
-    context: dict[str, Any] = info.context or {}
-    request: HttpRequest | None = context.get("request")
-    if request is not None:
-        _visible_user(request, value)
-    return value
-
-
-PublicUserId = Annotated[
-    UUID,
-    WithJsonSchema(
-        {
-            "type": "string",
-            "pattern": (
-                r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
-                r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-            ),
-        }
-    ),
-]
-VisibleUserId = Annotated[PublicUserId, AfterValidator(_validate_visible_id)]
-# The contract names the path parameter id (/api/v1/users/{id}/); the alias
-# keeps that name without an argument that shadows the builtin (guide/path-params/:
-# Path accepts alias). PathEx is the type-checker spelling of Path[T, P(...)].
-UserIdPath = PathEx[PublicUserId, P(alias="id")]
-VisibleUserIdPath = PathEx[VisibleUserId, P(alias="id")]
-
-# An empty PATCH body is no change (DRF parity). BodyEx, exported in ninja.__all__,
+# The body is optional, so an empty PATCH changes nothing, as an empty {} does
+# (ADR 0021: requiring it is an oasdiff ERR). BodyEx, exported in ninja.__all__,
 # is the type-checker spelling of Body[T, P(...)] (ninja/params/__init__.py,
 # guide/body/).
 UserPatchBody = BodyEx[UserUpdateIn, P(default_factory=UserUpdateIn)]
@@ -198,14 +110,7 @@ def _apply_update(user: User, data: dict[str, Any]) -> User:
 )
 @paginate(LimitPageNumberPagination)
 def users_list(request: HttpRequest) -> QuerySet[User]:
-    current = request.user
-    if (
-        not current.is_authenticated
-        or current.pk is None
-        or not isinstance(current, User)
-    ):
-        return User.objects.none()
-    return user_list(user=current)
+    return user_list(user=request_user(request, User))
 
 
 @router.get(
@@ -217,7 +122,7 @@ def users_list(request: HttpRequest) -> QuerySet[User]:
     summary="Retrieve the current user",
 )
 def users_me_retrieve(request: HttpRequest) -> User:
-    return _current_user(request)
+    return request_user(request, User)
 
 
 @router.patch(
@@ -229,7 +134,9 @@ def users_me_retrieve(request: HttpRequest) -> User:
     summary="Partially update the current user",
 )
 def users_me_partial_update(request: HttpRequest, body: UserPatchBody) -> User:
-    return _apply_update(_current_user(request), body.model_dump(exclude_unset=True))
+    return _apply_update(
+        request_user(request, User), body.model_dump(exclude_unset=True)
+    )
 
 
 @router.get(
@@ -240,8 +147,8 @@ def users_me_partial_update(request: HttpRequest, body: UserPatchBody) -> User:
     url_name="user-detail",
     summary="Retrieve a user",
 )
-def users_retrieve(request: HttpRequest, user_id: UserIdPath) -> User:
-    return _visible_user(request, user_id)
+def users_retrieve(request: HttpRequest, user_id: PublicIdPath) -> User:
+    return user_visible(user=request_user(request, User), public_id=user_id)
 
 
 @router.patch(
@@ -254,8 +161,8 @@ def users_retrieve(request: HttpRequest, user_id: UserIdPath) -> User:
 )
 def users_partial_update(
     request: HttpRequest,
-    user_id: VisibleUserIdPath,
+    user_id: PublicIdPath,
     body: UserPatchBody,
 ) -> User:
-    user = _visible_user(request, user_id)
+    user = user_visible(user=request_user(request, User), public_id=user_id)
     return _apply_update(user, body.model_dump(exclude_unset=True))

@@ -1,8 +1,8 @@
 """Allow, 405, HEAD and OPTIONS come from the registered operations.
 
-core.api.negotiation used to hard-code the users routes: any path under
-/api/v1/users/ answered 405 to a write (even one that is not a route, which
-DRF answered 404), and a new router got Ninja's text/plain 405 and no HEAD.
+core.api.negotiation reads them from the API's schema, so a new router gets
+the JSON 405, HEAD and OPTIONS without a change, and a path that is not a
+route stays a 404.
 """
 
 from __future__ import annotations
@@ -50,43 +50,30 @@ def test_a_method_the_route_lacks_is_a_json_405_with_allow(user_client: Client) 
     assert response["Allow"] == "GET, PATCH, HEAD, OPTIONS"
     assert response.json() == {
         "code": "method_not_allowed",
-        "detail": 'Method "DELETE" not allowed.',
+        "detail": "Method not allowed",
     }
 
 
 @pytest.mark.django_db
-def test_allow_is_on_the_operation_responses_too(
+def test_allow_goes_on_the_405_and_options_only(
     client: Client, user_client: Client
 ) -> None:
-    # DRF sent Allow on every response of a resource, not only on 405 and OPTIONS:
-    # here the operation's own 200 and its 401.
+    # As Django and Ninja: RFC 9110 requires Allow on a 405 and OPTIONS lists the
+    # methods; the operation's own answers, a 401 and a 406 do not carry it.
     ok = user_client.get(ME)
     unauthenticated = client.get(ME)
+    not_acceptable = user_client.get(ME, headers={"Accept": "text/html"})
+    not_allowed = user_client.delete(ME)
+    options = client.options(ME)
 
     assert ok.status_code == HTTPStatus.OK
     assert unauthenticated.status_code == HTTPStatus.UNAUTHORIZED
-    assert ok["Allow"] == "GET, PATCH, HEAD, OPTIONS"
-    assert unauthenticated["Allow"] == "GET, PATCH, HEAD, OPTIONS"
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize(
-    ("path", "accept", "allow"),
-    [
-        (ME, "text/html", "GET, PATCH, HEAD, OPTIONS"),
-        ("/api/v1/docs/", "application/json", "GET, HEAD, OPTIONS"),
-    ],
-)
-def test_allow_is_on_the_early_406_too(
-    client: Client, user_client: Client, path: str, accept: str, allow: str
-) -> None:
-    # DRF's APIView set Allow in finalize_response, also on the 406 that content
-    # negotiation raised before the handler ran (docs/api.md: every response).
-    for caller in (client, user_client):
-        response = caller.get(path, headers={"Accept": accept})
-        assert response.status_code == HTTPStatus.NOT_ACCEPTABLE
-        assert response.json()["code"] == "not_acceptable"
-        assert response["Allow"] == allow
+    assert not_acceptable.status_code == HTTPStatus.NOT_ACCEPTABLE
+    for response in (ok, unauthenticated, not_acceptable):
+        assert "Allow" not in response
+    assert not_allowed.status_code == HTTPStatus.METHOD_NOT_ALLOWED
+    assert not_allowed["Allow"] == "GET, PATCH, HEAD, OPTIONS"
+    assert options["Allow"] == "GET, PATCH, HEAD, OPTIONS"
 
 
 @pytest.mark.django_db
@@ -97,7 +84,7 @@ def test_a_path_that_is_not_a_route_gets_no_allow(
     # No route, no methods to list: Django's 404 whatever the Accept, no Allow.
     response = user_client.get("/api/v1/nothing/", headers={"Accept": accept})
     assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"code": "not_found", "detail": "Not found."}
+    assert response.json() == {"code": "not_found", "detail": "Not Found"}
     assert "Allow" not in response
 
 
@@ -120,14 +107,14 @@ def test_the_schema_has_no_head_operations_and_unique_operation_ids() -> None:
     assert all(count == 1 for count in ids.values()), ids
 
 
-def test_allow_header_orders_methods_like_drf() -> None:
+def test_allow_orders_the_methods_like_django() -> None:
     assert _allow_header({"patch", "get"}) == "GET, PATCH, HEAD, OPTIONS"
     assert _allow_header({"post"}) == "POST, OPTIONS"
     assert _allow_header({"delete", "get", "put", "post"}) == (
         "GET, POST, PUT, DELETE, HEAD, OPTIONS"
     )
-    # DRF APIView.allowed_methods follows View.http_method_names: get, post,
-    # put, patch, delete, then head and options.
+    # Django's View.http_method_names order: get, post, put, patch, delete,
+    # then head and options.
     assert _allow_header({"delete", "patch", "put", "post", "get"}) == (
         "GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS"
     )
@@ -161,8 +148,8 @@ def test_every_api_route_answers_its_own_json_405(user_client: Client, user) -> 
         "user-list",
         "user-me",
         "user-detail",
-        "api-schema",
-        "api-docs",
+        "openapi-json",
+        "openapi-view",
     }
     for route, name in routes:
         path = "/" + route.replace("<public_id:id>", str(user.public_id))
@@ -171,29 +158,6 @@ def test_every_api_route_answers_its_own_json_405(user_client: Client, user) -> 
         assert response["Content-Type"] == "application/json", name
         assert response.json() == {
             "code": "method_not_allowed",
-            "detail": 'Method "TRACE" not allowed.',
+            "detail": "Method not allowed",
         }, name
         assert response["Allow"].endswith("OPTIONS"), name
-
-
-@pytest.mark.django_db
-@pytest.mark.parametrize(
-    ("accept", "script_name"),
-    [
-        ("text/html", "/app"),
-        ("application/json;q=0", ""),
-        (", ".join([*(f"text/x-{i}" for i in range(64)), "application/json"]), ""),
-        ("*/*, application/json;q=0", ""),
-    ],
-    ids=["script-prefix", "q-0", "65th-member", "most-specific-q-0"],
-)
-def test_allow_is_on_every_early_406(
-    client: Client, accept: str, script_name: str
-) -> None:
-    # The 406 under a script prefix, for q=0 (also when the most specific
-    # range has it) and past DRF's Accept limits is the same early 406: it
-    # lists the route's methods too.
-    response = client.get(ME, headers={"Accept": accept}, SCRIPT_NAME=script_name)
-    assert response.status_code == HTTPStatus.NOT_ACCEPTABLE
-    assert response.json()["code"] == "not_acceptable"
-    assert response["Allow"] == "GET, PATCH, HEAD, OPTIONS"

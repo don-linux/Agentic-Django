@@ -6,7 +6,7 @@
 
 ## Context
 
-[0007](0007-http-and-drf-test-layout.md) split the HTTP contract (`tests/http/`) from tests of DRF itself (`tests/drf/`). The API layer now uses Django Ninja, so the framework layer needs a new home. Assertions under `tests/http/` must still survive the change unchanged.
+[0007](0007-http-and-drf-test-layout.md) split the HTTP contract (`tests/http/`) from tests of DRF itself (`tests/drf/`). The API framework is Django Ninja, so its tests go under `tests/ninja/`. Assertions under `tests/http/` hold whatever the framework.
 
 ## Decision
 

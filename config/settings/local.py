@@ -10,7 +10,6 @@ from .env import LocalEnv
 from .env import read_env
 from .guards import assert_local_targets
 
-# Every variable this module reads, typed (config/settings/_env.py).
 _env = read_env(LocalEnv)
 # The env file this process loaded; empty when DJANGO_ENV_FILE turned the read off.
 ENV_FILE = _env_file.ENV_FILE

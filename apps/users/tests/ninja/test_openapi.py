@@ -25,13 +25,12 @@ def _codes(responses: dict) -> set[str]:
 
 
 def test_api_schema_generated_successfully(admin_client) -> None:
-    url = reverse("api-schema")
+    url = reverse("api:openapi-json")
     response = admin_client.get(url)
     assert response.status_code == HTTPStatus.OK
-    # The runtime schema view still defaults to YAML for the HTTP contract.
-    assert response["Content-Type"].startswith(
-        ("application/yaml", "application/vnd.oai.openapi")
-    )
+    # Ninja's openapi_json view: JSON only (ADR 0019).
+    assert response["Content-Type"] == "application/json"
+    assert response.json()["openapi"] == "3.1.0"
 
 
 def test_users_paths_are_documented() -> None:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from http import HTTPStatus
 
 import pytest
@@ -17,28 +16,12 @@ from ninja.testing import TestClient
 from apps.users.models import User
 from core.api.exceptions import _ninja_validation_fields
 from core.api.pagination import LimitPageNumberPagination
-from core.api.pagination import _positive_int
 from core.api.pagination import _set_query_param
 from core.api.parsers import JSONParser
 from core.api.throttling import ScopedThrottle
 from core.tests.ninja.pagination_views import _list
 from core.tests.ninja.pagination_views import cached_count_api
 from core.tests.ninja.support import make_api
-
-REF_VALIDATION = "#/components/schemas/ValidationErrorSchema"
-REF_ERROR = "#/components/schemas/ErrorSchema"
-REF_UPDATE = "#/components/schemas/UserUpdateIn"
-
-
-def test_positive_int_is_drf_strict_and_capped() -> None:
-    cutoff = 100
-    for raw in ("0", "-1"):
-        with pytest.raises(ValueError, match=f"^{re.escape(raw)}$"):
-            _positive_int(raw, cutoff=cutoff)
-    for raw in ("abc", "1.0", ""):
-        with pytest.raises(ValueError, match=r"^invalid literal for int\(\)"):
-            _positive_int(raw, cutoff=cutoff)
-    assert _positive_int("500", cutoff=cutoff) == cutoff
 
 
 def test_set_query_param_sorts_keeps_lists_and_removes() -> None:
@@ -64,7 +47,7 @@ def test_scoped_throttle_takes_the_rate_of_its_scope() -> None:
     assert throttle.rate == settings.NINJA_DEFAULT_THROTTLE_RATES["user"]
 
 
-def test_json_parser_reraises_request_data_too_big(
+def test_json_parser_lets_request_data_too_big_through(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def boom(self):
@@ -75,7 +58,7 @@ def test_json_parser_reraises_request_data_too_big(
         JSONParser().parse_body(RequestFactory().post("/"))
 
 
-def test_ninja_validation_fields_nests_and_maps_min_length() -> None:
+def test_ninja_validation_fields_nests_and_keeps_the_pydantic_type() -> None:
 
     fields = _ninja_validation_fields(
         [
@@ -86,7 +69,10 @@ def test_ninja_validation_fields_nests_and_maps_min_length() -> None:
             }
         ]
     )
-    assert fields["address"]["street"][0]["code"] == "min_length"
+    assert fields["address"]["street"][0] == {
+        "code": "string_too_short",
+        "detail": "too short",
+    }
 
 
 def test_http_error_codes_for_media_auth_and_generic() -> None:
@@ -102,13 +88,14 @@ def test_http_error_codes_for_media_auth_and_generic() -> None:
         api.add_router("/", router)
         return TestClient(api)
 
+    # The code follows the status alone; the message is Ninja's, kept as detail.
     cases = [
-        (HTTPStatus.BAD_REQUEST, "JSON parse error", "parse_error"),
-        (HTTPStatus.BAD_REQUEST, "nope", "error"),
+        (HTTPStatus.BAD_REQUEST, "Cannot parse request body", "parse_error"),
+        (HTTPStatus.BAD_REQUEST, "nope", "parse_error"),
         (HTTPStatus.UNSUPPORTED_MEDIA_TYPE, "nope", "unsupported_media_type"),
-        (HTTPStatus.NOT_ACCEPTABLE, "nope", "not_acceptable"),
         (HTTPStatus.FORBIDDEN, "CSRF check Failed", "permission_denied"),
-        (HTTPStatus.FORBIDDEN, "nope", "error"),
+        (HTTPStatus.FORBIDDEN, "nope", "permission_denied"),
+        (HTTPStatus.NOT_ACCEPTABLE, "nope", "error"),
         (HTTPStatus.IM_A_TEAPOT, "brew", "error"),
     ]
     for status, message, code in cases:
@@ -128,7 +115,7 @@ def test_empty_queryset_past_first_page_is_404() -> None:
     api = cached_count_api(User.objects.none)
     response = _list(api, "?page=2")
     assert response.status_code == HTTPStatus.NOT_FOUND
-    assert response.json() == {"code": "not_found", "detail": "Invalid page."}
+    assert response.json() == {"code": "not_found", "detail": "Not Found"}
     first = _list(api, "?page=1")
     assert first.status_code == HTTPStatus.OK
     assert first.json()["results"] == []

@@ -77,8 +77,10 @@ class ValkeyCache(RedisCache):
     Django's `RedisCache` for Valkey: a TTL on every key, and an outage policy.
 
     `timeout=None` means `MAX_TTL`, a top-level CACHES key: `volatile-lru` only
-    evicts keys that have a TTL. Reads and writes fail open; deletes raise, except
-    under FAIL_OPEN_DELETE_PREFIXES; `ping()` and `strict_set()` never fail open.
+    evicts keys that have a TTL. MAX_TTL is the most a key lives when its writer
+    sets no timeout; an explicit timeout is kept as given, even a longer one.
+    Reads and writes fail open; deletes raise, except under
+    FAIL_OPEN_DELETE_PREFIXES; `ping()` and `strict_set()` never fail open.
     See docs/security.md#valkey-outages and docs/ARCHITECTURE.md#caching.
     """
 

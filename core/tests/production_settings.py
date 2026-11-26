@@ -90,9 +90,8 @@ def run_python(
     # Local settings read the root .env unless this is empty: the developer's file
     # must never reach a subprocess test.
     child_env["DJANGO_ENV_FILE"] = ""
-    # local.py refuses remote hosts. This helper's PRODUCTION_ENV uses reserved
-    # .invalid fixture hosts, so existing imports of config.settings.local keep
-    # working. Tests of the guard unset this.
+    # local.py refuses remote hosts unless this is set, and PRODUCTION_ENV names
+    # reserved .invalid hosts. The tests of that guard unset it.
     child_env.setdefault("DJANGO_ALLOW_REMOTE_LOCAL", "true")
     for key, value in (env or {}).items():
         if value is None:

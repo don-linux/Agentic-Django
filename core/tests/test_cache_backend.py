@@ -69,7 +69,7 @@ def valkey_outage(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(AxesProxyHandler, "implementation", None)
 
 
-def test_a_key_without_timeout_gets_the_maximum_ttl() -> None:
+def test_a_key_without_timeout_gets_max_ttl() -> None:
     backend = _backend(TIMEOUT=DEFAULT_TTL, MAX_TTL=MAX_TTL)
 
     assert backend.get_backend_timeout(None) == MAX_TTL
@@ -80,12 +80,14 @@ def test_explicit_and_default_timeouts_are_kept() -> None:
 
     assert backend.get_backend_timeout() == DEFAULT_TTL
     assert backend.get_backend_timeout(ONE_MINUTE) == ONE_MINUTE
+    # MAX_TTL only stands in for a missing timeout: a longer one is kept.
+    assert backend.get_backend_timeout(2 * MAX_TTL) == 2 * MAX_TTL
     # Zero or less still means "expire now", as in Django's backend.
     assert backend.get_backend_timeout(0) == 0
     assert backend.get_backend_timeout(-ONE_MINUTE) == 0
 
 
-def test_a_default_timeout_of_none_is_capped_too() -> None:
+def test_a_default_timeout_of_none_also_gets_max_ttl() -> None:
     backend = _backend(TIMEOUT=None, MAX_TTL=MAX_TTL)
 
     assert backend.get_backend_timeout() == MAX_TTL

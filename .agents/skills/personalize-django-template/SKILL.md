@@ -32,7 +32,7 @@ Lo que es igual en todos los backends no es placeholder y no se toca: el paquete
 
 - `config/settings/env.py`, `ProductionEnv`: `FRONTEND_URL` default `https://app.example.com` (`DJANGO_ALLOWED_HOSTS` no tiene default: es obligatoria)
 - `config/settings/env.py`, `BaseEnv`: `DJANGO_DEFAULT_FROM_EMAIL` default `Project <noreply@example.com>`, `DJANGO_EMAIL_SUBJECT_PREFIX` default `[Project]` (con un espacio al final), `DJANGO_EMAIL_SIGNATURE_NAME` default `Project`
-- `config/settings/guards.py`: `EXAMPLE_DOMAINS` y las comprobaciones `endswith("example.com")`
+- `config/settings/guards.py`: `EXAMPLE_DOMAINS` y las comprobaciones de dominios de ejemplo
 
 Los valores reales del proyecto van en `docker/prod/.env.example` (y en `.env.example` para lo local). Sí se cambian en código: `NINJA_TITLE` y `NINJA_DESCRIPTION`, y el default de `DJANGO_CACHE_KEY_PREFIX` (el slug: dos proyectos no deben compartir claves en Valkey).
 
@@ -85,9 +85,11 @@ El plan actualiza solo estas rutas.
 
 - `README.md`: sustituye el título por `# {Nombre}` y el primer párrafo por `Backend for {dominio}` (o `Backend for {Nombre}` si el dominio está pendiente). El resto del README no se reescribe.
 - `AGENTS.md`: borra el punto de `## Init` que manda a correr esta skill (`If pyproject.toml still says name = "project"...`) y, en `## Skills`, quita `— first, when name = "project"` (la skill sigue listada para renombrar más adelante).
-- `docs/NEXT-STEPS.md`: `example.com` pasa a `{dominio}`, `project_db` a `{db}` y `/srv/project-name` a `/srv/{docker}`, salvo en el paso 1 («Personalize the placeholders»), que describe esta skill y se queda igual
+- `docs/NEXT-STEPS.md`: `example.com` pasa a `{dominio}`, `project_db` a `{db}` y `/srv/project-name` a `/srv/{docker}`, salvo en el paso «Personalize the placeholders», que describe esta skill y se queda igual
 - `docs/ci.md`: en «Reversible migrations», la base de dev de ejemplo (`project_db`) pasa a `{db}`
 - `docs/ARCHITECTURE.md`, `docs/files.md` y `docs/deploy.md`: el ejemplo `/srv/project-name` pasa a `/srv/{docker}`
+- `docs/ARCHITECTURE.md`: la clave de ejemplo `project:1:health:ping` pasa a `{slug}:1:health:ping`
+- `docs/environment/production.md`: el default de `DJANGO_CACHE_KEY_PREFIX` (`project`) pasa a `{slug}`, como en `config/settings/base.py`
 - `docs/openapi.json`: no se edita a mano. Es generado y lleva `NINJA_TITLE` y `NINJA_DESCRIPTION`, así que se regenera en el Cierre; si no, `scripts/check.sh lint` falla al comparar el export con el archivo comprometido.
 
 ## Docker y Dev Container
@@ -96,7 +98,7 @@ El plan actualiza solo estas rutas.
 
 - `.devcontainer/devcontainer.json`: `"name": "{docker}"`
 - `docker/dev/.env.example` y `docker/prod/.env.example`: `PROJECT_NAME={docker}`
-- `docker/dev/.env`, si existe: la misma línea. Solo tiene puertos y este nombre, y es el archivo que Compose lee. Si se queda en `project-name`, el stack sigue siendo `project-name-dev` y se comparte con el template y con cualquier otra copia.
+- `docker/dev/.env`, si existe: la misma línea. Solo tiene puertos, este nombre, `HOST_UID` y `HOST_GID`, y es el archivo que Compose lee. Si se queda en `project-name`, el stack sigue siendo `project-name-dev` y se comparte con el template y con cualquier otra copia.
 - El texto de ejemplo en `docker/prod/compose.yaml` (`e.g. /srv/project-name/uploads` → `/srv/{docker}/uploads`). Los `compose.yaml` no se reescriben en lo demás: leen `${PROJECT_NAME}` y resuelven `{docker}-dev` y `{docker}-prod`.
 
 `docker/dev/.env` es el único `.env` local que se edita. El `.env` de la raíz y `docker/prod/.env` llevan secretos: no se tocan.
@@ -121,28 +123,31 @@ Después de editar, en este orden:
    - Correos y hosts de prueba `@example.com` (y `not-allowed.example`, etc.) en `apps/**/tests/`, `core/tests/` y `bruno/environments/local.yml`
    - `you@example.com` en `docker/prod/.env.example` y en el ejemplo de `sendtestemail` (`docs/deploy.md`)
    - El comentario de formato `ops@example.com` en `docker/prod/.env.example` (es un ejemplo de sintaxis de Compose, no el admin del proyecto)
-   - Los comentarios en inglés de `.gitignore` (`Project files should be...`, `# Project`)
+   - El comentario `# Project` de `.gitignore`
    - `POSTGRES_DB=project_db` en el `.env` de la raíz, si ya existe: va a pendientes
    - `example.com` y `admin@example.com` donde el dominio o `DJANGO_ADMINS` quedaron pendientes (solo en ejemplos de entorno y docs, no en el código de denylist que debe quedarse)
    - Defaults de denylist en `config/settings/env.py` (From / asunto / firma y el `FRONTEND_URL` de producción) y `config/settings/guards.py`
    - Casos de denylist en `core/tests/test_production_email_guard.py` (incluye `Project <noreply@example.com>` y `smtp.example.com`)
    - `config/settings/test.py` (`Project` y `example.com` fijos para los tests) y los valores fijos de fixtures en `apps/**/tests/` y `core/tests/` (`project_db`, `${PROJECT_NAME:-project-name}` en `core/tests/test_compose.py`)
    - Los fallbacks `${PROJECT_NAME:-project-name}` de `docker/dev/compose.yaml` y `docker/prod/compose.yaml`, y su mención en `docs/development/with-docker.md`: solo actúan sin `PROJECT_NAME`
-   - Las columnas de default de `docs/environment/development.md` y `docs/environment/production.md` (`Project`, `[Project]`, `project-name`): documentan los defaults de código, que no cambian
-   - La sección `## Personalize` de `docs/development.md` (tabla y pasos manuales), el paso 1 de `docs/NEXT-STEPS.md` y la línea del checklist en `README.md`: describen esta skill
+   - Las columnas de default de `docs/environment/development.md` y `docs/environment/production.md` (`Project`, `[Project]`, `project-name`): documentan los defaults de código, que no cambian. La fila de `DJANGO_CACHE_KEY_PREFIX` sí cambia, porque su default de código cambia
+   - Los ejemplos de sintaxis que no nombran el producto: `ada@example.com` en `docs/development.md`, `api.example.com,www.example.com` en `docs/settings.md`, y el comentario `no example.com default` de `config/settings/production.py`
+   - La línea de `docs/settings.md` que dice que los tests fijan los valores del template (`Project values are pinned to the template defaults`)
+   - La sección `## Personalize` de `docs/development.md` (tabla y pasos manuales), el paso «Personalize the placeholders» de `docs/NEXT-STEPS.md` y la línea del checklist en `README.md`: describen esta skill
    - `nobody@example.com` de `bruno/Cuentas/iniciar-sesion-invalido.yml` y `user@example.com` de `bruno/environments/seed.yml` (el usuario de `seed_dev`)
    - Los enlaces de ejemplo `https://example.com/docs/...` de las recetas de `docs/api.md` (deprecación)
    - Los comentarios de `docker/prod/.env.example` que explican la guarda (`every example.com / example.org / example.net`, `not example.com, not localhost`, `refuses example.com and localhost`)
-   - Los defaults `getattr(settings, "NINJA_TITLE", "Project API")` y `NINJA_DESCRIPTION` de `core/api/api.py`: solo actúan sin el setting. La página de Swagger toma su título de la API, así que cambia con `NINJA_TITLE`
    - Usuarios de `apps/users/management/commands/seed_dev.py` (`admin@example.com`, `user@example.com`) y las menciones de esos correos o de «no `example.com` o `localhost`» en los docs (documentan la guarda, no son el dominio del producto)
 
-   No menciones `smtp.example.com` como residuo del `.env.example` de prod: ya no está ahí. Cualquier otra coincidencia de `project-name`, `project_db` o `/srv/project-name` sí es un placeholder que faltó. Un hit de `example.com` / `Project` en la denylist o en tests no se reescribe.
+   El barrido respeta `.gitignore`, así que no abre `.env` ni `docker/dev/.env`: el paso 3 comprueba el nombre del stack de dev. Cualquier otra coincidencia de `project-name`, `project_db` o `/srv/project-name` sí es un placeholder que faltó. Un hit de `example.com` / `Project` en la denylist o en tests no se reescribe.
 
 3. Checks. Preferente, en el contenedor de dev, reconstruido porque cambió el lock (creando `.env` y `docker/dev/.env` desde sus ejemplos solo si no existen):
 
    ```bash
    [ -f .env ] || cp .env.example .env
    [ -f docker/dev/.env ] || cp docker/dev/.env.example docker/dev/.env
+   docker compose -f docker/dev/compose.yaml config | awk '/^name:/{print; exit}'
+   # expect: name: {docker}-dev (docker/dev/.env, si ya existía, también se renombró)
    docker compose -f docker/dev/compose.yaml up -d --build
    docker compose -f docker/dev/compose.yaml exec -T django python manage.py export_openapi_schema --settings config.settings.test --api config.api.api --indent 2 > docs/openapi.json
    docker compose -f docker/dev/compose.yaml exec django scripts/check.sh
@@ -189,5 +194,5 @@ No incluyas estos cambios:
 - El paquete `config`
 - Correos de los tests y los casos de denylist
 - Skills en `.agents/skills` (salvo que esta misma skill se esté corrigiendo en el template)
-- Dockerfiles y `.github/` (el host de prueba `example.com` del CI se queda)
+- Dockerfiles y `.github/` (los hosts de prueba `*.ci.invalid` del CI se quedan)
 - `LICENSE`

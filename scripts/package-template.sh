@@ -93,7 +93,6 @@ DENIED_DIRS = {
     "staticfiles",
     "graphify-out",
     ".graphify",
-    "mutants",
     "htmlcov",
     "dist",
     "private_media",

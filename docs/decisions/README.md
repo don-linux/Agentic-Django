@@ -14,16 +14,26 @@ Short records of why the template is the way it is, one decision per file (a lig
 | [0008](0008-dependency-audit-is-required.md) | The dependency audit is a required check | Accepted |
 | [0009](0009-bruno-runtime-variables.md) | Bruno scripts store values with `bru.setVar` | Accepted |
 | [0010](0010-versioned-api-and-breaking-changes.md) | The API is versioned under `/api/v1/`; a breaking change needs `/api/v2/` | Superseded by 0011 |
-| [0011](0011-openapi-contract-as-native-json.md) | The API contract is versioned as native OpenAPI 3.1.0 JSON | Accepted |
+| [0011](0011-openapi-contract-as-native-json.md) | The API contract is versioned as native OpenAPI 3.1.0 JSON | Superseded by 0024 |
 | [0012](0012-http-and-ninja-test-layout.md) | Tests split into `http/` and `ninja/` | Accepted |
 | [0013](0013-business-logic-in-services-and-selectors.md) | Business logic lives in services and selectors; the API framework stays in `api/` | Accepted |
 | [0014](0014-user-extends-abstractbaseuser-and-permissionsmixin.md) | `User` extends `AbstractBaseUser` and `PermissionsMixin`, not `AbstractUser` | Accepted |
 | [0015](0015-typed-environment-with-pydantic-settings.md) | The environment is read through typed pydantic-settings classes | Accepted |
-| [0016](0016-api-checked-against-openapi-with-schemathesis.md) | The API is checked against its OpenAPI contract with schemathesis | Accepted |
+| [0016](0016-api-checked-against-openapi-with-schemathesis.md) | The API is checked against its OpenAPI contract with schemathesis | Superseded by 0018 |
+| [0017](0017-error-texts-come-from-the-code-that-raises-the-error.md) | Error texts come from the code that raises the error | Accepted |
+| [0018](0018-the-api-accepts-exactly-what-its-contract-declares.md) | The API accepts exactly what its contract declares | Accepted |
+| [0019](0019-the-schema-and-docs-are-ninja-s-own-views.md) | The schema and docs are Ninja's own views | Accepted |
+| [0020](0020-options-allow-and-406-follow-django-and-rfc-9110.md) | OPTIONS, Allow and 406 follow Django and RFC 9110 | Accepted |
+| [0021](0021-contract-details-the-template-keeps.md) | Contract details the template keeps, and why | Accepted |
+| [0022](0022-request-fields-validate-strictly.md) | Request fields validate strictly | Accepted |
+| [0023](0023-a-business-rule-never-answers-400.md) | A business rule answers 409, 403 or 404, never 400 | Accepted |
+| [0024](0024-one-api-on-api-v1.md) | One API, on `/api/v1/`, with its contract as native OpenAPI 3.1.0 JSON | Accepted |
+| [0025](0025-preconditions-and-removed-operations.md) | A precondition is a required `If-Match`; a stale one is a 412, a removed operation a 410 | Accepted |
 
 ## Writing one
 
 - Copy [template.md](template.md) to `NNNN-short-title.md` with the next number, and add a row above.
 - Write it in the pull request that makes the decision. Keep it under a page: context, decision, consequences, alternatives.
-- Never rewrite an accepted record. A new decision that replaces one gets its own file; set the old one's status to `Superseded by NNNN` and change its row.
+- Never rewrite an accepted record's decision. A new decision that replaces one gets its own file; set the old one's status to `Superseded by NNNN` and change its row. The wording may be corrected when the decision does not change: a stale name, a typo, or a sentence that narrates how the template was built instead of why.
+- Write for the person who copies the template: no names, no dated narrative of who did what, no pull request or session references. The Date field carries the date.
 - Before changing something a record covers, read the record. If the reason no longer holds, supersede the record in the same pull request.

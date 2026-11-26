@@ -4,16 +4,18 @@ The checklist after you copy this template, in order: personalize it, work on it
 
 ## After the copy
 
-1. **Personalize the placeholders.** Run the `personalize-django-template` skill. `project`, `Project`, `project-name`, `example.com` and `project_db` still appear in settings, Compose, email and the schema ([development.md#personalize](development.md#personalize)).
-2. **Bring the stack up**, with Docker or without it ([development/](development/README.md)). With Docker, the dev containers run as a non-root user, `django`, with `HOST_UID` and `HOST_GID` from `docker/dev/.env` (1000 by default). On Linux, if `id -u` or `id -g` prints something else, set them first. After changing them, or in a checkout whose old dev image ran as root, rebuild with `docker compose -f docker/dev/compose.yaml up -d --build` and give back the caches those root containers left ([with-docker.md#running-as-root](development/with-docker.md#running-as-root)).
-3. **Install the Git hooks** on the host ([development.md#pre-commit](development.md#pre-commit)).
-4. **Try the account flow.** Sign up, read the code in Mailpit, verify, and run the Bruno smoke requests after `seed_dev` ([development.md#accounts](development.md#accounts), [development.md#bruno](development.md#bruno)).
-5. **Write your domain invariants** in `AGENTS.md`, with the product owner, before creating domain apps.
+1. **Start the repository.** In a folder copy, with no `.git`, run `git init -b main`: CI runs on pushes to `main`, and the Git hooks need a repository.
+2. **Personalize the placeholders.** Run the `personalize-django-template` skill. `project`, `Project`, `project-name`, `example.com` and `project_db` still appear in settings, Compose, email and the schema ([development.md#personalize](development.md#personalize)).
+3. **Bring the stack up**, with Docker or without it ([development/](development/README.md)). With Docker, the dev containers run as a non-root user, `django`, with `HOST_UID` and `HOST_GID` from `docker/dev/.env` (1000 by default). On Linux, if `id -u` or `id -g` prints something else, set them first. After changing them, rebuild with `docker compose -f docker/dev/compose.yaml up -d --build` ([with-docker.md#running-as-root](development/with-docker.md#running-as-root)).
+4. **Install the Git hooks** on the host ([development.md#pre-commit](development.md#pre-commit)).
+5. **Try the account flow.** Sign up, read the code in Mailpit, verify, and run the Bruno smoke requests after `seed_dev` ([development.md#accounts](development.md#accounts), [development.md#bruno](development.md#bruno)).
+6. **Write your domain invariants** in `AGENTS.md`, with the product owner, before creating domain apps.
 
 ## CI
 
 1. **Push and let CI run.** `.github/workflows/ci.yml` runs on pull requests and pushes to `main`. It needs no GitHub Actions secrets: the `secrets` job is a gitleaks scan of the history ([ci.md](ci.md)). Never commit `docker/prod/.env`.
 2. **Protect `main`.** Mark the CI jobs as required checks ([ci.md#required-checks](ci.md#required-checks)).
+3. **Turn on Dependabot security updates** in the repository settings (Code security): `.github/dependabot.yml` configures only the version updates ([ci.md#dependabot](ci.md#dependabot)).
 
 ## Before the first production `up`
 
@@ -113,7 +115,7 @@ server {
         proxy_connect_timeout 5s;
         proxy_read_timeout 35s;
         gzip on;
-        gzip_types application/json application/problem+json application/vnd.oai.openapi+json;
+        gzip_types application/json;
         gzip_min_length 1024;
         gzip_proxied any;
         gzip_comp_level 5;
@@ -174,7 +176,7 @@ sudo mkdir -p /srv/project-name/uploads/public /srv/project-name/uploads/private
 sudo chown -R 1000:1000 /srv/project-name/uploads
 ```
 
-It is a bind mount of a host folder, not a named volume: a `git clean -fdx`, a fresh clone or an `rsync --delete` deploy never touches it, and the host nginx can read it (it cannot read `/var/lib/docker/volumes`). Compose refuses to start if `DOCKER_PROD_DJANGO_UPLOADS_PATH` is unset or the folder does not exist, and the container exits with the `chown` command to run if it cannot write there. Commands that read the compose file without the stack's environment need it too: `docker compose -f docker/prod/compose.yaml --env-file docker/prod/.env config`.
+It is a bind mount of a host folder, not a named volume: a `git clean -fdx`, a fresh clone or an `rsync --delete` deploy never touches it, and the host nginx can read it (it cannot read `/var/lib/docker/volumes`). Compose refuses to start if `DOCKER_PROD_DJANGO_UPLOADS_PATH` is unset or the folder does not exist, and the container exits with the `chown` command to run if it cannot write there. Compose reads `docker/prod/.env` from the compose file's folder, so every `docker compose -f docker/prod/compose.yaml` command, `config` included, sees the path.
 
 Modes and the public/private layout: [files.md#permissions](files.md#permissions), [files.md#public-or-private](files.md#public-or-private).
 
@@ -190,7 +192,7 @@ Modes and the public/private layout: [files.md#permissions](files.md#permissions
 - `DJANGO_DEFAULT_FROM_EMAIL`, an address on a domain verified with your provider.
 - `FRONTEND_URL`, the real frontend, used in email links.
 - `DJANGO_ALLOWED_HOSTS`, the API host.
-- `DJANGO_CSRF_TRUSTED_ORIGINS` and `CORS_ALLOWED_ORIGINS`, the frontend origin (the same origin as `FRONTEND_URL`), not the API host.
+- `CORS_ALLOWED_ORIGINS`, the frontend's origin (the same origin as `FRONTEND_URL`), not the API host. `DJANGO_CSRF_TRUSTED_ORIGINS` only for a frontend that writes with the session cookie; API clients send `X-Session-Token`, which CSRF does not apply to.
 - `DJANGO_TRUSTED_PROXY_COUNT`, the number of proxies that append to `X-Forwarded-For` (default `1`, for a single nginx).
 
 To rotate `DJANGO_SECRET_KEY` later without signing everyone out, see [security.md#rotating-secret_key](security.md#rotating-secret_key).
@@ -239,11 +241,10 @@ sudo timedatectl set-ntp true   # systemd-timesyncd; or install chrony
 Backups are the operator's job; the template ships no tooling. The database is the Docker volume `{PROJECT_NAME}-prod_postgres_db_data`. Copying that volume while PostgreSQL runs can save a broken copy, so dump the database instead and keep the file off the VPS:
 
 ```bash
-docker compose -f docker/prod/compose.yaml exec -T postgres_db \
-  pg_dump -U django project_db > /var/backups/project_db-$(date +\%F).sql
+30 3 * * * cd <path-to-checkout> && docker compose -f docker/prod/compose.yaml exec -T postgres_db pg_dump -U django project_db > /var/backups/project_db-$(date +\%F).sql
 ```
 
-`django` and `project_db` are `POSTGRES_USER` and `POSTGRES_DB` from `docker/prod/.env`. The `\%` keeps cron from reading `%` as a line break, and works in a shell too. Put the command in cron and copy the `.sql` somewhere else.
+It is one crontab line: cron has no line continuation, and it starts in the home folder, hence the `cd`. `django` and `project_db` are `POSTGRES_USER` and `POSTGRES_DB` from `docker/prod/.env`, and `<path-to-checkout>` is the folder that holds this repository on the server. The `\%` keeps cron from reading `%` as a line break. Copy each `.sql` somewhere else.
 
 Valkey needs no backup. Its volume (`{PROJECT_NAME}-prod_valkey_data`) only saves a restart from losing the cached sessions and the task queue; sessions are also in PostgreSQL, and everything else in it is rebuilt or starts again. Losing it loses the tasks that were still queued.
 
@@ -268,7 +269,7 @@ To change a value, edit that file and recreate the containers; Compose recreates
 
 ```bash
 docker compose -f docker/dev/compose.yaml up -d
-docker compose -f docker/prod/compose.yaml --env-file docker/prod/.env up -d
+docker compose -f docker/prod/compose.yaml up -d
 ```
 
 A change to `HOST_UID`, `HOST_GID`, `DOCKER_PROD_USER_UID`, `DOCKER_PROD_USER_GID` or `DOCKER_PROD_UV_EXTRAS` also needs `--build`. Every variable, with its purpose, default and file: [environment/](environment/README.md).
@@ -280,7 +281,7 @@ Left out of the template on purpose. Add one when a project needs it:
 - **A second Valkey for the task queue:** one instance holds the cache and the queue, and `volatile-lru` already keeps eviction away from the queue. When cache load must not touch tasks at all, add another Valkey service with `maxmemory-policy noeviction` and point `CELERY_BROKER_URL` at it. That variable takes a full URL with its credentials and replaces the one built from `VALKEY_*`, so it is a secret.
 - **Separate Valkey users for the cache and the broker:** with `ACL SETUSER`, one user limited to database 0 and another to database 1 (`db=0`, `db=1`). The cache takes `VALKEY_USERNAME` and `VALKEY_PASSWORD`; the broker takes a full `CELERY_BROKER_URL` with the other user. A leaked cache credential then cannot read or forge tasks.
 - **Celery results (`AsyncResult`, chords):** the template stores none; the outcome of a task lives in the row it updates. A project that needs them sets `CELERY_RESULT_BACKEND` to database 2 of Valkey, `CELERY_TASK_IGNORE_RESULT = False` and a `CELERY_RESULT_EXPIRES`, so results expire like every other key.
-- **Filtering and ordering:** a Ninja `FilterSchema` per list operation (`filters: Query[ThingFilter]`, then `filters.filter(queryset)`), with an explicit whitelist of fields ([Ninja: filtering](https://django-ninja.dev/guide/filtering/), [combining with pagination](https://django-ninja.dev/guide/filtering/#combining-with-pagination)), and an ordering parameter limited to a `Literal` of allowed fields. Every field offered needs an index (`core/tests/ninja/test_list_indexes.py`), or a client can ask for a sequential scan.
-- **Object permissions:** a reusable owner check in the service (an owner field, `__` paths allowed) as a second layer on writes; scoping the selector's queryset to the caller stays the first layer.
+- **Filtering, search and ordering:** the recipe is in [api.md#filtering-search-and-ordering](api.md#filtering-search-and-ordering): a `BaseFilterSchema` per list, a `Literal` for the order, and an index for each.
+- **Object permissions:** scoping the selector's queryset to the caller is the first layer; a service raises a 403 for an object the caller can see but may not change ([api.md#permissions-and-public-endpoints](api.md#permissions-and-public-endpoints)).
 - **Soft delete:** an opt-in `SoftDeleteModel` with `deleted_at`, a default manager that hides deleted rows plus an `all_objects` manager, `soft_delete` and `restore` services, and unique constraints with `condition=Q(deleted_at__isnull=True)`.
 - **Fixing a mistyped email during the pending verification:** `ACCOUNT_EMAIL_VERIFICATION_SUPPORTS_CHANGE = True` lets the user change the address inside the `verify_email` flow (`POST /_allauth/app/v1/account/email` with the pending session token). Weigh the account-enumeration limit allauth notes for it before turning it on.

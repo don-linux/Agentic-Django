@@ -10,12 +10,14 @@ from __future__ import annotations
 import json
 from http import HTTPStatus
 
+import pytest
 from django.test import RequestFactory
 
 from core.errors import PROTECTED_CODE
 from core.errors import VALIDATION_ERROR_CODE
 from core.errors import application_error_body
 from core.errors import error_body
+from core.errors import json_error
 from core.errors import page_not_found
 from core.errors import protected_error_body
 from core.errors import validation_error_body
@@ -24,9 +26,9 @@ from core.exceptions import ConflictError
 
 
 def test_an_error_body_is_code_and_detail() -> None:
-    assert error_body("not_found", "Not found.") == {
+    assert error_body("not_found", "Not Found") == {
         "code": "not_found",
-        "detail": "Not found.",
+        "detail": "Not Found",
     }
 
 
@@ -69,4 +71,35 @@ def test_the_plain_django_handlers_answer_the_same_body() -> None:
 
     assert response.status_code == HTTPStatus.NOT_FOUND
     assert response["Content-Type"] == "application/json"
-    assert json.loads(response.content) == {"code": "not_found", "detail": "Not found."}
+    assert json.loads(response.content) == {"code": "not_found", "detail": "Not Found"}
+
+
+def test_errors_built_outside_ninja_are_compact_utf8_json() -> None:
+    # The same bytes as the API's renderer (ADR 0021): no spaces, no \\u escapes.
+    response = page_not_found(RequestFactory().get("/nowhere/"), Exception())
+    assert response.content == b'{"code":"not_found","detail":"Not Found"}'
+    assert json_error("not_found", "Où?", HTTPStatus.NOT_FOUND).content == (
+        '{"code":"not_found","detail":"Où?"}'.encode()
+    )
+
+
+@pytest.mark.parametrize("code", ["Bad Code", "already-exists", "1st", "", "Upper"])
+def test_application_error_rejects_codes_that_are_not_snake_case(code: str) -> None:
+    with pytest.raises(ValueError, match="snake_case"):
+        ApplicationError("Message.", code=code)
+
+
+def test_application_error_keeps_its_message_and_defaults_to_409() -> None:
+    error = ApplicationError("Message.", code="some_rule")
+
+    assert error.message == "Message."
+    assert str(error) == "Message."
+    assert error.status_code == HTTPStatus.CONFLICT
+    assert error.extra is None
+
+
+def test_a_business_rule_never_answers_400() -> None:
+    # The request matched the schema: a 400 would refuse what the contract
+    # allows (ADR 0023).
+    with pytest.raises(ValueError, match="never answers 400"):
+        ApplicationError("Message.", code="some_rule", status_code=400)

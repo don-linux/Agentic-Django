@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 import pytest
 import sentry_sdk
 from sentry_sdk.integrations.celery import CeleryIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration
 from sentry_sdk.integrations.redis import RedisIntegration
 from sentry_sdk.scrubber import EventScrubber
 
 from core import sentry
+from core.logging import REQUEST_ID_HEADER
 from core.sentry import FILTERED
 from core.sentry import scrub_event
 from core.tests.guard_values import FAKE_DSN
@@ -26,6 +29,8 @@ BROKER_URL = f"redis://:{URL_SECRET}@{BROKER_HOST}/1"
 MASKED_BROKER_URL = f"redis://{FILTERED}@{BROKER_HOST}/1"
 CALLBACK_URL = f"https://hooks:{HOOK_SECRET}@hooks.tests.invalid/done"
 MASKED_CALLBACK_URL = f"https://{FILTERED}@hooks.tests.invalid/done"
+# The id of the request that enqueued the failing task below.
+REQUEST_ID = "tests-request-7"
 IS_INITIALIZED = (
     "import config.settings.production, sentry_sdk\n"
     "print(sentry_sdk.is_initialized())\n"
@@ -36,7 +41,8 @@ REDIS_INTEGRATION_IS_ACTIVE = (
     "print(sentry_sdk.get_client().get_integration(RedisIntegration) is not None)\n"
 )
 # A worker with Sentry on, as production configures it, whose task fails while it
-# holds secrets. The events go to a transport that keeps them instead of sending.
+# holds secrets. A request enqueued it, so its message carries the request id.
+# The events go to a transport that keeps them instead of sending.
 FAILED_TASK_EVENTS = (
     "import json\n"
     "import sentry_sdk\n"
@@ -69,6 +75,7 @@ FAILED_TASK_EVENTS = (
     "\n"
     "failing_report.apply(\n"
     f"    kwargs=dict(report_id=7, callback_url='{CALLBACK_URL}'),\n"
+    f"    headers={{{REQUEST_ID_HEADER!r}: {REQUEST_ID!r}}},\n"
     ")\n"
     "sentry_sdk.flush()\n"
     "print(json.dumps(capture.events, default=str))\n"
@@ -110,9 +117,13 @@ def test_scrub_event_filters_sensitive_body_fields_recursively() -> None:
     assert data["steps"][0]["label"] == "verify"
 
 
-def test_scrub_event_drops_cookies_and_tolerates_events_without_request() -> None:
+def test_scrub_event_drops_cookies_and_tolerates_events_without_them() -> None:
     assert "cookies" not in scrub_event(_event(), {})["request"]
     assert scrub_event({"message": "boom"}, {}) == {"message": "boom"}
+    without_cookies = {"request": {"headers": {"Accept": "application/json"}}}
+    assert scrub_event(without_cookies, {}) == {
+        "request": {"headers": {"Accept": "application/json"}},
+    }
 
 
 def _task_event() -> dict[str, Any]:
@@ -309,11 +320,18 @@ def test_scrub_event_leaves_the_notes_and_package_list_of_sentry_alone() -> None
     assert event["modules"] == {"pytokens": "0.3.0", "django": "6.1.3"}
 
 
-def test_init_sentry_turns_pii_off_and_scrubs_hyphenated_headers(
+def test_init_sentry_passes_its_arguments_and_scrubs_every_event(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, Any] = {}
     monkeypatch.setattr(sentry_sdk, "init", lambda **kw: captured.update(kw))
+    logging_kwargs: dict[str, Any] = {}
+
+    def logging_integration(**kwargs: Any) -> LoggingIntegration:
+        logging_kwargs.update(kwargs)
+        return LoggingIntegration(**kwargs)
+
+    monkeypatch.setattr(sentry, "LoggingIntegration", logging_integration)
 
     sentry.init_sentry(
         dsn=FAKE_DSN,
@@ -322,8 +340,15 @@ def test_init_sentry_turns_pii_off_and_scrubs_hyphenated_headers(
         traces_sample_rate=0.0,
     )
 
+    assert captured["dsn"] == FAKE_DSN
+    assert captured["environment"] == "tests"
+    assert captured["release"] == "abc123"
+    assert captured["traces_sample_rate"] == 0.0
     assert captured["send_default_pii"] is False
     assert captured["before_send"] is scrub_event
+    assert captured["before_send_transaction"] is scrub_event
+    # Log records become breadcrumbs from INFO, and events from ERROR.
+    assert logging_kwargs == {"level": logging.INFO, "event_level": logging.ERROR}
     scrubber = captured["event_scrubber"]
     assert isinstance(scrubber, EventScrubber)
     event: Any = {"request": {"headers": {"X-Session-Token": "session-secret"}}}
@@ -382,10 +407,18 @@ def test_event_scrubber_filters_secrets_in_task_arguments(
     assert kwargs["report_id"] == 7  # noqa: PLR2004
 
 
-def test_a_failed_task_sends_no_secret_to_sentry() -> None:
+@pytest.fixture(scope="module")
+def failed_task_event() -> dict[str, Any]:
+    """The one event Sentry sends for the failed task of FAILED_TASK_EVENTS."""
     result = run_python(FAILED_TASK_EVENTS, env={"SENTRY_DSN": FAKE_DSN})
-
     [event] = json.loads(result.stdout.splitlines()[-1])
+    return event
+
+
+def test_a_failed_task_sends_no_secret_to_sentry(
+    failed_task_event: dict[str, Any],
+) -> None:
+    event = failed_task_event
     [exception] = event["exception"]["values"]
     frame = exception["stacktrace"]["frames"][-1]
     variables = frame["vars"]
@@ -406,6 +439,14 @@ def test_a_failed_task_sends_no_secret_to_sentry() -> None:
     assert exception["value"] == f"cannot reach {MASKED_BROKER_URL}"
     sent = json.dumps(event)
     assert [secret for secret in SECRETS if secret in sent] == []
+
+
+def test_a_failed_task_reports_the_request_id_of_its_caller(
+    failed_task_event: dict[str, Any],
+) -> None:
+    # The tag a request's own events carry: the event matches the log lines of
+    # the request and of the task (docs/security.md#error-tracking).
+    assert failed_task_event["tags"]["request_id"] == REQUEST_ID
 
 
 def test_production_keeps_the_redis_integration_off() -> None:

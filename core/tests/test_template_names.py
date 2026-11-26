@@ -1,7 +1,8 @@
-"""The template carries no project name outside README.md's title.
+"""The template's own name appears only in README.md's title.
 
-Code, docs and config use generic placeholders ("project", "Project API"), so a
-new project only renames README.md (and pyproject's name when it wants to).
+Code, docs and config use generic placeholders ("project", "Project API"),
+which the personalize-django-template skill replaces with the new project's
+names.
 """
 
 from __future__ import annotations

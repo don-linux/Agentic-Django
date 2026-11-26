@@ -11,7 +11,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 SOURCES = ("apps", "config", "core")
-OUTSIDE_THE_APP = ("nginx", "Idempotent retries")
+OUTSIDE_THE_APP = ("nginx", "Idempotent retries", "Duplicates")
 _ROW = re.compile(r"^\| `(?P<code>[a-z_]+)` \| \d{3} \|.*\| (?P<raised_by>[^|]+) \|$")
 
 

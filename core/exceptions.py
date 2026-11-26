@@ -20,10 +20,14 @@ class ApplicationError(Exception):
 
     `code` is snake_case and listed in the API's error codes, `message` is the
     English `detail`, and `extra` adds structured context to the response body.
-    See docs/api.md#error-codes.
+    The status is 409 unless `status_code` says otherwise: 403 for a caller
+    who may not, 404 to hide an object, 410 for a removed operation, 412 for a
+    stale precondition. Never 400: the request already matched the schema, and
+    the contract answers 400 only for one that does not (ADR 0023). See
+    docs/api.md#domain-errors.
     """
 
-    status_code: int = HTTPStatus.BAD_REQUEST
+    status_code: int = HTTPStatus.CONFLICT
 
     def __init__(
         self,
@@ -35,6 +39,12 @@ class ApplicationError(Exception):
     ) -> None:
         if not _CODE_PATTERN.fullmatch(code):
             msg = f"Error code {code!r} must be snake_case (^[a-z][a-z0-9_]*$)."
+            raise ValueError(msg)
+        if status_code == HTTPStatus.BAD_REQUEST:
+            msg = (
+                "A business rule never answers 400: use 409, 403 or 404 "
+                "(docs/api.md#domain-errors)."
+            )
             raise ValueError(msg)
         super().__init__(message)
         self.message = message

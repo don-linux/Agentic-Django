@@ -10,13 +10,17 @@ Verification is mandatory, so without working email nobody can finish signing up
 - Error reports go to `DJANGO_ADMINS` (nobody by default, and nobody while `SENTRY_DSN` is set, since Sentry already reports errors) through the `admin-logging` mailer, which drops the message instead of failing when SMTP is down.
 - Development sends to Mailpit (<http://localhost:8025>), and tests use the in-memory backend.
 
+Failures and addressing:
+
 - Only SMTP and OS transport errors are swallowed; a template error still fails the request. The log line names the template and the error class, with no traceback: never log an email body (it holds the verification or reset code) or the recipient (`SMTPRecipientsRefused` carries it).
-- Production requires `DJANGO_MAILER_HOST`, because without SMTP nobody can sign up. Error emails must never raise while Django is already handling a 500, and with `MAILERS` defined `AdminEmailHandler` no longer passes `fail_silently` on its own, so the `admin-logging` mailer sets it.
+- Error emails must never raise while Django is already handling a 500, and with `MAILERS` defined `AdminEmailHandler` no longer passes `fail_silently` on its own, so the `admin-logging` mailer sets it.
 - `DJANGO_ADMINS` is a comma-separated list of addresses, each optionally `"Name" <email>` (no commas in names). In `docker/prod/.env`, quote the whole value for Compose.
 - Every account email shares `DJANGO_DEFAULT_FROM_EMAIL` and the subject prefix `DJANGO_EMAIL_SUBJECT_PREFIX`. allauth's prefix must be set, because without `django.contrib.sites` it has no site name to fall back to.
 - The context keys `email_signature_name` and `frontend_url` are defaults for `base_message.txt`; a value allauth already put in the context wins.
 
-- Production refuses to start until `DJANGO_MAILER_HOST`, `DJANGO_DEFAULT_FROM_EMAIL` and `FRONTEND_URL` are real: no `example.com` or `localhost` in From and `FRONTEND_URL`, and not TLS and SSL at once. The SMTP variables are `DJANGO_MAILER_HOST`, `DJANGO_MAILER_PORT`, `DJANGO_MAILER_USERNAME`, `DJANGO_MAILER_PASSWORD`, `DJANGO_MAILER_USE_TLS` and `DJANGO_MAILER_USE_SSL`, one per option of Django's `MAILERS` setting. Gmail only suits a prototype.
+What production checks:
+
+- Production refuses to start until `DJANGO_MAILER_HOST`, `DJANGO_DEFAULT_FROM_EMAIL` and `FRONTEND_URL` are real. `DJANGO_MAILER_HOST` cannot be loopback, which inside the container is the container itself: a relay on the host is `host.docker.internal`, with `extra_hosts: ["host.docker.internal:host-gateway"]` on the services that send email. Also refused: no `example.com` or `localhost` in From and `FRONTEND_URL`, and not TLS and SSL at once. The SMTP variables are `DJANGO_MAILER_HOST`, `DJANGO_MAILER_PORT`, `DJANGO_MAILER_USERNAME`, `DJANGO_MAILER_PASSWORD`, `DJANGO_MAILER_USE_TLS` and `DJANGO_MAILER_USE_SSL`, one per option of Django's `MAILERS` setting. Gmail only suits a prototype.
 
 ## Templates
 
@@ -34,8 +38,8 @@ Every account email the template sends, and its files:
 
 Flows the template leaves off fall back to allauth's stock English templates, which talk about a browser and a site. Add your own `templates/account/email/` files before turning one on:
 
-- Account notifications (`ACCOUNT_EMAIL_NOTIFICATIONS`): `email_changed`, `email_confirm`, `email_deleted`, `password_changed`, `password_reset` and `password_set`, plus `base_notification.txt`.
-- Login by code (`ACCOUNT_LOGIN_BY_CODE_ENABLED`): `login_code`.
+- Account notifications, sent only with `ACCOUNT_EMAIL_NOTIFICATIONS = True`, which the template leaves off: `email_changed`, `email_confirm`, `email_deleted`, `password_changed`, `password_reset` and `password_set`, plus `base_notification.txt`.
+- Login by code (`ACCOUNT_LOGIN_BY_CODE_ENABLED`), and reauthentication by code if `ACCOUNT_REAUTHENTICATION_METHODS` adds `"code"`: `login_code`.
 - MFA ([auth/mfa.md](auth/mfa.md)): its notifications live in `templates/mfa/email/` (`totp_activated`, `totp_deactivated`, `recovery_codes_generated`, `webauthn_added`, `webauthn_removed`).
 
 Each needs a `_subject.txt` and a `_message.txt` that extends `account/email/base_message.txt`.
@@ -97,7 +101,7 @@ The template sends through SMTP, which every provider offers. Switch to the prov
    ```
 
    Keep the `MAILERS["admin-logging"]` block below it. It copies the default backend and adds `fail_silently`, so a provider outage during an error report never turns a 500 into a dropped connection.
-4. Add the new variable to `docker/prod/.env.example`, and remove the `DJANGO_MAILER_*` SMTP variables you no longer use. The production guard (`config/settings/guards.py`) already accepts `anymail.*` backends; it still requires a real From address and `FRONTEND_URL`.
+4. Remove the SMTP settings production no longer reads: the `DJANGO_MAILER_*` fields of `ProductionEnv` (`DJANGO_MAILER_HOST` has no default there, so production would refuse to start without it), their lines in `docker/prod/.env.example` and their rows in `docs/environment/production.md`. Add the new variable to the example and to the table. `core/tests/test_env_reference.py` fails while the class, the example and the table disagree. The production guard (`config/settings/guards.py`) already accepts `anymail.*` backends; it still requires a real From address and `FRONTEND_URL`.
 5. Optionally, mount `anymail.urls` for the provider's tracking webhooks (with the webhook secret the provider page describes), and stop sending to addresses that bounced or complained.
 
 ## Optional: sending email through Celery
