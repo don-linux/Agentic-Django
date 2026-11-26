@@ -39,6 +39,11 @@ The model holds the state. `error_code` is a stable value for the client (`timeo
 
 ```python
 # apps/reports/models.py
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from typing import override
+
 from django.conf import settings
 from django.core.validators import FileExtensionValidator
 from django.db import models
@@ -47,6 +52,13 @@ from core.files import MaxFileSizeValidator
 from core.files import UploadTo
 from core.files import private_storage
 from core.models import BaseModel
+
+if TYPE_CHECKING:
+    import datetime as dt
+
+    from django.db.models.expressions import Combinable
+
+    from apps.users.models import User
 
 
 class ReportRun(BaseModel):
@@ -58,22 +70,35 @@ class ReportRun(BaseModel):
         DONE = "done"
         FAILED = "failed"
 
-    requested_by = models.ForeignKey(
+    requested_by: models.ForeignKey[User | Combinable, User] = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name="report_runs",
     )
-    month = models.DateField()
-    status = models.CharField(max_length=10, choices=Status, default=Status.PENDING)
+    month: models.DateField[str | dt.date | Combinable, dt.date] = models.DateField()
+    status: models.CharField[str | int | Combinable, str] = models.CharField(
+        max_length=10, choices=Status, default=Status.PENDING
+    )
     # A stable code for the client, never the text of an exception.
-    error_code = models.CharField(max_length=50, blank=True)
-    file = models.FileField(
+    error_code: models.CharField[str | int | Combinable, str] = models.CharField(
+        max_length=50, blank=True
+    )
+    file: models.FileField = models.FileField(
         storage=private_storage,
         upload_to=UploadTo("reports/file"),
         validators=[FileExtensionValidator(["csv"]), MaxFileSizeValidator(50_000_000)],
         blank=True,
     )
 
+    class Meta(BaseModel.Meta):
+        indexes = [
+            # The owner's list, newest first (reports_list).
+            models.Index(
+                fields=["requested_by", "-created_at"], name="reports_owner_idx"
+            ),
+        ]
+
+    @override
     def __str__(self) -> str:
         return f"{self.month:%Y-%m} ({self.status})"
 ```
@@ -214,22 +239,31 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 from typing import Any
+from uuid import UUID
 
-from django.http import Http404
 from django.http import HttpRequest
 from django.http import HttpResponse
+from django.urls import reverse
 from ninja import Router
 from ninja import Status
 from ninja.pagination import paginate
+from pydantic import Field
 
 from apps.reports.selectors import report_run_list
+from apps.reports.selectors import report_run_visible
 from apps.reports.services import report_request
 from apps.users.models import User
 from core.api.auth import request_user
 from core.api.pagination import LimitPageNumberPagination
 from core.api.responses import LIST_ERRORS
+from core.api.responses import LOOKUP_ERRORS
 from core.api.responses import WRITE_ERRORS
 from core.api.responses import response_docs
+from core.api.schemas import BaseSchema
+from core.api.schemas import InputSchema
+from core.api.schemas import ISODate
+from core.api.schemas import PublicIdPath
+from core.api.schemas import UTCDateTime
 
 if TYPE_CHECKING:
     from django.db.models import QuerySet
@@ -239,11 +273,39 @@ if TYPE_CHECKING:
 router = Router(tags=["reports"])
 
 
+class ReportRunIn(InputSchema):
+    month: ISODate
+
+
+class ReportRunOut(BaseSchema):
+    id: UUID = Field(json_schema_extra={"readOnly": True})
+    url: str = Field(json_schema_extra={"format": "uri", "readOnly": True})
+    month: ISODate
+    status: str = Field(json_schema_extra={"readOnly": True})
+    error_code: str = Field(json_schema_extra={"readOnly": True})
+    created_at: UTCDateTime = Field(json_schema_extra={"readOnly": True})
+
+    @staticmethod
+    def resolve_id(obj: ReportRun) -> UUID:
+        return obj.public_id
+
+    @staticmethod
+    def resolve_url(obj: ReportRun, context: dict[str, Any] | None = None) -> str:
+        return _report_url((context or {}).get("request"), obj)
+
+
+def _report_url(request: HttpRequest | None, report: ReportRun) -> str:
+    # reverse() keeps the script prefix; build_absolute_uri() adds the host.
+    path = reverse("api:report-detail", kwargs={"id": report.public_id})
+    return request.build_absolute_uri(path) if request is not None else path
+
+
 @router.get(
     "/",
     response={200: list[ReportRunOut], **LIST_ERRORS},
     openapi_extra=response_docs(LIST_ERRORS),
     operation_id="reports_list",
+    url_name="report-list",
 )
 @paginate(LimitPageNumberPagination)
 def reports_list(request: HttpRequest) -> QuerySet[ReportRun]:
@@ -255,6 +317,7 @@ def reports_list(request: HttpRequest) -> QuerySet[ReportRun]:
     response={202: ReportRunOut, **WRITE_ERRORS},
     openapi_extra=response_docs(WRITE_ERRORS),
     operation_id="reports_create",
+    url_name="report-list",
 )
 def reports_create(
     request: HttpRequest, response: HttpResponse, body: ReportRunIn
@@ -262,13 +325,22 @@ def reports_create(
     report = report_request(user=request_user(request, User), month=body.month)
     # 202: accepted, not done. The client polls Location until the status is
     # "done" or "failed".
-    response["Location"] = request.build_absolute_uri(
-        f"/api/v1/reports/{report.public_id}/"
-    )
+    response["Location"] = _report_url(request, report)
     return Status(202, report)
+
+
+@router.get(
+    "/{public_id:id}/",
+    response={200: ReportRunOut, **LOOKUP_ERRORS},
+    openapi_extra=response_docs(LOOKUP_ERRORS),
+    operation_id="reports_retrieve",
+    url_name="report-detail",
+)
+def reports_retrieve(request: HttpRequest, report_id: PublicIdPath) -> ReportRun:
+    return report_run_visible(user=request_user(request, User), public_id=report_id)
 ```
 
-`ReportRunIn` and `ReportRunOut` are schemas declared in the same module, as in `apps/users/api/views.py`. `Status(202, ...)` picks the response schema ([Ninja: multiple response schemas](https://django-ninja.dev/guide/responses/#multiple-response-schemas)) and the temporal `response` argument carries the header ([Ninja: setting headers](https://django-ninja.dev/guide/temporal-response/#setting-headers)).
+The selectors `report_run_list` and `report_run_visible` scope reports to their owner, as `user_list` and `user_visible` do in `apps/users/selectors.py`. `Status(202, ...)` picks the response schema ([Ninja: multiple response schemas](https://django-ninja.dev/guide/responses/#multiple-response-schemas)) and the temporal `response` argument carries the header ([Ninja: setting headers](https://django-ninja.dev/guide/temporal-response/#setting-headers)).
 
 What the client sees:
 
@@ -283,7 +355,6 @@ GET /api/v1/reports/<id>/
 
 The rest is the same as for any resource:
 
-- `ReportRunOut` / `ReportRunIn` are Pydantic schemas with `id` from `public_id`, a `url`, and `status`, `error_code` and `created_at` read-only on the output. `report_run_list` is the selector that scopes reports to their owner.
 - Add the app to `LOCAL_APPS`, mount the router in `config/api.py` (served under `/api/v1/`), run `python manage.py makemigrations reports --name create_report_run`, and regenerate `docs/openapi.json`.
 - The file is private. Serve it from an operation that returns `protected_file_response(report.file, filename="report.csv")` once the status is `done` ([files.md](files.md)).
 - Each request starts minutes of work, so give the endpoint a scoped throttle ([api.md](api.md#throttling)).
@@ -331,9 +402,19 @@ TRANSIENT_ERRORS = (OperationalError, ConnectionError, TimeoutError)
 
 ```python
 # apps/orders/models.py
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from typing import override
+
 from django.db import models
 
 from core.models import BaseModel
+
+if TYPE_CHECKING:
+    from django.db.models.expressions import Combinable
+
+    type Payload = dict[str, object]
 
 
 class OutboxMessage(BaseModel):
@@ -343,12 +424,18 @@ class OutboxMessage(BaseModel):
         PENDING = "pending"
         DONE = "done"
 
-    kind = models.CharField(max_length=50)
+    kind: models.CharField[str | int | Combinable, str] = models.CharField(
+        max_length=50
+    )
     # blank: a message may need no data besides its kind.
-    payload = models.JSONField(default=dict, blank=True)
-    status = models.CharField(max_length=10, choices=Status, default=Status.PENDING)
+    payload: models.JSONField[Payload | Combinable, Payload] = models.JSONField(
+        default=dict, blank=True
+    )
+    status: models.CharField[str | int | Combinable, str] = models.CharField(
+        max_length=10, choices=Status, default=Status.PENDING
+    )
 
-    class Meta:
+    class Meta(BaseModel.Meta):
         indexes = [
             # The sweep reads only what is still pending.
             models.Index(
@@ -358,6 +445,7 @@ class OutboxMessage(BaseModel):
             ),
         ]
 
+    @override
     def __str__(self) -> str:
         return f"{self.kind} ({self.status})"
 ```
@@ -367,7 +455,6 @@ class OutboxMessage(BaseModel):
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any
 
 from django.db import transaction
 from django.db.models.functions import Now
@@ -382,7 +469,7 @@ SWEEP_AFTER = dt.timedelta(minutes=2)
 SWEEP_BATCH = 100
 
 
-def outbox_add(*, kind: str, payload: dict[str, Any]) -> OutboxMessage:
+def outbox_add(*, kind: str, payload: dict[str, object]) -> OutboxMessage:
     """Record work that must not be lost. Call it inside the write's transaction."""
     message = OutboxMessage(kind=kind, payload=payload)
     message.full_clean()

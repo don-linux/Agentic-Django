@@ -27,21 +27,66 @@ document = models.FileField(
 - Public (`default` storage, served by nginx at `MEDIA_URL`): only files meant to be world-readable, such as avatars or product images.
 - Private (`storage=private_storage`): everything user-sensitive (IDs, invoices, contracts). When in doubt, private.
 
-A private file is downloaded through an operation that scopes the lookup to the caller and returns `protected_file_response(...)`. With local storage behind nginx it answers with `X-Accel-Redirect` and nginx streams the file from an `internal` location; with S3 it redirects to a short-lived signed URL that names the file (`ResponseContentDisposition`); in development Django streams it. Never serialize a private file's `.url`. Before it writes `X-Accel-Redirect`, it refuses a stored name with `..`, a NUL byte or no file name (`SuspiciousFileOperation`: Django answers 400 and logs it to `django.security`), so a name planted in the database cannot point nginx elsewhere.
+A private file is downloaded through an operation that looks it up with a selector scoped to the caller and returns `protected_file_response(...)`. With local storage behind nginx it answers with `X-Accel-Redirect` and nginx streams the file from an `internal` location; with S3 it redirects to a short-lived signed URL that names the file (`ResponseContentDisposition`); in development Django streams it. Never serialize a private file's `.url`. Before it writes `X-Accel-Redirect`, it refuses a stored name with `..`, a NUL byte or no file name (`SuspiciousFileOperation`: Django answers 400 and logs it to `django.security`), so a name planted in the database cannot point nginx elsewhere.
 
 ```python
-from core.api.responses import LOOKUP_ERRORS
-from core.api.responses import download_docs
-from core.api.schemas import PublicIdPath
+# apps/invoices/models.py
+from typing import TYPE_CHECKING
+
+from django.core.validators import FileExtensionValidator
+from django.db import models
+
+from apps.users.models import User
+from core.files import MaxFileSizeValidator
+from core.files import UploadTo
 from core.files import private_storage
-from core.files import protected_file_response
+from core.models import BaseModel
+
+if TYPE_CHECKING:
+    from django.db.models.expressions import Combinable
 
 
 class Invoice(BaseModel):
-    owner = models.ForeignKey(User, on_delete=models.PROTECT)
-    document = models.FileField(
-        storage=private_storage, upload_to=UploadTo("invoices/document")
+    owner: models.ForeignKey[User | Combinable, User] = models.ForeignKey(
+        User, on_delete=models.PROTECT
     )
+    document: models.FileField = models.FileField(
+        storage=private_storage,
+        upload_to=UploadTo("invoices/document"),
+        validators=[FileExtensionValidator(["pdf"]), MaxFileSizeValidator(10_000_000)],
+    )
+
+
+# apps/invoices/selectors.py
+from typing import TYPE_CHECKING
+
+from apps.invoices.models import Invoice
+
+if TYPE_CHECKING:
+    from uuid import UUID
+
+    from apps.users.models import User
+
+
+def invoice_visible(*, user: User, public_id: UUID) -> Invoice:
+    """The caller's invoice; another user's or an unknown id is DoesNotExist (404)."""
+    return Invoice.objects.filter(owner=user).get(public_id=public_id)
+
+
+# apps/invoices/api/views.py
+from django.http import HttpRequest
+from django.http import HttpResponseBase
+from ninja import Router
+
+from apps.invoices.selectors import invoice_visible
+from apps.users.models import User
+from core.api.auth import request_user
+from core.api.responses import LOOKUP_ERRORS
+from core.api.responses import download_docs
+from core.api.schemas import PublicIdPath
+from core.files import protected_file_response
+
+router = Router(tags=["invoices"])
 
 
 @router.get(
@@ -52,11 +97,11 @@ class Invoice(BaseModel):
     openapi_extra=download_docs("application/pdf", LOOKUP_ERRORS),
     operation_id="invoices_download",
 )
-def invoices_download(request: HttpRequest, invoice_id: PublicIdPath) -> HttpResponse:
+def invoices_download(
+    request: HttpRequest, invoice_id: PublicIdPath
+) -> HttpResponseBase:
     # Scoped to the owner, so another user's invoice is a 404.
-    invoice = get_object_or_404(
-        Invoice.objects.filter(owner=request_user(request, User)), public_id=invoice_id
-    )
+    invoice = invoice_visible(user=request_user(request, User), public_id=invoice_id)
     return protected_file_response(invoice.document, filename="invoice.pdf")
 ```
 

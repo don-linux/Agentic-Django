@@ -10,7 +10,7 @@ The production container refuses to start while a secret still has an example or
 - `VALKEY_URL` and `VALKEY_PASSWORD` are both required. The URL starts with `redis://` or `rediss://` and carries no credentials; a `rediss://` URL must end with `?ssl_cert_reqs=required`. The password has at least 32 characters, no `change-me`, and no quote, backslash or line break (Compose writes it into `valkey.conf`). `VALKEY_CACHE_DB` and `VALKEY_BROKER_DB` must differ.
 - Celery must reach a real worker: eager mode off, and a broker on `redis://` or `rediss://`. A `rediss://` broker must verify the certificate (`ssl_cert_reqs=required`), also when `CELERY_BROKER_URL` is set by hand.
 - `DJANGO_ALLOWED_HOSTS` must be set, and no entry may contain `*` or be an example domain (`example.com`, `example.org`, `example.net` or a subdomain of one) or `localhost`. Reserved test names (`.invalid`, `.test`) are accepted, for CI and tests.
-- Each `DJANGO_CSRF_TRUSTED_ORIGINS` and `CORS_ALLOWED_ORIGINS` entry is an `https://` origin with no path, not an example domain or `localhost`. Both are the frontend's origin, like `FRONTEND_URL`; both may stay empty for token-only clients.
+- Each `DJANGO_CSRF_TRUSTED_ORIGINS` and `CORS_ALLOWED_ORIGINS` entry is an `https://` origin with no path, not an example domain or `localhost`. `CORS_ALLOWED_ORIGINS` is the browser frontend's origin, like `FRONTEND_URL`. `DJANGO_CSRF_TRUSTED_ORIGINS` names only a frontend that writes with the session cookie: API clients send `X-Session-Token`, which CSRF does not apply to. Both may stay empty.
 - `DJANGO_DEFAULT_FROM_EMAIL` and `FRONTEND_URL` must be real: not empty, not an example domain, and `FRONTEND_URL` uses `https://` ([email.md](email.md#how-it-works)).
 - HSTS must stay valid as it ramps ([HSTS](#hsts)).
 
@@ -52,9 +52,11 @@ Sentry is off unless `SENTRY_DSN` is set (`config/settings/production.py` calls 
 - In every part of an event (local variables, exception and log messages, breadcrumbs, task data), a value whose name contains `password`, `token` or `secret` is filtered (`api_token`, `DB_PASSWORD`), and the credentials of every URL are masked: `redis://:<password>@host` is sent as `redis://[Filtered]@host`. The Celery broker URL carries the Valkey password, so this covers it under any variable name.
 - Task arguments are never sent: with PII off the SDK replaces them whole.
 - What the filter cannot see: a secret under a name without those words and outside a URL, inside the text form of an object, or in a query string. Do not hold secrets in such variables in code that can raise.
-- Events carry the request id (`X-Request-ID`), so a Sentry event matches its log lines.
+- Events carry the request id (`X-Request-ID`), a task's events included, so a Sentry event matches its log lines.
 
 Every new custom authentication or secret header must be added to `core.sentry.SENSITIVE_HEADERS`.
+
+How the filter works in detail:
 
 - URL credentials (`redis://:<password>@host`, `https://user:password@host`) are stripped up to the last `@` before the path, so an email inside a path stays.
 - `_meta` and `modules` are not scrubbed (`pytokens` is a package name, not a token).
@@ -71,6 +73,8 @@ Valkey holds the sessions, which are credentials, and values that Django reads b
 - **TLS outside the compose network.** For a managed Valkey, or one on another host, use `rediss://<host>:<port>?ssl_cert_reqs=required`. `rediss://` turns TLS on. `ssl_cert_reqs=required` makes the Celery broker verify the server's certificate: without it the broker would connect without verifying and only log a warning, so production refuses to start. The check covers `VALKEY_URL` and a `CELERY_BROKER_URL` set by hand, and accepts only the lowercase value `required`, the one both clients understand. A URL that turns the host name check off (`ssl_check_hostname=false`, or `0`, `f`, `n`, `no`, which the cache reads the same way) is refused too: a certificate would pass whatever server it was issued for. The cache always verifies.
 - **Not in Sentry.** The SDK's Redis integration stays disabled: it would send cache keys, and the cache key of a session contains the session token.
 - **Task arguments are stored there** until a worker takes them, and they are written to the append-only file. Pass ids, never secrets ([tasks.md](tasks.md#writing-a-task)).
+
+Why those rules hold:
 
 - sentry-sdk enables `RedisIntegration` by itself once redis-py is installed, and it reports cache keys even with PII off, so `core/sentry.py` disables it explicitly.
 - redis-py and Celery speak only `redis://` and `rediss://`; production refuses `valkey://`.
@@ -124,7 +128,7 @@ Opt-in, for a project that stores national IDs, tax IDs, TOTP secrets, or third-
 
 ### Option A: a small helper (recommended)
 
-Add `cryptography` as a direct dependency, pinned to the version already in `uv.lock` (`uv add --no-sync "cryptography==50.0.2"` on the host), and two settings read from the environment:
+Add `cryptography` as a direct dependency, pinned to the version already in `uv.lock` (`uv add --no-sync "cryptography==50.0.2"` on the host), and two settings read from the environment. List both in the tables of `docs/environment/` and, commented out, in `.env.example` and `docker/prod/.env.example`: `core/tests/test_env_reference.py` fails while a variable the code reads is undocumented.
 
 ```python
 # config/settings/env.py, in BaseEnv
@@ -142,15 +146,20 @@ SEARCH_HASH_KEY = _env.DJANGO_SEARCH_HASH_KEY.get_secret_value()
 
 ```python
 # core/crypto.py
+from __future__ import annotations
+
 import hashlib
 import hmac
-from collections.abc import Callable
 from functools import cache
+from typing import TYPE_CHECKING
 
 from cryptography.fernet import Fernet
 from cryptography.fernet import MultiFernet
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @cache
@@ -184,25 +193,39 @@ def search_hash(value: str, *, normalize: Callable[[str], str] = str.strip) -> s
 
 ```python
 # core/fields.py
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from typing import override
 
 from django.db import models
+from django.db.models.expressions import Combinable
 
 from core.crypto import decrypt_str
 from core.crypto import encrypt_str
 
+if TYPE_CHECKING:
+    from django.db.backends.base.base import BaseDatabaseWrapper
+    from django.db.models.expressions import Expression
 
-class EncryptedTextField(models.TextField):
+
+class EncryptedTextField(models.TextField[str | Combinable, str]):
     """Stores Fernet ciphertext and reads back plaintext. Never filter on it."""
 
-    def get_prep_value(self, value: Any) -> Any:
+    @override
+    def get_prep_value(self, value: object) -> object:
         value = super().get_prep_value(value)
-        if value in (None, ""):
+        if not isinstance(value, str) or not value:
             return value
         return encrypt_str(value)
 
-    def from_db_value(self, value: Any, expression: Any, connection: Any) -> Any:
-        if value in (None, ""):
+    def from_db_value(
+        self,
+        value: str | None,
+        expression: Expression,
+        connection: BaseDatabaseWrapper,
+    ) -> str | None:
+        if not value:
             return value
         return decrypt_str(value)
 ```
@@ -213,21 +236,42 @@ A model keeps the hash next to the encrypted value, and the service sets both:
 
 ```python
 # apps/customers/models.py
+from typing import TYPE_CHECKING
+
+from django.db import models
+
+from core.fields import EncryptedTextField
+from core.models import BaseModel
+
+if TYPE_CHECKING:
+    from django.db.models.expressions import Combinable
+
+
+def normalize_tax_id(value: str) -> str:
+    """The form the search hash is computed from: services and selectors share it."""
+    return value.strip().upper()
+
+
 class Customer(BaseModel):
-    tax_id = EncryptedTextField()
-    tax_id_hash = models.CharField(max_length=64, unique=True, editable=False)
+    tax_id: EncryptedTextField = EncryptedTextField()
+    tax_id_hash: models.CharField[str | int | Combinable, str] = models.CharField(
+        max_length=64, unique=True, editable=False
+    )
 
 
 # apps/customers/services.py
-def _normalize_tax_id(value: str) -> str:
-    return value.strip().upper()
+from django.db import transaction
+
+from apps.customers.models import Customer
+from apps.customers.models import normalize_tax_id
+from core.crypto import search_hash
 
 
 @transaction.atomic
 def customer_create(*, tax_id: str) -> Customer:
     customer = Customer(
         tax_id=tax_id,
-        tax_id_hash=search_hash(tax_id, normalize=_normalize_tax_id),
+        tax_id_hash=search_hash(tax_id, normalize=normalize_tax_id),
     )
     customer.full_clean()
     customer.save()
@@ -235,9 +279,14 @@ def customer_create(*, tax_id: str) -> Customer:
 
 
 # apps/customers/selectors.py
+from apps.customers.models import Customer
+from apps.customers.models import normalize_tax_id
+from core.crypto import search_hash
+
+
 def customer_get_by_tax_id(*, tax_id: str) -> Customer:
     return Customer.objects.get(
-        tax_id_hash=search_hash(tax_id, normalize=_normalize_tax_id)
+        tax_id_hash=search_hash(tax_id, normalize=normalize_tax_id)
     )
 ```
 
@@ -257,6 +306,8 @@ python -c "import secrets; print(secrets.token_urlsafe(64))"  # DJANGO_SEARCH_HA
 
    ```python
    # apps/customers/management/commands/reencrypt_customers.py
+   from typing import override
+
    from django.core.management.base import BaseCommand
    from django.db import transaction
 
@@ -268,6 +319,7 @@ python -c "import secrets; print(secrets.token_urlsafe(64))"  # DJANGO_SEARCH_HA
    class Command(BaseCommand):
        help = "Re-encrypt Customer.tax_id with the first DJANGO_FIELD_ENCRYPTION_KEYS key."
 
+       @override
        def handle(self, *args: object, **options: object) -> None:
            # Pages by primary key instead of iterator(): no server-side cursor
            # stays open across the batches' transactions.
@@ -290,7 +342,7 @@ python -c "import secrets; print(secrets.token_urlsafe(64))"  # DJANGO_SEARCH_HA
 
 The search-hash key cannot rotate without recomputing every `*_hash` column from the plaintext. Pick it once and keep it.
 
-**Testing tips:** round-trip a value through save and reload; prepend a new key and check that a value encrypted with the old key still reads; check that the normalized hash is stable (`" ab12 "` and `"AB12"` give the same hash); call `_fernet.cache_clear()` when a test overrides the keys.
+**Testing tips:** round-trip a value through save and reload; prepend a new key and check that a value encrypted with the old key still reads; check that the normalized hash is stable (`" ab12 "` and `"AB12"` give the same hash); call `_fernet.cache_clear()` when a test overrides the keys. The model, services and selectors share `normalize_tax_id` from the model module, the lowest layer of the app.
 
 ### Option B: django-fernet-encrypted-fields
 
@@ -312,5 +364,3 @@ Django's built-in CSP (`django.middleware.csp.ContentSecurityPolicyMiddleware` a
 - `core/tests/http/test_csp.py` fails if the admin or the docs page gains an inline script. `core/tests/ninja/test_csp.py` pins the docs page to `frame-ancestors 'none'`, `object-src 'none'` and `script-src 'self'`, and fails if the page gains an inline script or `<style>`, loads Swagger from a CDN, or `script-src` allows `'unsafe-inline'`.
 
 nginx sets its own, stricter policy for `/media/` and `/protected-media/` ([NEXT-STEPS.md](NEXT-STEPS.md)).
-
-Swagger UI is staff-only and served by the application, not a CDN, with no inline script (see above).
