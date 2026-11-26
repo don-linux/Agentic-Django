@@ -1,17 +1,14 @@
 """
-List pagination on Ninja's PageNumberPagination, with the
-count/next/previous/results envelope.
+List pagination on Ninja's PageNumberPagination and CursorPagination.
 
-Native Ninja 1.8.0 returns {items, count}, defaults to 100 per page, and does
-not 404 past the last page. This class keeps the published envelope
-count/next/previous/results with absolute links, page_size 20 (max 100), and
-a 404 past the last page or DJANGO_API_MAX_PAGE_NUMBER. page and page_size are
-validated like Ninja's own Input: a value that is not a whole number of at
-least 1 is a 400. See docs/api.md#pagination.
-
-Sources: django-ninja 1.8.0 ninja/pagination.py (PageNumberPagination.Output,
-items_attribute, paginate_queryset) and Context7 /websites/django-ninja_dev
-"Creating a custom pagination class".
+Ninja's PageNumberPagination answers {items, count}, serves 100 per page by
+default, and does not 404 past the last page. LimitPageNumberPagination
+answers count/next/previous/results with absolute links, 20 per page (at most
+100), and a 404 past the last page or deeper than DJANGO_API_MAX_PAGE_NUMBER.
+page and page_size are validated like Ninja's own Input: a value that is not
+a whole number of at least 1 is a 400. See docs/api.md#pagination,
+https://django-ninja.dev/guide/pagination/ ("Custom pagination classes") and
+django-ninja 1.8.0 ninja/pagination.py.
 """
 
 from __future__ import annotations
@@ -29,7 +26,6 @@ from django.core.exceptions import EmptyResultSet
 from django.db.models import QuerySet
 from django.http import Http404
 from django.http import HttpRequest
-from django.utils.functional import cached_property
 from ninja import Field
 from ninja import Schema
 from ninja.errors import ValidationError
@@ -89,7 +85,7 @@ def _set_query_param(url: str, key: str, value: str | None) -> str:
 
 
 class LimitPageNumberPagination(PageNumberPagination):
-    """Page-number pagination that matches the current HTTP contract."""
+    """Page numbers with the count/next/previous/results envelope."""
 
     items_attribute = "results"
 
@@ -177,26 +173,20 @@ class LimitPageNumberPagination(PageNumberPagination):
         }
 
 
-class CachedCountPaginatorCount:
-    """COUNT(*) cached per query for COUNT_TTL seconds (opt-in)."""
-
-    def __init__(self, queryset: QuerySet) -> None:
-        self.queryset = queryset
-
-    @cached_property
-    def count(self) -> int:
-        queryset = self.queryset
-        try:
-            sql = str(queryset.query)
-        except EmptyResultSet:
-            return 0
-        return read_through(
-            queryset.model._meta.label_lower,
-            "count",
-            sql,
-            ttl=COUNT_TTL,
-            loader=queryset.count,
-        )
+def _cached_count(queryset: QuerySet) -> int:
+    """COUNT(*) of queryset, cached per query for COUNT_TTL seconds."""
+    try:
+        sql = str(queryset.query)
+    except EmptyResultSet:
+        # The query can match nothing (none(), an empty __in): no SQL to run.
+        return 0
+    return read_through(
+        queryset.model._meta.label_lower,
+        "count",
+        sql,
+        ttl=COUNT_TTL,
+        loader=queryset.count,
+    )
 
 
 class CachedCountPageNumberPagination(LimitPageNumberPagination):
@@ -206,7 +196,7 @@ class CachedCountPageNumberPagination(LimitPageNumberPagination):
     def count_items(self, queryset: QuerySet) -> int:
         if not isinstance(queryset, QuerySet):
             return len(queryset)
-        return CachedCountPaginatorCount(queryset).count
+        return _cached_count(queryset)
 
 
 class LimitCursorPagination(NinjaCursorPagination):
@@ -216,7 +206,6 @@ class LimitCursorPagination(NinjaCursorPagination):
     Opt-in. A model without public_id needs its own unique, indexed ordering.
     """
 
-    items_attribute = "results"
     # As LimitPageNumberPagination.Input: the alias publishes the name CursorIn.
     Input = CursorIn  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]
 

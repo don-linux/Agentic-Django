@@ -266,8 +266,6 @@ class BaseSchema(Schema):
     schema Ninja never builds from a model instance, such as ErrorSchema.
     """
 
-    model_config = ConfigDict(from_attributes=True)
-
 
 # PostgreSQL text cannot store NUL (\x00), and Pydantic has no check for it.
 # Django's form fields refuse it with this code and message
@@ -337,7 +335,7 @@ class InputSchema(Schema):
     # A body key that is not a field is a 400 unknown_field, not a typo ignored.
     # Strings are kept as sent, so maxLength applies to the value the client
     # sent. See docs/api.md#representation and ADR 0018.
-    model_config = ConfigDict(extra="forbid", from_attributes=True)
+    model_config = ConfigDict(extra="forbid")
 
     @field_validator("*")
     @classmethod

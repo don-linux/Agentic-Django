@@ -17,7 +17,7 @@ USER_NAMESPACE = "users.user"
 USER_TTL = 300
 # Part of the key. A cached model instance is a pickle of its field values: raise
 # this when the User model's fields change, so copies with the old shape are never
-# read. A change of base class alone keeps the pickle (docs/decisions/0014).
+# read.
 USER_CACHE_VERSION = 1
 
 

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -100,6 +102,39 @@ def test_enqueue_on_commit_hands_the_request_id_to_the_task(
         request_id_var.reset(token)
 
     assert _SEEN == ["req-77"]
+
+
+def _sentry_tags(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+    """Stand in for an initialized sentry_sdk; return the tags it is given."""
+    tags: dict[str, str] = {}
+    fake_sentry = SimpleNamespace(
+        is_initialized=lambda: True,
+        set_tag=lambda key, value: tags.update({key: value}),
+    )
+    monkeypatch.setitem(sys.modules, "sentry_sdk", fake_sentry)
+    return tags
+
+
+def test_a_task_tags_its_sentry_events_with_the_request_id_of_its_caller(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # As on the request's own events, so an error report matches the log lines
+    # of the request and of the task.
+    tags = _sentry_tags(monkeypatch)
+
+    _log_context.apply(headers={REQUEST_ID_HEADER: "req-42"})
+
+    assert tags == {"request_id": "req-42"}
+
+
+def test_without_a_request_the_task_id_tags_the_sentry_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tags = _sentry_tags(monkeypatch)
+
+    result = _log_context.apply()
+
+    assert tags == {"request_id": result.id}
 
 
 def test_unbinding_a_task_that_was_never_bound_changes_nothing() -> None:

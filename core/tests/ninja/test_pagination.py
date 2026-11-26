@@ -12,7 +12,6 @@ from ninja import Schema
 
 from apps.users.models import User
 from core.api.pagination import CachedCountPageNumberPagination
-from core.api.pagination import CachedCountPaginatorCount
 from core.api.pagination import LimitCursorPagination
 from core.api.pagination import LimitPageNumberPagination
 from core.api.pagination import PageNumberIn
@@ -215,12 +214,12 @@ def test_cached_count_of_an_empty_queryset_runs_no_query(
     assert response.json()["results"] == []
 
 
-def test_cached_count_paginator_counts_a_queryset() -> None:
+def test_cached_count_pagination_counts_a_queryset() -> None:
     total = 3
     _create_users(total)
-    paginator = CachedCountPaginatorCount(User.objects.all())
+    paginator = CachedCountPageNumberPagination()
 
-    assert paginator.count == total
+    assert paginator.count_items(User.objects.all()) == total
 
 
 def test_page_number_pagination_rejects_a_foreign_input_schema() -> None:

@@ -293,7 +293,8 @@ protected_modules = [ "ninja" ]
 allowed_importers = [
   "apps.*.api",
   "core.api",
-  # Adapter fixtures re-pointed onto Ninja (still loaded from this path).
+  # The tests of Django Ninja itself, and the fixtures that patch it for the
+  # other tests (core/tests/ninja/adapters.py).
   "core.tests.ninja",
   "apps.*.tests.ninja",
 ]

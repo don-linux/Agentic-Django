@@ -52,7 +52,7 @@ python manage.py makemigrations <app> --name <verb_noun>
 
 Example name: `create_house_document`. Never edit a migration that may already have been applied; add a new one. Every `RunPython` has a `reverse_code` (`migrations.RunPython.noop` when reversing is meaningless) and uses `apps.get_model`, never a direct model import. A non-nullable or unique column on a populated table takes three migrations: add it nullable (and not unique), backfill in batches, then set `null=False` (and the unique constraint). A callable default such as `uuid.uuid7` may stamp every existing row with one value; do not rely on it to backfill unique ids. Indexes on large tables use `AddIndexConcurrently` in a migration with `atomic = False`. Why: [ARCHITECTURE.md#indexes](../../../docs/ARCHITECTURE.md#indexes), [ci.md#reversible-migrations](../../../docs/ci.md#reversible-migrations). CI proves reversibility with `scripts/local_apps_with_migrations.py`. Reversing an app also unapplies dependent apps (for example `migrate users zero` unapplies a later app that FKs to `User`).
 
-`core/tests/test_migrations_script.py` asserts the script's output equals `local_apps_with_migrations()`. Do not hardcode a new app label in that test.
+`core/tests/test_migrations_script.py` checks that the script lists every app of `LOCAL_APPS` that has migration files, found from the app registry. Do not hardcode a new app label in that test.
 
 ## 3. Services (writes)
 

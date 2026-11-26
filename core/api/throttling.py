@@ -1,17 +1,17 @@
 """
-Native Ninja throttles with get_ident from core.net.
+Ninja's throttles, with the client IP from core.net.
 
 AnonThrottle, UserThrottle and ScopedThrottle extend Ninja's AnonRateThrottle,
-UserRateThrottle and SimpleRateThrottle. get_ident uses TRUSTED_PROXY_COUNT via
-core.net, skipping blank hops. A rate passed to the constructor ("10/min", as in
-Ninja's docs) is fixed. A rate from NINJA_DEFAULT_THROTTLE_RATES is re-read on
-each request, so tests can patch SimpleRateThrottle.THROTTLE_RATES
-(core/tests/ninja/adapters.py). Ninja 1.8.0 ninja/throttling.py does not catch
-cache errors.
-
-Sources: django-ninja 1.8.0 ninja/throttling.py and ninja/conf.py
-(NINJA_NUM_PROXIES, NINJA_DEFAULT_THROTTLE_RATES); Context7
-/websites/django-ninja_dev "Configure Global Throttling".
+UserRateThrottle and SimpleRateThrottle. get_ident is core.net.get_client_ip
+(TRUSTED_PROXY_COUNT, blank hops skipped). A rate passed to the constructor
+("10/min", as in Ninja's docs) is fixed. A rate from
+NINJA_DEFAULT_THROTTLE_RATES is read again from SimpleRateThrottle.THROTTLE_RATES
+on each request, which is what the throttle_rates test fixture patches
+(core/tests/ninja/adapters.py). Ninja does not catch cache errors: ValkeyCache
+fails open, so while Valkey is down the throttles stop counting instead of
+failing requests (docs/security.md#valkey-outages). See
+https://django-ninja.dev/guide/throttling/ and django-ninja 1.8.0
+ninja/throttling.py.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ class IdentMixin(SimpleRateThrottle):
 
 
 class RefreshingRateMixin(SimpleRateThrottle):
-    """Per-request copy, with the scope rate re-read so settings patches apply."""
+    """Checks each request on a per-thread copy, with the scope's rate read again."""
 
     def __init__(self, rate: str | None = None) -> None:
         # An explicit rate ("10/min" as in Ninja's docs) is fixed; only a rate

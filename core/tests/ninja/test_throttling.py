@@ -149,8 +149,9 @@ def test_base_settings_never_trust_xff_and_enable_global_throttles() -> None:
     [
         ({}, 1),
         ({"DJANGO_TRUSTED_PROXY_COUNT": "2"}, 2),
-        ({"ALLAUTH_TRUSTED_PROXY_COUNT": "3"}, 3),
-        ({"DJANGO_TRUSTED_PROXY_COUNT": "2", "ALLAUTH_TRUSTED_PROXY_COUNT": "3"}, 2),
+        # allauth's setting is not an environment variable: only
+        # DJANGO_TRUSTED_PROXY_COUNT sets the count.
+        ({"ALLAUTH_TRUSTED_PROXY_COUNT": "3"}, 1),
     ],
 )
 def test_production_shares_one_proxy_count(env: dict[str, str], expected: int) -> None:

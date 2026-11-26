@@ -15,13 +15,14 @@ from core.middleware import request_id_var
 
 if TYPE_CHECKING:
     from django.http import HttpRequest
+    from django.http import HttpResponseBase
 
 GENERATED = re.compile(r"[0-9a-f]{32}")
 
 
 def _run(
     headers: dict[str, str] | None = None,
-) -> tuple[HttpRequest, HttpResponse, str]:
+) -> tuple[HttpRequest, HttpResponseBase, str]:
     seen: dict[str, str] = {}
 
     def view(request: HttpRequest) -> HttpResponse:

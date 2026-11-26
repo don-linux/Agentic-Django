@@ -12,6 +12,7 @@ from sentry_sdk.integrations.redis import RedisIntegration
 from sentry_sdk.scrubber import EventScrubber
 
 from core import sentry
+from core.logging import REQUEST_ID_HEADER
 from core.sentry import FILTERED
 from core.sentry import scrub_event
 from core.tests.guard_values import FAKE_DSN
@@ -28,6 +29,8 @@ BROKER_URL = f"redis://:{URL_SECRET}@{BROKER_HOST}/1"
 MASKED_BROKER_URL = f"redis://{FILTERED}@{BROKER_HOST}/1"
 CALLBACK_URL = f"https://hooks:{HOOK_SECRET}@hooks.tests.invalid/done"
 MASKED_CALLBACK_URL = f"https://{FILTERED}@hooks.tests.invalid/done"
+# The id of the request that enqueued the failing task below.
+REQUEST_ID = "tests-request-7"
 IS_INITIALIZED = (
     "import config.settings.production, sentry_sdk\n"
     "print(sentry_sdk.is_initialized())\n"
@@ -38,7 +41,8 @@ REDIS_INTEGRATION_IS_ACTIVE = (
     "print(sentry_sdk.get_client().get_integration(RedisIntegration) is not None)\n"
 )
 # A worker with Sentry on, as production configures it, whose task fails while it
-# holds secrets. The events go to a transport that keeps them instead of sending.
+# holds secrets. A request enqueued it, so its message carries the request id.
+# The events go to a transport that keeps them instead of sending.
 FAILED_TASK_EVENTS = (
     "import json\n"
     "import sentry_sdk\n"
@@ -71,6 +75,7 @@ FAILED_TASK_EVENTS = (
     "\n"
     "failing_report.apply(\n"
     f"    kwargs=dict(report_id=7, callback_url='{CALLBACK_URL}'),\n"
+    f"    headers={{{REQUEST_ID_HEADER!r}: {REQUEST_ID!r}}},\n"
     ")\n"
     "sentry_sdk.flush()\n"
     "print(json.dumps(capture.events, default=str))\n"
@@ -402,10 +407,18 @@ def test_event_scrubber_filters_secrets_in_task_arguments(
     assert kwargs["report_id"] == 7  # noqa: PLR2004
 
 
-def test_a_failed_task_sends_no_secret_to_sentry() -> None:
+@pytest.fixture(scope="module")
+def failed_task_event() -> dict[str, Any]:
+    """The one event Sentry sends for the failed task of FAILED_TASK_EVENTS."""
     result = run_python(FAILED_TASK_EVENTS, env={"SENTRY_DSN": FAKE_DSN})
-
     [event] = json.loads(result.stdout.splitlines()[-1])
+    return event
+
+
+def test_a_failed_task_sends_no_secret_to_sentry(
+    failed_task_event: dict[str, Any],
+) -> None:
+    event = failed_task_event
     [exception] = event["exception"]["values"]
     frame = exception["stacktrace"]["frames"][-1]
     variables = frame["vars"]
@@ -426,6 +439,14 @@ def test_a_failed_task_sends_no_secret_to_sentry() -> None:
     assert exception["value"] == f"cannot reach {MASKED_BROKER_URL}"
     sent = json.dumps(event)
     assert [secret for secret in SECRETS if secret in sent] == []
+
+
+def test_a_failed_task_reports_the_request_id_of_its_caller(
+    failed_task_event: dict[str, Any],
+) -> None:
+    # The tag a request's own events carry: the event matches the log lines of
+    # the request and of the task (docs/security.md#error-tracking).
+    assert failed_task_event["tags"]["request_id"] == REQUEST_ID
 
 
 def test_production_keeps_the_redis_integration_off() -> None:

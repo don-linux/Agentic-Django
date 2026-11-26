@@ -1,11 +1,11 @@
 """
-Ninja exception handlers that delegate to core.errors (ADR 0006).
+The API's exception handlers: every error is the body of core.errors (ADR 0006).
 
-Ninja defaults: 422 and {"detail"}. These handlers emit {code, detail}
-(plus fields/extra) with the existing status codes. Each text comes from the
-code that raised the error: Pydantic, Ninja or Django (ADR 0017).
-Sources: Context7 /websites/django-ninja_dev "Override Default Validation
-Error Handler"; django-ninja 1.8.0 ninja/errors.py.
+{code, detail}, plus fields for a validation error and extra for some domain
+errors. Ninja's own handlers answer a validation error with 422 and only
+{"detail"}; these answer 400 (docs/api.md#error-codes). Each detail comes from
+the code that raised the error: Pydantic, Ninja or Django (ADR 0017). See
+https://django-ninja.dev/guide/errors/ and django-ninja 1.8.0 ninja/errors.py.
 """
 
 from __future__ import annotations
@@ -33,7 +33,13 @@ from ninja.errors import Throttled
 from ninja.errors import ValidationError as NinjaValidationError
 
 from core.errors import FORBIDDEN_DETAIL
+from core.errors import NOT_AUTHENTICATED_CODE
+from core.errors import NOT_FOUND_CODE
 from core.errors import NOT_FOUND_DETAIL
+from core.errors import PARSE_ERROR_CODE
+from core.errors import PERMISSION_DENIED_CODE
+from core.errors import THROTTLED_CODE
+from core.errors import UNSUPPORTED_MEDIA_TYPE_CODE
 from core.errors import application_error_body
 from core.errors import error_body
 from core.errors import protected_error_body
@@ -71,6 +77,8 @@ _SOURCES = frozenset({"query", "path", "header", "cookie", "form", "file"})
 NON_FIELD_KEY = "non_field_errors"
 _EXTRA_FORBIDDEN = "extra_forbidden"
 _UNKNOWN_FIELD = "unknown_field"
+# The code of a Django ValidationError raised without one.
+_INVALID = "invalid"
 
 
 def _error_path(loc: Sequence[object]) -> list[str]:
@@ -130,14 +138,14 @@ def _django_validation_fields(exc: DjangoValidationError) -> dict[str, Any]:
             items = []
             for err in errors:
                 message = err.messages[0] if err.messages else str(err)
-                items.append(_field_item(message, err.code or "invalid"))
+                items.append(_field_item(message, err.code or _INVALID))
             fields[key] = items
         return fields
     # One item per error, each with its own code (invalid when Django gives none).
     return {
         NON_FIELD_KEY: [
             _field_item(
-                err.messages[0] if err.messages else str(err), err.code or "invalid"
+                err.messages[0] if err.messages else str(err), err.code or _INVALID
             )
             for err in exc.error_list
         ]
@@ -149,9 +157,9 @@ def _django_validation_fields(exc: DjangoValidationError) -> dict[str, Any]:
 # parse (400) and a failed CSRF check (403), and core.api.parsers raises the
 # 415; core/tests/ninja/test_ninja_http_errors.py pins Ninja's raise sites.
 _HTTP_ERROR_CODES: dict[int, str] = {
-    HTTPStatus.BAD_REQUEST: "parse_error",
-    HTTPStatus.FORBIDDEN: "permission_denied",
-    HTTPStatus.UNSUPPORTED_MEDIA_TYPE: "unsupported_media_type",
+    HTTPStatus.BAD_REQUEST: PARSE_ERROR_CODE,
+    HTTPStatus.FORBIDDEN: PERMISSION_DENIED_CODE,
+    HTTPStatus.UNSUPPORTED_MEDIA_TYPE: UNSUPPORTED_MEDIA_TYPE_CODE,
 }
 # Any other status keeps "error"; nothing in Ninja 1.8.0 or the template sends one.
 _HTTP_ERROR_FALLBACK = "error"
@@ -203,7 +211,7 @@ class _ErrorHandlers:
         # Ninja's default 404 text. Like Ninja outside DEBUG, the handler never
         # repeats the exception's message, which may name a model.
         return self._json(
-            request, error_body("not_found", NOT_FOUND_DETAIL), HTTPStatus.NOT_FOUND
+            request, error_body(NOT_FOUND_CODE, NOT_FOUND_DETAIL), HTTPStatus.NOT_FOUND
         )
 
     def on_does_not_exist(
@@ -217,7 +225,9 @@ class _ErrorHandlers:
 
     def _not_authenticated(self, request: HttpRequest, detail: str) -> HttpResponse:
         response = self._json(
-            request, error_body("not_authenticated", detail), HTTPStatus.UNAUTHORIZED
+            request,
+            error_body(NOT_AUTHENTICATED_CODE, detail),
+            HTTPStatus.UNAUTHORIZED,
         )
         response["WWW-Authenticate"] = "X-Session-Token"
         return response
@@ -226,7 +236,9 @@ class _ErrorHandlers:
         self, request: HttpRequest, exc: AuthorizationError
     ) -> HttpResponse:
         return self._json(
-            request, error_body("permission_denied", str(exc)), HTTPStatus.FORBIDDEN
+            request,
+            error_body(PERMISSION_DENIED_CODE, str(exc)),
+            HTTPStatus.FORBIDDEN,
         )
 
     def on_django_permission_denied(
@@ -236,7 +248,7 @@ class _ErrorHandlers:
         # of Django's default 403 page.
         detail = str(exc) or FORBIDDEN_DETAIL
         return self._json(
-            request, error_body("permission_denied", detail), HTTPStatus.FORBIDDEN
+            request, error_body(PERMISSION_DENIED_CODE, detail), HTTPStatus.FORBIDDEN
         )
 
     def on_throttled(self, request: HttpRequest, exc: Throttled) -> HttpResponse:
@@ -244,7 +256,9 @@ class _ErrorHandlers:
         # this handler and then sets Retry-After on its response (ninja/operation.py
         # in 1.8.0). Set it here too, the same way, for a Throttled raised directly.
         response = self._json(
-            request, error_body("throttled", str(exc)), HTTPStatus.TOO_MANY_REQUESTS
+            request,
+            error_body(THROTTLED_CODE, str(exc)),
+            HTTPStatus.TOO_MANY_REQUESTS,
         )
         if exc.wait is not None:
             # Whole seconds, rounded up: Retry-After is integer delta-seconds

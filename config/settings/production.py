@@ -29,8 +29,6 @@ from .guards import assert_production_secrets
 from .guards import assert_production_valkey
 from .guards import silenced_hsts_system_checks
 
-# Every variable this module reads, typed; the required ones have no default
-# (config/settings/_env.py).
 _env = read_env(ProductionEnv)
 
 DEBUG = False
@@ -60,13 +58,10 @@ VALKEY_URL = _env.VALKEY_URL
 VALKEY_PASSWORD = _env.VALKEY_PASSWORD.get_secret_value()
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-# Proxies that append to X-Forwarded-For; one value for allauth and Ninja, with
-# ALLAUTH_TRUSTED_PROXY_COUNT as a fallback. See docs/api.md#throttling.
-TRUSTED_PROXY_COUNT = (
-    _env.ALLAUTH_TRUSTED_PROXY_COUNT
-    if _env.DJANGO_TRUSTED_PROXY_COUNT is None
-    else _env.DJANGO_TRUSTED_PROXY_COUNT
-)
+# Proxies that append to X-Forwarded-For: one count for core.net (django-axes
+# and the API throttles), allauth's rate limits and Ninja. See
+# docs/api.md#throttling.
+TRUSTED_PROXY_COUNT = _env.DJANGO_TRUSTED_PROXY_COUNT
 ALLAUTH_TRUSTED_PROXY_COUNT = TRUSTED_PROXY_COUNT
 NINJA_NUM_PROXIES = TRUSTED_PROXY_COUNT
 FRONTEND_URL = _env.FRONTEND_URL.rstrip("/")
@@ -152,8 +147,8 @@ MAILERS: dict[str, dict[str, Any]] = {
         },
     },
 }
-# Error emails must never raise while Django is already handling a 500: with MAILERS
-# defined, AdminEmailHandler no longer uses fail_silently on its own.
+# Error emails must never raise while Django is already handling a 500. With
+# MAILERS defined, AdminEmailHandler leaves fail_silently to the mailer it uses.
 MAILERS["admin-logging"] = {
     "BACKEND": MAILERS["default"]["BACKEND"],
     "OPTIONS": {**MAILERS["default"]["OPTIONS"], "fail_silently": True},

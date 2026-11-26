@@ -22,7 +22,9 @@ from .guards import assert_throttle_rates
 django_stubs_ext.monkeypatch()
 
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent.parent
-# Every variable this module reads, typed (config/settings/_env.py).
+# Every environment variable a settings module reads is a typed field of its
+# class in config/settings/env.py: BaseEnv here, and LocalEnv, TestEnv and
+# ProductionEnv in local.py, test.py and production.py.
 _env = read_env(BaseEnv)
 
 DEBUG = _env.DJANGO_DEBUG
@@ -340,7 +342,8 @@ MIDDLEWARE = [
     "core.middleware.RequestIdMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.csp.ContentSecurityPolicyMiddleware",
-    # Right after SecurityMiddleware, so CORS and 404 responses under /api/ get it too.
+    # Outside CorsMiddleware and ApiDebugErrorMiddleware, so the responses they
+    # build under /api/ (a CORS preflight, a DEBUG error as JSON) get it too.
     "core.middleware.ApiNoStoreMiddleware",
     # After the response exists: rewrite HTML technical errors on the API when DEBUG.
     "core.middleware.ApiDebugErrorMiddleware",
@@ -425,8 +428,9 @@ CSRF_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
 X_FRAME_OPTIONS = "DENY"
-# Django's filter plus BROKER: the debug page and the error emails must not print
-# a URL that embeds the Valkey password (core/debug.py).
+# Django's filter plus BROKER and DSN: the debug page and the error emails must
+# not print the broker URL, which embeds the Valkey password, or SENTRY_DSN,
+# which holds the project's key (core/debug.py).
 DEFAULT_EXCEPTION_REPORTER_FILTER = "core.debug.SafeExceptionReporterFilter"
 
 ADMIN_URL = "admin/"
@@ -543,17 +547,17 @@ HEADLESS_CLIENTS = ("app",)
 FRONTEND_URL = _env.FRONTEND_URL.rstrip("/")
 HEADLESS_FRONTEND_URLS = build_headless_frontend_urls(FRONTEND_URL)
 
-# Proxies that append to X-Forwarded-For: the one count core.net.get_client_ip,
-# Ninja throttles and allauth read. 0 trusts no proxy (REMOTE_ADDR only), as
-# local and test need; production.py sets it from DJANGO_TRUSTED_PROXY_COUNT.
+# Proxies that append to X-Forwarded-For. core.net.get_client_ip reads it for
+# django-axes and the API throttles. 0 trusts no proxy (REMOTE_ADDR only), as
+# local and test need; production.py sets it, allauth's
+# ALLAUTH_TRUSTED_PROXY_COUNT and NINJA_NUM_PROXIES from DJANGO_TRUSTED_PROXY_COUNT.
 TRUSTED_PROXY_COUNT = 0
 
-# NINJA_TITLE, NINJA_DESCRIPTION, NINJA_VERSION and NINJA_SERVERS are this
-# project's settings: core/api/api.py passes them to NinjaAPI. Ninja itself reads
-# the pagination, NUM_PROXIES and throttle-rate aliases (ninja/conf.py in 1.8.0).
-# The throttles take the client IP from core.net (TRUSTED_PROXY_COUNT, above);
-# NINJA_NUM_PROXIES keeps Ninja's own get_ident in step with it, and
-# production.py sets both from DJANGO_TRUSTED_PROXY_COUNT.
+# The API's title, description, version and servers: core/api/api.py passes
+# them to NinjaAPI. Ninja reads the other NINJA_* settings itself (ninja/conf.py
+# in 1.8.0): the paginator of a @paginate without a class, the proxy count of
+# its own get_ident (the template's throttles use core.net), and the throttle
+# rates.
 NINJA_TITLE = "Project API"
 NINJA_DESCRIPTION = (
     "The Project JSON API. Account endpoints under /_allauth/ belong to "
@@ -561,8 +565,6 @@ NINJA_DESCRIPTION = (
 )
 NINJA_VERSION = "1.0.0"
 NINJA_SERVERS = [{"url": "/", "description": "Current host"}]
-NINJA_PAGINATION_PER_PAGE = 20
-NINJA_MAX_PER_PAGE_SIZE = 100
 NINJA_PAGINATION_CLASS = "core.api.pagination.LimitPageNumberPagination"
 NINJA_NUM_PROXIES = TRUSTED_PROXY_COUNT
 NINJA_DEFAULT_THROTTLE_RATES = {
@@ -574,7 +576,6 @@ NINJA_DEFAULT_THROTTLE_RATES = {
 assert_throttle_rates(NINJA_DEFAULT_THROTTLE_RATES)
 
 # Deepest page LimitPageNumberPagination serves; deeper pages are a 404.
-# Env var stays DJANGO_API_MAX_PAGE_NUMBER; the setting is framework-neutral.
 API_MAX_PAGE_NUMBER = _env.DJANGO_API_MAX_PAGE_NUMBER
 
 CORS_URLS_REGEX = r"^/(api|_allauth)/.*$"

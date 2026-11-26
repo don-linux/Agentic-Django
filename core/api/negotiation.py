@@ -3,8 +3,8 @@ HTTP pieces Ninja does not provide natively, for every route under /api/v1/:
 the 406 and 405 JSON bodies, HEAD and OPTIONS.
 
 The schema and the docs are Ninja's own views (core/api/api.py). The docs page
-stays HTML; Accept: application/json on /docs/ is 406 even for an anonymous
-client (tests/http/test_openapi.py).
+is HTML: Accept: application/json on /docs/ is 406 even for an anonymous
+client (apps/users/tests/http/test_openapi.py).
 """
 
 from __future__ import annotations
@@ -17,12 +17,15 @@ from typing import Any
 
 from django.http import HttpRequest
 from django.http import HttpResponse
+from django.http import HttpResponseBase
 from django.http import JsonResponse
 from django.urls import Resolver404
 from django.urls import get_script_prefix
 from django.urls import resolve
 
 from core.api.api import api
+from core.errors import METHOD_NOT_ALLOWED_CODE
+from core.errors import NOT_ACCEPTABLE_CODE
 from core.errors import json_error
 
 if TYPE_CHECKING:
@@ -213,7 +216,7 @@ def _acceptable(request: HttpRequest, produces: list[str]) -> bool:
 
 def _not_acceptable() -> JsonResponse:
     return json_error(
-        "not_acceptable",
+        NOT_ACCEPTABLE_CODE,
         "Could not satisfy the request Accept header.",
         HTTPStatus.NOT_ACCEPTABLE,
     )
@@ -225,16 +228,15 @@ class ApiContractMiddleware:
     415 is not here: core.api.parsers decides it when Ninja reads the body.
     """
 
-    def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
+    def __init__(self, get_response: Callable[[HttpRequest], HttpResponseBase]) -> None:
         self.get_response = get_response
 
-    def __call__(self, request: HttpRequest) -> HttpResponse:
+    def __call__(self, request: HttpRequest) -> HttpResponseBase:
         if not _is_api_path(request):
             return self.get_response(request)
 
         operations = _route_operations(request)
         early = self._before(request, operations)
-        # 415 is decided by core.api.parsers, when Ninja reads the body.
         # Every API route is in the schema (test_method_negotiation pins it), so
         # a method the route lacks never reaches Ninja: _before answered 405.
         # Allow goes on the 405 and on OPTIONS only, as in Django and Ninja (RFC
@@ -264,7 +266,7 @@ class ApiContractMiddleware:
             return _not_acceptable()
         return None
 
-    def _dispatch(self, request: HttpRequest) -> HttpResponse:
+    def _dispatch(self, request: HttpRequest) -> HttpResponseBase:
         # HEAD runs the GET operation (Django's View does the same); the server
         # drops the body. Operations declare GET only, so the schema has no
         # duplicate HEAD operationIds (OpenAPI 3.1 requires unique ones).
@@ -290,7 +292,7 @@ class ApiContractMiddleware:
 
     def _not_allowed(self, method: str, allow: str) -> HttpResponse:
         response = json_error(
-            "method_not_allowed",
+            METHOD_NOT_ALLOWED_CODE,
             METHOD_NOT_ALLOWED_DETAIL,
             HTTPStatus.METHOD_NOT_ALLOWED,
         )

@@ -23,11 +23,11 @@ class TestUserAdmin:
         assert response.status_code == HTTPStatus.OK
 
     def test_search_by_name_and_email(self, admin_client) -> None:
-        alice = UserFactory(email="alice-search@example.com", name="Alice Lovelace")
+        alice = UserFactory(email="alice-search@example.com", name="Ada Lovelace")
         bob = UserFactory(email="bob-search@example.com", name="Bob Babbage")
         url = reverse("admin:users_user_changelist")
 
-        by_name = admin_client.get(url, data={"q": "Lovelace"})
+        by_name = admin_client.get(url, data={"q": "Ada"})
         assert by_name.status_code == HTTPStatus.OK
         assert alice.email.encode() in by_name.content
         assert bob.email.encode() not in by_name.content
@@ -36,6 +36,20 @@ class TestUserAdmin:
         assert by_email.status_code == HTTPStatus.OK
         assert bob.email.encode() in by_email.content
         assert alice.email.encode() not in by_email.content
+
+    def test_search_matches_the_start_of_a_name_or_an_email(self, admin_client) -> None:
+        # Prefix lookups: text in the middle of a value would need every row
+        # read (docs/ARCHITECTURE.md#performance).
+        alice = UserFactory(email="alice-middle@example.com", name="Alice Lovelace")
+        url = reverse("admin:users_user_changelist")
+
+        by_start = admin_client.get(url, data={"q": "alice-mid"})
+        in_the_middle = admin_client.get(url, data={"q": "Lovelace"})
+        domain = admin_client.get(url, data={"q": "middle@example.com"})
+
+        assert alice.email.encode() in by_start.content
+        assert alice.email.encode() not in in_the_middle.content
+        assert alice.email.encode() not in domain.content
 
     def test_add_creates_normalized_user_and_syncs_email_address(
         self,

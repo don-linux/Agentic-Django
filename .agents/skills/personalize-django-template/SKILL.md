@@ -137,7 +137,6 @@ Después de editar, en este orden:
    - `nobody@example.com` de `bruno/Cuentas/iniciar-sesion-invalido.yml` y `user@example.com` de `bruno/environments/seed.yml` (el usuario de `seed_dev`)
    - Los enlaces de ejemplo `https://example.com/docs/...` de las recetas de `docs/api.md` (deprecación)
    - Los comentarios de `docker/prod/.env.example` que explican la guarda (`every example.com / example.org / example.net`, `not example.com, not localhost`, `refuses example.com and localhost`)
-   - Los defaults `getattr(settings, "NINJA_TITLE", "Project API")` y `NINJA_DESCRIPTION` de `core/api/api.py`: solo actúan sin el setting. La página de Swagger toma su título de la API, así que cambia con `NINJA_TITLE`
    - Usuarios de `apps/users/management/commands/seed_dev.py` (`admin@example.com`, `user@example.com`) y las menciones de esos correos o de «no `example.com` o `localhost`» en los docs (documentan la guarda, no son el dominio del producto)
 
    El barrido respeta `.gitignore`, así que no abre `.env` ni `docker/dev/.env`: el paso 3 comprueba el nombre del stack de dev. Cualquier otra coincidencia de `project-name`, `project_db` o `/srv/project-name` sí es un placeholder que faltó. Un hit de `example.com` / `Project` en la denylist o en tests no se reescribe.

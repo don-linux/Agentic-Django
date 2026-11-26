@@ -36,11 +36,15 @@ def enqueue_on_commit(task: PublishableTask, /, **kwargs: object) -> None:
     """
     Publish `task` with `kwargs` once the current transaction commits.
 
-    Arguments are keyword-only plain JSON. A rollback publishes nothing; a broker
-    outage after the commit is logged (task name only), never raised; the request id
-    travels in a message header. See docs/tasks.md#writing-a-task.
+    Arguments are keyword-only, and only what Celery's JSON serializer sends:
+    JSON values, plus the UUIDs, dates, times, decimals and bytes kombu encodes.
+    Anything else, such as a model instance, is a TypeError here, before the
+    commit. A rollback publishes nothing; a broker outage after the commit is
+    logged (task name only), never raised; the request id travels in a message
+    header. See docs/tasks.md#writing-a-task.
     """
     try:
+        # The serializer the message goes through (CELERY_TASK_SERIALIZER).
         dumps(kwargs)
     except TypeError as error:
         message = (

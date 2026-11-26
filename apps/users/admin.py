@@ -54,7 +54,9 @@ class UserAdmin(auth_admin.UserAdmin):
     )
     list_display = ["email", "name", "is_active", "is_superuser"]
     list_filter = ["is_active", "is_staff", "is_superuser"]
-    search_fields = ["email", "name"]
+    # Prefixes, not icontains: a search for "%text%" reads every row of a table
+    # that grows (docs/ARCHITECTURE.md#performance).
+    search_fields = ["^email", "^name"]
     # No COUNT(*) of the whole table on every changelist page.
     show_full_result_count = False
     actions = ["deactivate_users", "reactivate_users"]

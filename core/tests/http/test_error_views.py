@@ -123,6 +123,7 @@ def test_debug_html_errors_on_the_api_become_json(
 
     response = middleware(rf.get("/api/v1/users/"))
 
+    assert isinstance(response, HttpResponse)
     assert response.status_code == status
     assert response.headers["Content-Type"] == "application/json"
     assert json.loads(response.content)["code"] == code
@@ -156,6 +157,7 @@ def test_debug_middleware_passes_non_standard_status_codes_through(
 
     response = middleware(rf.get("/api/v1/users/"))
 
+    assert isinstance(response, HttpResponse)
     assert response.status_code == status
     assert response.content == b"custom"
 

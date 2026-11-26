@@ -72,6 +72,7 @@ def test_health_skips_ssl_redirect(rf: RequestFactory) -> None:
     health = middleware(rf.get("/health/"))
     other = middleware(rf.get("/api/v1/"))
 
+    assert isinstance(health, HttpResponse)
     assert health.status_code == HTTPStatus.OK
     assert health.content == b"ok\n"
     assert other.status_code == HTTPStatus.MOVED_PERMANENTLY

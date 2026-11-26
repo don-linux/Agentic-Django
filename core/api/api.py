@@ -16,9 +16,10 @@ from core.api.exceptions import register_exception_handlers
 from core.api.parsers import JSONParser
 from core.api.throttling import AnonThrottle
 from core.api.throttling import UserThrottle
+from core.errors import COMPACT_JSON
 
 # Registered once per process, here, before a router path uses {public_id:...}.
-# Django 6.0 no longer lets register_converter() override a converter, and tests
+# register_converter() refuses a name that is already registered, and tests
 # reload config.urls, so the URLconf is not the place:
 # https://docs.djangoproject.com/en/6.1/releases/6.0/ (removed features) and
 # https://docs.djangoproject.com/en/6.1/topics/http/urls/#registering-custom-path-converters
@@ -33,11 +34,7 @@ class CompactJSONRenderer(JSONRenderer):
     them as bare tokens, which no JSON parser accepts, so a non-finite float
     is a 500 instead of a body the client cannot read."""
 
-    json_dumps_params = {
-        "separators": (",", ":"),
-        "ensure_ascii": False,
-        "allow_nan": False,
-    }
+    json_dumps_params = COMPACT_JSON
 
 
 class ContractAPI(NinjaAPI):
@@ -50,14 +47,9 @@ class ContractAPI(NinjaAPI):
 
 
 api = ContractAPI(
-    title=getattr(settings, "NINJA_TITLE", "Project API"),
-    description=getattr(
-        settings,
-        "NINJA_DESCRIPTION",
-        "The Project JSON API. Account endpoints under /_allauth/ belong to "
-        "django-allauth and keep its own format (docs/api.md).",
-    ),
-    version=getattr(settings, "NINJA_VERSION", "1.0.0"),
+    title=settings.NINJA_TITLE,
+    description=settings.NINJA_DESCRIPTION,
+    version=settings.NINJA_VERSION,
     urls_namespace="api",
     # Ninja's own schema (JSON) and Swagger views, staff-only through the
     # documented docs_decorator (ADR 0019).
@@ -68,10 +60,7 @@ api = ContractAPI(
     throttle=[AnonThrottle(), UserThrottle()],
     parser=JSONParser(),
     renderer=CompactJSONRenderer(),
-    servers=getattr(
-        settings, "NINJA_SERVERS", [{"url": "/", "description": "Current host"}]
-    ),
-    openapi_extra={"openapi": "3.1.0"},
+    servers=settings.NINJA_SERVERS,
 )
 
 register_exception_handlers(api)

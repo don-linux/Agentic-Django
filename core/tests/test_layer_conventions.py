@@ -1,7 +1,7 @@
 """
 Services and selectors take keyword-only arguments and know nothing of HTTP.
 
-Another API framework calls them as they are. See
+The API, the admin, commands and tasks call them alike. See
 docs/ARCHITECTURE.md#services-and-selectors.
 """
 

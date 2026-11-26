@@ -154,9 +154,8 @@ class ProductionEnv(EnvironmentVariables):
     # or empty password.
     VALKEY_URL: str
     VALKEY_PASSWORD: SecretStr
-    # Unset: ALLAUTH_TRUSTED_PROXY_COUNT.
-    DJANGO_TRUSTED_PROXY_COUNT: int | None = None
-    ALLAUTH_TRUSTED_PROXY_COUNT: int = 1
+    # Proxies that append to X-Forwarded-For (nginx alone: 1).
+    DJANGO_TRUSTED_PROXY_COUNT: int = 1
     DJANGO_SECURE_SSL_REDIRECT: bool = True
     DJANGO_CSRF_TRUSTED_ORIGINS: CommaList = []
     DJANGO_SECURE_HSTS_SECONDS: int = 60
